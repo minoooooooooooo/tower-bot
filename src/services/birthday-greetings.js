@@ -119,8 +119,10 @@ async function resolveName(guild, userId) {
 }
 
 /**
- * The exact payload posted in the channel. `content` only carries the mention
- * when the template does not already include it, so members are pinged once.
+ * The exact payload posted in the channel. The `@everyone` ping lives in
+ * `content`, outside the embed, so the whole server is notified of a birthday.
+ * The member's own mention is added to `content` only when the template does
+ * not already include it.
  */
 export function buildGreetingPayload({
   guildName,
@@ -144,11 +146,10 @@ export function buildGreetingPayload({
   });
 
   const mention = `<@${userId}>`;
-  const content = description.includes(mention) ? undefined : mention;
 
   return {
-    content,
-    allowedMentions: { users: [userId], parse: [] },
+    content: description.includes(mention) ? '@everyone' : `@everyone ${mention}`,
+    allowedMentions: { parse: ['everyone'], users: [userId] },
     embeds: [
       embed({
         description,
@@ -205,7 +206,13 @@ export async function sendGreeting(guild, settings, userId, now = new Date()) {
     return { ok: false, error: 'send-failed', channel };
   }
 
-  return { ok: true, channel };
+  // Discord silently drops an @everyone ping when the bot lacks the permission,
+  // so the admin testing a greeting is told why nobody was notified.
+  const permissions = guild.members.me ? channel.permissionsFor?.(guild.members.me) : null;
+  const pingSuppressed = Boolean(permissions) &&
+    !permissions.has(PermissionFlagsBits.MentionEveryone);
+
+  return { ok: true, channel, pingSuppressed };
 }
 
 async function resolveChannel(guild, channelId) {
@@ -260,6 +267,16 @@ export async function announceBirthdays(guild, settings, now = new Date()) {
       `[${guild.name}] Cannot post in #${channel.name}: needs Send Messages and Embed Links`,
     );
     return { sent: 0, channel, error: 'missing-permissions' };
+  }
+
+  const me = guild.members.me;
+  const permissions = me ? channel.permissionsFor?.(me) : null;
+
+  if (permissions && !permissions.has(PermissionFlagsBits.MentionEveryone)) {
+    warnThrottled(
+      `ping:${guild.id}:${channel.id}`,
+      `[${guild.name}] Cannot ping @everyone in #${channel.name}: needs the Mention Everyone permission`,
+    );
   }
 
   const template = settings.birthdayMessage ?? DEFAULT_MESSAGE;

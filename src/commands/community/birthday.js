@@ -1239,12 +1239,16 @@ async function handleSend(ctx) {
     return;
   }
 
+  const ping = result.pingSuppressed
+    ? '⚠️ I do not have **Mention Everyone** in that channel, so no ping was sent.'
+    : 'Everyone was pinged.';
+
   await ctx.reply(
     ephemeral({
       embeds: [
         successEmbed(
           'Greeting sent',
-          `Posted the current template in ${result.channel} for ${target}.`,
+          `Posted the current template in ${result.channel} for ${target}. ${ping}`,
         ),
       ],
     }),
@@ -1266,7 +1270,7 @@ function overviewEmbed(ctx) {
       '`/birthday role [role]` — admin: choose the birthday role',
       '`/birthday channel [#channel]` — admin: where greetings are posted',
       '`/birthday message [text] [gif]` — admin: greeting text, placeholders, GIF',
-      '`/birthday send [user]` — admin: post the greeting now',
+      '`/birthday send [user]` - admin: post the greeting now (pings @everyone)',
       '`/birthday timezone [zone] [user]` — per-member time zone (admins: others)',
       '`/birthday timezone default:true [zone]` — admin: server-wide fallback',
       '',
