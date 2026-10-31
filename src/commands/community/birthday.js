@@ -487,19 +487,22 @@ async function handleNext(ctx) {
   const occurrence = nextOccurrence(row.month, row.day, timeZone);
   const title =
     target.id === ctx.user.id ? 'Your birthday' : `${target.username}'s birthday`;
+  const isToday = occurrence.days === 0;
+
+  // A Discord timestamp renders as "in 5 months" and shows the exact date on
+  // hover/tap, and it stays correct without the message being re-sent.
+  const countdown = isToday
+    ? '🎉 **Today** — happy birthday!'
+    : `<t:${occurrence.unix}:R>`;
 
   await ctx.reply({
     embeds: [
       embed({
         title,
-        description: `**${occurrence.formatted}** (${occurrence.weekday})`,
+        description: [`**${occurrence.formatted}** · ${occurrence.weekday}`, countdown].join('\n'),
         fields: [
-          {
-            name: 'Days away',
-            value: occurrence.days === 0 ? 'Today' : `${occurrence.days}`,
-            inline: true,
-          },
-          { name: 'Time zone', value: timeZone, inline: true },
+          { name: 'Full date', value: `<t:${occurrence.unix}:F>`, inline: false },
+          { name: 'Time zone', value: timeZone, inline: false },
         ],
       }),
     ],

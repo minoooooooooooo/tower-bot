@@ -78,6 +78,53 @@ export function daysUntil(month, day, timeZone, now = new Date()) {
 }
 
 /**
+ * Offset of a time zone at one instant, in milliseconds. Derived by reading the
+ * zone's wall clock back as if it were UTC and subtracting the real instant.
+ */
+function zoneOffsetMs(utcMs, timeZone) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hour12: false,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).formatToParts(new Date(utcMs));
+
+  const values = {};
+  for (const part of parts) {
+    if (part.type !== 'literal') values[part.type] = part.value;
+  }
+
+  const asUtc = Date.UTC(
+    Number(values.year),
+    Number(values.month) - 1,
+    Number(values.day),
+    Number(values.hour) % 24, // Intl reports midnight as "24" in some zones.
+    Number(values.minute),
+    Number(values.second),
+  );
+
+  return asUtc - utcMs;
+}
+
+/**
+ * Unix seconds for midnight of a wall-clock date in a time zone. Discord
+ * timestamps need a real instant, so a UTC stand-in for local midnight would
+ * display the wrong day for anyone east or west of UTC.
+ */
+export function zonedMidnightUnix(year, month, day, timeZone) {
+  const guess = Date.UTC(year, month - 1, day);
+  const firstOffset = zoneOffsetMs(guess, timeZone);
+  const secondOffset = zoneOffsetMs(guess - firstOffset, timeZone);
+
+  // The offset can change across a DST boundary; the second reading wins.
+  return Math.floor((guess - secondOffset) / 1000);
+}
+
+/**
  * Concrete next date, including weekday, for a recurring month/day.
  */
 export function nextOccurrence(month, day, timeZone, now = new Date()) {
@@ -99,6 +146,7 @@ export function nextOccurrence(month, day, timeZone, now = new Date()) {
     month,
     day: targetDay,
     days: Math.round((targetMs - todayMs) / MS_PER_DAY),
+    unix: zonedMidnightUnix(year, month, targetDay, timeZone),
     weekday: new Intl.DateTimeFormat('en-US', { weekday: 'long', timeZone: 'UTC' }).format(
       new Date(targetMs),
     ),
