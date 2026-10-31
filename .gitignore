@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Local environment / secrets
+.env
+.env.*
+!.env.example
+
+# Portable toolchain
+.tools/
+
+# Logs and OS cruft
+logs/
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+
+# SQLite data
+data/
+
+# Build output
+dist/
+
+# Editor
+.vscode/
+.idea/

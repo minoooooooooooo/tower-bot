@@ -1,0 +1,41 @@
+services:
+  bot:
+    build: .
+    image: discord-bot:latest
+    container_name: discord-bot
+
+    # Brings the bot back after crashes and after the VM reboots.
+    restart: always
+
+    # PID 1 helper: forwards SIGTERM to Node so the graceful shutdown runs.
+    init: true
+    stop_grace_period: 15s
+
+    env_file:
+      - .env
+
+    environment:
+      NODE_ENV: production
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+
+    # The bot needs no inbound ports - it only opens outbound connections.
+    # Do not add a "ports:" section.
+
+    # Persists bot.db across container rebuilds.
+    volumes:
+      - bot-data:/app/data
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    security_opt:
+      - no-new-privileges:true
+
+    # Comfortable ceiling for a 1 GB micro instance.
+    mem_limit: 512m
+
+volumes:
+  bot-data:

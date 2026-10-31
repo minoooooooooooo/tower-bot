@@ -1,0 +1,14 @@
+node_modules
+.tools
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+logs
+*.log
+*.bat
+docs
+dist
+data
+README.md
