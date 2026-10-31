@@ -1,15 +1,24 @@
 # Builds dist/bot.zip with only the files any host needs.
-# Usage: .\scripts\package.ps1
+# Usage: .\scripts\package.ps1              -> dist\bot.zip
+#        .\scripts\package.ps1 -IncludeGit  -> dist\bot-git.zip (repo metadata too)
+#
+# -IncludeGit exists for one situation: the panel cannot clone the repo (its
+# install script needs an empty directory, and some leftover files refuse to
+# be deleted). Shipping .git/ alongside the code gives the host a valid
+# working tree AND a remote, so its "Auto Update" pull works from then on.
 #
 # Entries are written with forward slashes on purpose. Compress-Archive (and
 # anything else that uses Windows path separators) produces entries like
 # "src\boot.js"; on Linux that extracts to a file literally named
 # "src\boot.js" instead of a src/ directory, and the bot cannot start.
+param([switch]$IncludeGit)
+
 $ErrorActionPreference = 'Stop'
 
 $root = Split-Path -Parent $PSScriptRoot
 $dist = Join-Path $root 'dist'
-$zip = Join-Path $dist 'bot.zip'
+$zipName = if ($IncludeGit) { 'bot-git.zip' } else { 'bot.zip' }
+$zip = Join-Path $dist $zipName
 
 New-Item -ItemType Directory -Force $dist | Out-Null
 if (Test-Path $zip) { Remove-Item $zip -Force }
@@ -25,6 +34,8 @@ $include = @(
   'README.md',
   'docs'
 )
+
+if ($IncludeGit) { $include += '.git' }
 
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -71,9 +82,9 @@ finally {
 }
 
 if ($bad.Count -gt 0) {
-  throw "dist\bot.zip still contains Windows path separators: $($bad[0].FullName)"
+  throw "dist\$zipName still contains Windows path separators: $($bad[0].FullName)"
 }
 
 $size = [math]::Round((Get-Item $zip).Length / 1KB, 1)
-Write-Host "Created dist\bot.zip ($size KB, $count files, POSIX paths)"
+Write-Host "Created dist\$zipName ($size KB, $count files, POSIX paths)"
 Write-Host "Upload the zip to the panel, then extract it there."
