@@ -26,13 +26,13 @@ export const MAX_MESSAGE_LENGTH = 2000;
 export const MAX_GIF_URL_LENGTH = 1000;
 
 /**
- * Placeholders understood by the greeting template. `{age}` is blank when the
- * member did not save a birth year.
+ * Placeholders understood by the greeting template. `{age}` renders as 0 when
+ * the member did not save a birth year, so a template never reads oddly blank.
  */
 export const PLACEHOLDERS = [
   { key: 'user', description: 'Mentions the birthday member' },
   { key: 'name', description: 'Their display name' },
-  { key: 'age', description: 'Age they turn (blank without a birth year)' },
+  { key: 'age', description: 'Age they turn (0 without a birth year)' },
   { key: 'server', description: 'Server name' },
   { key: 'date', description: 'Date, like "May 14"' },
 ];
@@ -40,8 +40,8 @@ export const PLACEHOLDERS = [
 const PLACEHOLDER_KEYS = new Set(PLACEHOLDERS.map((placeholder) => placeholder.key));
 
 /**
- * Replace placeholders and tidy the result, so a blank `{age}` does not leave
- * a double space or "  today" behind.
+ * Replace placeholders and tidy the result, so a blank value (an empty custom
+ * placeholder, say) does not leave a double space or "  today" behind.
  */
 export function renderMessage(template, values) {
   return template
@@ -140,7 +140,7 @@ export function buildGreetingPayload({
   const description = renderMessage(template, {
     user: `<@${userId}>`,
     name,
-    age: age ?? '',
+    age: age ?? 0,
     server: guildName,
     date: formatMonthDay(today.month, today.day),
   });
