@@ -19,8 +19,12 @@ export const STYLES = [
     color: 0x5865f2,
     pieces: [
       { key: 'title', label: 'Title', default: '🎫 Member Pass', max: 256 },
-      { key: 'accountLabel', label: 'Account row label', default: 'account', max: 40 },
-      { key: 'nextLabel', label: 'Next-step row label', default: 'next', max: 40 },
+      {
+        key: 'rowLabels',
+        label: 'Row labels (Account | Next)',
+        default: 'account | next',
+        max: 80,
+      },
       { key: 'nextText', label: 'Next step', default: 'read {rules}, then say hi', max: 200 },
       { key: 'footer', label: 'Footer', default: '{server} · {count} members', max: 200 },
     ],
@@ -44,15 +48,6 @@ export const STYLES = [
       // needs the fifth. Split on "|" — a single value is used for both fields.
       { key: 'fieldLabels', label: 'Field labels (Account | Joined)', default: 'Created | Joined', max: 160 },
       { key: 'footer', label: 'Footer', default: '{server} · {count} members', max: 200 },
-    ],
-    settings: [
-      {
-        key: 'gifUrl',
-        label: 'GIF URL (optional)',
-        max: 1000,
-        placeholder: 'https://media.tenor.com/....gif',
-        empty: 'No GIF',
-      },
     ],
   },
   {
@@ -109,8 +104,12 @@ export const STYLES = [
         max: 2000,
         paragraph: true,
       },
-      { key: 'rulesLabel', label: 'Rules button label', default: '📜 Rules', max: 80 },
-      { key: 'hiLabel', label: '"Say hi" button label', default: '👋 Say hi', max: 80 },
+      {
+        key: 'buttonLabels',
+        label: 'Button labels (Rules | Say hi)',
+        default: '📜 Rules | 👋 Say hi',
+        max: 160,
+      },
       { key: 'footer', label: 'Footer', default: '{server} · {count} members', max: 200 },
     ],
   },
@@ -155,27 +154,39 @@ export function styleTexts(style, overrides = {}) {
 
 /**
  * "Created | Joined" -> ["Created", "Joined"]. A single value names both
- * fields, so the input can never leave one of them blank.
+ * labels, so the input can never leave one of them blank.
  */
-export function splitFieldLabels(value) {
+export function splitPair(value, first, second) {
   const parts = String(value ?? '')
     .split('|')
     .map((part) => part.trim())
     .filter(Boolean);
 
-  if (parts.length === 0) return ['Created', 'Joined'];
+  if (parts.length === 0) return [first, second];
   return [parts[0], parts[1] ?? parts[0]];
 }
 
+export function splitFieldLabels(value) {
+  return splitPair(value, 'Created', 'Joined');
+}
+
+/** The GIF box shown at the bottom of every style's edit modal. */
+export const GIF_INPUT = {
+  key: 'gifUrl',
+  label: 'GIF URL (optional)',
+  max: 1000,
+  placeholder: 'https://media.tenor.com/....gif',
+  target: 'setting',
+};
+
 /**
- * Every input the edit modal shows: the text pieces, then any settings backed
- * by `welcome_settings` (currently the Classic GIF). Discord caps a modal at
- * five inputs, which is why each style keeps its total at or under that.
+ * Every input the edit modal shows: the text pieces, then the GIF. Discord caps
+ * a modal at five inputs, which is why each style keeps four pieces or fewer.
  */
 export function modalInputs(style) {
   return [
     ...style.pieces.map((piece) => ({ ...piece, target: 'text' })),
-    ...(style.settings ?? []).map((setting) => ({ ...setting, target: 'setting' })),
+    { ...GIF_INPUT },
   ];
 }
 
@@ -241,6 +252,7 @@ export function buildWelcomePayload({
   guild,
   member,
   settings = {},
+  gifs = {},
   styleKey,
   overrides = {},
   timeZone = 'UTC',
@@ -249,6 +261,7 @@ export function buildWelcomePayload({
   const style = getStyle(styleKey) ?? STYLES[0];
   const values = buildValues({ guild, member, settings, timeZone, now });
   const texts = styleTexts(style, overrides);
+  const gif = gifs[style.key] ?? undefined;
   const text = {};
 
   for (const piece of style.pieces) {
@@ -259,15 +272,18 @@ export function buildWelcomePayload({
   const components = [];
 
   if (style.key === 'ledger') {
+    const [accountLabel, nextLabel] = splitPair(text.rowLabels, 'account', 'next');
+
     embeds.push(
       embed({
         title: text.title,
         description: [
           `\`${values.joined}\` · ${values.user}`,
           `\`#${values.count}\` · ${values.server}`,
-          `\`${text.accountLabel}\` · ${values.account_age}`,
-          `\`${text.nextLabel}\` · ${text.nextText}`,
+          `\`${accountLabel}\` · ${values.account_age}`,
+          `\`${nextLabel}\` · ${text.nextText}`,
         ].join('\n'),
+        image: gif,
         footer: text.footer,
         color: style.color,
       }),
@@ -283,7 +299,7 @@ export function buildWelcomePayload({
         title: text.title,
         description: text.description,
         thumbnail: member.user?.displayAvatarURL?.({ size: 256 }),
-        image: settings.gifUrl ?? undefined,
+        image: gif,
         fields: [
           { name: createdLabel, value: values.account_age, inline: true },
           { name: joinedLabel, value: `<t:${joinedUnix}:R>`, inline: true },
@@ -293,7 +309,9 @@ export function buildWelcomePayload({
       }),
     );
   } else if (style.key === 'poster') {
+    // A GIF set on this style wins over the server banner.
     const image =
+      gif ??
       guild.bannerURL?.({ size: 1024 }) ??
       guild.splashURL?.({ size: 1024 }) ??
       guild.iconURL?.({ size: 1024 }) ??
@@ -312,6 +330,7 @@ export function buildWelcomePayload({
       embed({
         title: text.title,
         description: text.body,
+        image: gif,
         footer: text.footer,
         color: style.color,
       }),
@@ -320,6 +339,7 @@ export function buildWelcomePayload({
     embeds.push(
       embed({
         description: `${text.line1}\n${text.line2}`,
+        image: gif,
         color: style.color,
         timestamp: false,
       }),
@@ -330,11 +350,12 @@ export function buildWelcomePayload({
     // "Say hi" falls back to the welcome channel, so the card still has a
     // button before any link is configured.
     const generalId = settings.generalChannelId ?? settings.channelId;
+    const [rulesLabel, hiLabel] = splitPair(text.buttonLabels, '📜 Rules', '👋 Say hi');
 
     if (rulesId) {
       row.addComponents(
         new ButtonBuilder()
-          .setLabel(text.rulesLabel.slice(0, 80))
+          .setLabel(rulesLabel.slice(0, 80))
           .setStyle(ButtonStyle.Link)
           .setURL(channelUrl(guild.id, rulesId)),
       );
@@ -343,7 +364,7 @@ export function buildWelcomePayload({
     if (generalId) {
       row.addComponents(
         new ButtonBuilder()
-          .setLabel(text.hiLabel.slice(0, 80))
+          .setLabel(hiLabel.slice(0, 80))
           .setStyle(ButtonStyle.Link)
           .setURL(channelUrl(guild.id, generalId)),
       );
@@ -355,6 +376,7 @@ export function buildWelcomePayload({
       embed({
         title: text.title,
         description: text.description,
+        image: gif,
         footer: text.footer,
         color: style.color,
       }),

@@ -194,7 +194,7 @@ New members get one of **six card styles**, chosen automatically. All six are en
 |---|---|
 | **Ledger** | Aligned date-first rows — the same grammar as `/birthday list` |
 | **Classic** | Avatar, mention, two inline fields, optional GIF |
-| **Poster** | Full-width server banner with one headline |
+| **Poster** | Full-width server banner (or your GIF) with one headline |
 | **Story** | Narrative welcome, member count becomes "Floor 48" |
 | **Whisper** | Two quiet lines, no fields |
 | **Concierge** | Onboarding card with link buttons to rules and chat |
@@ -227,11 +227,15 @@ New members get one of **six card styles**, chosen automatically. All six are en
 
 Link the two channels the cards point at with `/welcome links rules:#rules general:#general`. A card pings **only the new member** — never `@everyone` or a role.
 
-### Classic GIF
+### GIF on any card
 
-The GIF is part of the **Classic edit form**: run `/welcome edit style:Classic` and the fifth box is `GIF URL (optional)`, prefilled with the current value. Empty it (or type `none`) to remove the GIF. `/welcome gif url:<link>` is a shortcut for the same setting, and `/welcome gif` alone shows the current one.
+Every card's edit form ends with a **GIF URL (optional)** box — `/welcome edit style:Story` → change the text and the GIF together, with the current URL prefilled. Empty it (or type `none`) to remove the image.
 
-To make room for it inside the five-input modal limit, the two field labels share one box: `Created | Joined`. One value names both fields.
+`/welcome gif style:<style> url:<link>` does the same from outside the form; the style is optional and defaults to Classic, and `/welcome gif` alone shows the current GIF.
+
+Each card stores its **own** GIF. On Poster the GIF replaces the server banner; on the other styles it sits under the text.
+
+Because Discord allows only five inputs in a modal, three cards pair two labels into one box: Classic `Created | Joined`, Ledger `account | next`, Concierge `📜 Rules | 👋 Say hi`. A single value names both.
 
 Use a **direct image URL** — a Tenor or Giphy *page* link passes validation but will not render.
 

@@ -74,6 +74,14 @@ const SCHEMA = `
     value    TEXT NOT NULL,
     PRIMARY KEY (guild_id, style, piece)
   );
+
+  -- One optional GIF per card style.
+  CREATE TABLE IF NOT EXISTS welcome_gifs (
+    guild_id TEXT NOT NULL,
+    style    TEXT NOT NULL,
+    url      TEXT NOT NULL,
+    PRIMARY KEY (guild_id, style)
+  );
 `;
 
 // Columns added after the first release. `CREATE TABLE IF NOT EXISTS` does not
@@ -98,6 +106,36 @@ function applyMigrations(db) {
 }
 
 /**
+ * The first welcome GIF lived in `welcome_settings.gif_url` and only Classic
+ * used it. Per-style GIFs moved to `welcome_gifs`, so the old value is carried
+ * over once and the column blanked — otherwise "reset" would resurrect it.
+ */
+function migrateLegacyWelcomeGifs(db) {
+  const columns = db.prepare('PRAGMA table_info(welcome_settings)').all();
+
+  if (!columns.some((entry) => entry.name === 'gif_url')) return;
+
+  const rows = db
+    .prepare('SELECT guild_id, gif_url FROM welcome_settings WHERE gif_url IS NOT NULL')
+    .all();
+
+  if (rows.length === 0) return;
+
+  const insert = db.prepare(
+    `INSERT INTO welcome_gifs (guild_id, style, url) VALUES (?, 'classic', ?)
+     ON CONFLICT (guild_id, style) DO NOTHING`,
+  );
+  const clear = db.prepare('UPDATE welcome_settings SET gif_url = NULL WHERE guild_id = ?');
+
+  for (const row of rows) {
+    insert.run(row.guild_id, row.gif_url);
+    clear.run(row.guild_id);
+  }
+
+  logger.info(`Migrated SQLite: moved ${rows.length} welcome GIF(s) into welcome_gifs`);
+}
+
+/**
  * Lazily opens the SQLite database and applies the schema.
  * Uses Node's built-in SQLite so there is no native build step.
  */
@@ -113,6 +151,7 @@ export function getDb() {
   database.exec('PRAGMA busy_timeout = 5000');
   database.exec(SCHEMA);
   applyMigrations(database);
+  migrateLegacyWelcomeGifs(database);
 
   logger.info(`SQLite ready at ${file}`);
   return database;

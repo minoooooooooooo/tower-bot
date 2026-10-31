@@ -3,7 +3,12 @@ import { config } from '../config.js';
 import { createLogger } from '../lib/logger.js';
 import { getGuildSettings } from '../services/birthday-store.js';
 import { buildWelcomePayload, chooseStyle } from '../services/welcome-styles.js';
-import { getWelcomeSettings, getWelcomeTexts, setLastStyle } from '../services/welcome-store.js';
+import {
+  getWelcomeGifs,
+  getWelcomeSettings,
+  getWelcomeTexts,
+  setLastStyle,
+} from '../services/welcome-store.js';
 
 const logger = createLogger('welcome');
 
@@ -69,6 +74,7 @@ export default {
       guild,
       member,
       settings,
+      gifs: getWelcomeGifs(guild.id),
       styleKey,
       overrides: texts[styleKey] ?? {},
       timeZone,

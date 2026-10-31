@@ -28,8 +28,10 @@ import {
   MODES,
   clearWelcomePiece,
   clearWelcomeTexts,
+  getWelcomeGifs,
   getWelcomeSettings,
   getWelcomeTexts,
+  setWelcomeGif,
   setWelcomePiece,
   updateWelcomeSettings,
 } from '../../services/welcome-store.js';
@@ -115,7 +117,7 @@ function overviewEmbed(ctx) {
       '`/welcome toggle <style>` — turn one style on or off',
       '`/welcome list` — current setup and which styles are on',
       '`/welcome test [style]` — preview one card, only you see it',
-      '`/welcome gif [url]` — GIF for the Classic card (`none` removes it)',
+      '`/welcome gif [style] [url]` — GIF for one card (`none` removes it)',
       '`/welcome edit <style>` — rewrite that style\'s text (admin)',
       '`/welcome reset [style]` — restore the default text (admin)',
       '`/welcome links [rules] [general]` — channels used by the cards (admin)',
@@ -300,13 +302,18 @@ async function handleToggle(ctx) {
 async function handleList(ctx) {
   const settings = getWelcomeSettings(ctx.guildId);
   const texts = getWelcomeTexts(ctx.guildId);
+  const gifs = getWelcomeGifs(ctx.guildId);
   const enabled = enabledStyles(settings);
 
   const lines = STYLES.map((style) => {
     const on = enabled.includes(style.key);
     const edited = Object.keys(texts[style.key] ?? {}).length;
     const marker = on ? '✅' : '⬜';
-    const suffix = edited > 0 ? ` · ${edited} edited` : '';
+    const parts = [];
+
+    if (edited > 0) parts.push(`${edited} edited`);
+    if (gifs[style.key]) parts.push('GIF');
+    const suffix = parts.length > 0 ? ` · ${parts.join(' · ')}` : '';
 
     return `${marker} **${style.name}** — ${style.summary}${suffix}`;
   });
@@ -315,7 +322,6 @@ async function handleList(ctx) {
     `Channel: ${channelLabel(ctx.guild, settings.channelId)}`,
     `Mode: ${MODE_LABELS[settings.mode] ?? settings.mode}${settings.forcedStyle ? ` (${getStyle(settings.forcedStyle)?.name ?? settings.forcedStyle})` : ''}`,
     `Links: rules ${channelLabel(ctx.guild, settings.rulesChannelId)} · general ${channelLabel(ctx.guild, settings.generalChannelId)}`,
-    `Classic GIF: ${settings.gifUrl ? 'set' : 'not set'}`,
     '',
     `**Styles (${enabled.length} of ${STYLES.length} active)**`,
     ...lines,
@@ -345,6 +351,7 @@ async function handleTest(ctx) {
     guild: ctx.guild,
     member: ctx.member,
     settings,
+    gifs: getWelcomeGifs(ctx.guildId),
     styleKey,
     overrides: texts[styleKey] ?? {},
     timeZone,
@@ -363,21 +370,48 @@ async function handleTest(ctx) {
 async function handleGif(ctx) {
   if (!(await requireAdmin(ctx))) return;
 
-  const raw = (ctx.isSlash ? ctx.getString('url') : ctx.args[1]) ?? '';
+  let styleArg = ctx.isSlash ? ctx.getString('style') : null;
+  let raw = ctx.isSlash ? (ctx.getString('url') ?? '') : '';
 
-  if (!raw.trim()) {
-    const settings = getWelcomeSettings(ctx.guildId);
+  if (!ctx.isSlash) {
+    const first = ctx.args[1];
+    const second = ctx.args[2];
+    const looksLikeStyle = Boolean(resolveStyle(first));
 
+    // `:-welcome gif <url>` still means Classic; a real style name selects that card.
+    if (first && (isClearValue(first) || !looksLikeStyle)) {
+      styleArg = 'classic';
+      raw = first;
+    } else {
+      styleArg = first ?? 'classic';
+      raw = second ?? '';
+    }
+  }
+
+  const style = resolveStyle(styleArg ?? 'classic');
+
+  if (!style) {
+    await ctx.reply(
+      ephemeral({
+        embeds: [errorEmbed('Unknown style', `Pick one of: ${styleList()}.`)],
+      }),
+    );
+    return;
+  }
+
+  const current = getWelcomeGifs(ctx.guildId)[style.key] ?? null;
+
+  if (!String(raw).trim()) {
     await ctx.reply(
       ephemeral({
         embeds: [
           embed({
-            title: 'Classic GIF',
-            description: settings.gifUrl
-              ? `${settings.gifUrl}\n\nRemove it with \`/welcome gif url:none\`.`
-              : 'No GIF is set. Add one with `/welcome gif url:https://media.example.com/wave.gif`.',
-            image: settings.gifUrl ?? undefined,
-            color: settings.gifUrl ? COLORS.primary : COLORS.muted,
+            title: `${style.name} GIF`,
+            description: current
+              ? `${current}\n\nRemove it with \`/welcome gif style:${style.name} url:none\`, or edit it in \`/welcome edit\`.`
+              : `No GIF is set for ${style.name}. Add one with \`/welcome gif style:${style.name} url:https://media.example.com/wave.gif\`, or edit it in \`/welcome edit\`.`,
+            image: current ?? undefined,
+            color: current ? COLORS.primary : COLORS.muted,
           }),
         ],
       }),
@@ -386,11 +420,11 @@ async function handleGif(ctx) {
   }
 
   if (isClearValue(raw)) {
-    updateWelcomeSettings(ctx.guildId, { gifUrl: null });
+    setWelcomeGif(ctx.guildId, style.key, null);
 
     await ctx.reply(
       ephemeral({
-        embeds: [successEmbed('Classic GIF removed', 'The Classic card no longer has an image.')],
+        embeds: [successEmbed(`${style.name} GIF removed`, 'That card no longer has an image.')],
       }),
     );
     return;
@@ -403,17 +437,15 @@ async function handleGif(ctx) {
     return;
   }
 
-  const gifUrl = raw.trim();
-  updateWelcomeSettings(ctx.guildId, { gifUrl });
+  setWelcomeGif(ctx.guildId, style.key, String(raw).trim());
 
   await ctx.reply(
     ephemeral({
       embeds: [
         embed({
-          title: 'Classic GIF set',
-          description:
-            'It now appears on the Classic card. Preview with `/welcome test style:Classic`.',
-          image: gifUrl,
+          title: `${style.name} GIF set`,
+          description: `It now appears on the ${style.name} card. Preview with \`/welcome test style:${style.name}\`.`,
+          image: String(raw).trim(),
           color: COLORS.success,
         }),
       ],
@@ -449,12 +481,9 @@ async function handleEdit(ctx) {
     return;
   }
 
-  const settings = getWelcomeSettings(ctx.guildId);
+  const gifs = getWelcomeGifs(ctx.guildId);
   const current = styleTexts(style, getWelcomeTexts(ctx.guildId)[style.key] ?? {});
-
-  for (const input of modalInputs(style)) {
-    if (input.target === 'setting') current[input.key] = settings[input.key] ?? '';
-  }
+  current.gifUrl = gifs[style.key] ?? '';
 
   const modal = new ModalBuilder()
     .setCustomId(`welcome:edit:${style.key}`)
@@ -613,7 +642,14 @@ export default {
     .addSubcommand((sub) =>
       sub
         .setName('gif')
-        .setDescription('Admin: GIF for the Classic card (empty shows the current one)')
+        .setDescription('Admin: GIF for one card (empty shows the current one)')
+        .addStringOption((option) =>
+          option
+            .setName('style')
+            .setDescription('Which card (defaults to Classic)')
+            .setRequired(false)
+            .addChoices(...styleChoices()),
+        )
         .addStringOption((option) =>
           option
             .setName('url')
@@ -766,12 +802,7 @@ export default {
       }
     }
 
-    for (const input of style.settings ?? []) {
-      const value = values[input.key];
-      updateWelcomeSettings(guildId, {
-        [input.key]: !value || isClearValue(value) ? null : value,
-      });
-    }
+    setWelcomeGif(guildId, style.key, !values.gifUrl || isClearValue(values.gifUrl) ? null : values.gifUrl);
 
     const notes = [];
     if (unknown.size > 0) {
