@@ -63,8 +63,27 @@ function probeTls(host, port) {
 
 async function probeHttps(url) {
   try {
-    const response = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
-    return `HTTP ${response.status}`;
+    const response = await fetch(url, {
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+      headers: { 'user-agent': 'DiscordBot (https://github.com/discord/discord-api-docs, 0.0.1)' },
+    });
+
+    // The status alone cannot tell a Cloudflare block (1015) from Discord's own
+    // per-IP limit, and the two need different tickets. Keep the evidence.
+    const body = (await response.text()).replace(/\s+/g, ' ').trim().slice(0, 160);
+    const retryAfter = response.headers.get('retry-after');
+    const scope = response.headers.get('x-ratelimit-scope');
+    const global = response.headers.get('x-ratelimit-global');
+
+    const notes = [
+      retryAfter ? `retry-after=${retryAfter}s` : null,
+      scope ? `scope=${scope}` : null,
+      global ? `global=${global}` : null,
+    ].filter(Boolean);
+
+    return `HTTP ${response.status}${notes.length ? ` (${notes.join(', ')})` : ''}${
+      body ? ` body="${body}"` : ''
+    }`;
   } catch (error) {
     return `FAILED (${error.cause?.code ?? error.name ?? error.message})`;
   }
@@ -81,6 +100,7 @@ export async function reportDiscordReachability(log) {
     [`tcp  ${GATEWAY_HOST}:443`, probeTcp(GATEWAY_HOST, 443)],
     [`tls  ${GATEWAY_HOST}:443`, probeTls(GATEWAY_HOST, 443)],
     [`http ${REST_URL}`, probeHttps(REST_URL)],
+    ['http gateway upgrade endpoint', probeHttps(`https://${GATEWAY_HOST}/?v=10&encoding=json`)],
   ];
 
   log('diagnosing outbound access to Discord (5s limit per probe)');
