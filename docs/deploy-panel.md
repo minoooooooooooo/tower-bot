@@ -262,6 +262,8 @@ a minute.
 | `/clear` says missing permissions | Bot lacks Manage Messages | Give the bot role **Manage Messages** + **Read Message History** |
 | Birthday role never granted | Role above the bot's role, or no Manage Roles | Drag the bot's role above the birthday role |
 | Server stopped itself | 2-week login missed | Log in, press Start |
+| `no gateway connection after 60s (ws=CLOSED)` then `[net] ... http ... HTTP 429` | the node's shared IP is rate limited/blocked by Discord — no bot on that node can connect | send the ticket in [`HANDOFF.md`](HANDOFF.md) issue 12, or rebuild onto a different node with [`recreate-server.md`](recreate-server.md). The bot retries every minute, so it recovers by itself if the limit clears |
+| Reinstall finishes but nothing is cloned | the install script needs an empty directory and the stray files from the bad zip cannot be deleted | rebuild the server: [`recreate-server.md`](recreate-server.md) |
 
 ---
 
