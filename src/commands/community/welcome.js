@@ -20,6 +20,7 @@ import {
   chooseStyle,
   enabledStyles,
   getStyle,
+  modalInputs,
   styleTexts,
   unknownWelcomePlaceholders,
 } from '../../services/welcome-styles.js';
@@ -448,23 +449,29 @@ async function handleEdit(ctx) {
     return;
   }
 
+  const settings = getWelcomeSettings(ctx.guildId);
   const current = styleTexts(style, getWelcomeTexts(ctx.guildId)[style.key] ?? {});
+
+  for (const input of modalInputs(style)) {
+    if (input.target === 'setting') current[input.key] = settings[input.key] ?? '';
+  }
+
   const modal = new ModalBuilder()
     .setCustomId(`welcome:edit:${style.key}`)
     .setTitle(`Edit the ${style.name} card`.slice(0, 45));
 
-  for (const piece of style.pieces) {
-    modal.addComponents(
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder()
-          .setCustomId(piece.key)
-          .setLabel(piece.label.slice(0, 45))
-          .setStyle(piece.paragraph ? TextInputStyle.Paragraph : TextInputStyle.Short)
-          .setMaxLength(piece.max)
-          .setRequired(false)
-          .setValue(current[piece.key]),
-      ),
-    );
+  for (const input of modalInputs(style)) {
+    const field = new TextInputBuilder()
+      .setCustomId(input.key)
+      .setLabel(input.label.slice(0, 45))
+      .setStyle(input.paragraph ? TextInputStyle.Paragraph : TextInputStyle.Short)
+      .setMaxLength(input.max)
+      .setRequired(false)
+      .setValue(String(current[input.key] ?? '').slice(0, input.max));
+
+    if (input.placeholder) field.setPlaceholder(input.placeholder);
+
+    modal.addComponents(new ActionRowBuilder().addComponents(field));
   }
 
   await ctx.interaction.showModal(modal);
@@ -723,12 +730,28 @@ export default {
     const defaults = styleTexts(style, {});
     const values = {};
     const unknown = new Set();
+    const problems = [];
 
-    for (const piece of style.pieces) {
-      const value = String(interaction.fields.getTextInputValue(piece.key) ?? '').trim();
-      values[piece.key] = value;
+    for (const input of modalInputs(style)) {
+      const value = String(interaction.fields.getTextInputValue(input.key) ?? '').trim();
+      values[input.key] = value;
 
-      for (const placeholder of unknownWelcomePlaceholders(value)) unknown.add(placeholder);
+      if (input.target === 'setting') {
+        if (value && !isClearValue(value)) {
+          const problem = validateImageUrl(value, 'GIF');
+          if (problem) problems.push(`**${input.label}**: ${problem}`);
+        }
+      } else {
+        for (const placeholder of unknownWelcomePlaceholders(value)) unknown.add(placeholder);
+      }
+    }
+
+    // Validate before writing anything, so a bad GIF URL cannot half-save a card.
+    if (problems.length > 0) {
+      await interaction.reply(
+        ephemeral({ embeds: [errorEmbed('Nothing saved', problems.join('\n'))] }),
+      );
+      return;
     }
 
     for (const piece of style.pieces) {
@@ -741,6 +764,13 @@ export default {
       } else {
         setWelcomePiece(guildId, style.key, piece.key, value);
       }
+    }
+
+    for (const input of style.settings ?? []) {
+      const value = values[input.key];
+      updateWelcomeSettings(guildId, {
+        [input.key]: !value || isClearValue(value) ? null : value,
+      });
     }
 
     const notes = [];

@@ -229,7 +229,11 @@ Link the two channels the cards point at with `/welcome links rules:#rules gener
 
 ### Classic GIF
 
-`/welcome gif url:https://media.example.com/wave.gif` adds a full-width GIF to the **Classic** card (prefix: `:-welcome gif <url>`). `/welcome gif` with no URL shows the current one, and `/welcome gif url:none` removes it. Use a **direct image URL** — a Tenor or Giphy *page* link passes validation but will not render.
+The GIF is part of the **Classic edit form**: run `/welcome edit style:Classic` and the fifth box is `GIF URL (optional)`, prefilled with the current value. Empty it (or type `none`) to remove the GIF. `/welcome gif url:<link>` is a shortcut for the same setting, and `/welcome gif` alone shows the current one.
+
+To make room for it inside the five-input modal limit, the two field labels share one box: `Created | Joined`. One value names both fields.
+
+Use a **direct image URL** — a Tenor or Giphy *page* link passes validation but will not render.
 
 **Mentions only render in descriptions and field values.** Discord prints `<@id>` literally inside embed titles and footers, so the default text keeps `{user}` in the description; the editor warns you if you move it into a title or footer. When a card's text has no renderable mention, the bot puts the ping in the message content instead, so the new member is always notified.
 

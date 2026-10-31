@@ -40,9 +40,19 @@ export const STYLES = [
         max: 2000,
         paragraph: true,
       },
-      { key: 'createdLabel', label: 'Account field label', default: 'Created', max: 80 },
-      { key: 'joinedLabel', label: 'Join field label', default: 'Joined', max: 80 },
+      // Two labels in one input: the modal has room for five inputs and the GIF
+      // needs the fifth. Split on "|" — a single value is used for both fields.
+      { key: 'fieldLabels', label: 'Field labels (Account | Joined)', default: 'Created | Joined', max: 160 },
       { key: 'footer', label: 'Footer', default: '{server} · {count} members', max: 200 },
+    ],
+    settings: [
+      {
+        key: 'gifUrl',
+        label: 'GIF URL (optional)',
+        max: 1000,
+        placeholder: 'https://media.tenor.com/....gif',
+        empty: 'No GIF',
+      },
     ],
   },
   {
@@ -143,6 +153,32 @@ export function styleTexts(style, overrides = {}) {
   return texts;
 }
 
+/**
+ * "Created | Joined" -> ["Created", "Joined"]. A single value names both
+ * fields, so the input can never leave one of them blank.
+ */
+export function splitFieldLabels(value) {
+  const parts = String(value ?? '')
+    .split('|')
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  if (parts.length === 0) return ['Created', 'Joined'];
+  return [parts[0], parts[1] ?? parts[0]];
+}
+
+/**
+ * Every input the edit modal shows: the text pieces, then any settings backed
+ * by `welcome_settings` (currently the Classic GIF). Discord caps a modal at
+ * five inputs, which is why each style keeps its total at or under that.
+ */
+export function modalInputs(style) {
+  return [
+    ...style.pieces.map((piece) => ({ ...piece, target: 'text' })),
+    ...(style.settings ?? []).map((setting) => ({ ...setting, target: 'setting' })),
+  ];
+}
+
 export function enabledStyles(settings) {
   const enabled = Array.isArray(settings?.enabled)
     ? settings.enabled.filter((key) => STYLE_BY_KEY.has(key))
@@ -240,6 +276,7 @@ export function buildWelcomePayload({
     const joinedUnix = Math.floor(
       (member.joinedAt instanceof Date ? member.joinedAt : now).getTime() / 1000,
     );
+    const [createdLabel, joinedLabel] = splitFieldLabels(text.fieldLabels);
 
     embeds.push(
       embed({
@@ -248,8 +285,8 @@ export function buildWelcomePayload({
         thumbnail: member.user?.displayAvatarURL?.({ size: 256 }),
         image: settings.gifUrl ?? undefined,
         fields: [
-          { name: text.createdLabel, value: values.account_age, inline: true },
-          { name: text.joinedLabel, value: `<t:${joinedUnix}:R>`, inline: true },
+          { name: createdLabel, value: values.account_age, inline: true },
+          { name: joinedLabel, value: `<t:${joinedUnix}:R>`, inline: true },
         ],
         footer: text.footer,
         color: style.color,
