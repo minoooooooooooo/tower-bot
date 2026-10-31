@@ -6,9 +6,11 @@ panel pulls the new code itself.
 The Node "egg" on Wispbyte already supports this — it is what **Git Repo
 Address** and **Auto Update** are for.
 
-> **Read the warnings first.** Switching the panel into git mode makes it
-> rebuild the server directory. `.env` and `data/bot.db` are deliberately not in
-> the repo, so they are destroyed unless you save them first.
+> **Read the warnings first.** Changing the egg fields does nothing on its own —
+> they are values the **install script** reads, and it only runs on create or
+> reinstall. Pressing **Reinstall** is what rebuilds the server directory.
+> `.env` and `data/bot.db` are not in the repo, so they do not come back from the
+> clone: save them before you reinstall, upload them after.
 
 ## This repo — already live
 
@@ -31,7 +33,7 @@ panel**, which is why they are waiting.
 |---|---|---|
 | `Git Repo Address` | `https://github.com/<you>/<repo>.git` | where the code comes from |
 | `Install Branch` | `main` | branch to clone |
-| `User Uploaded Files` | `0` | **must be 0** — this is what enables the clone step. `1` tells the installer to skip it |
+| `User Uploaded Files` | `0` | read by the install script: `0` = "this directory is the project, clone the repo into it"; `1` = "the user brings their own files, skip the clone". Setting it changes nothing until an install or reinstall actually runs |
 | `Auto Update` | `1` | `git pull` on every start |
 | `Git Username` | your GitHub username | needed for private repos |
 | `Git Access Token` | fine-grained PAT, *Contents: read* | needed for private repos; leave empty for a public repo |
@@ -84,28 +86,41 @@ from the commit, and absent from the remote tree afterwards.
 
 **Step 3 — Flip the panel to git mode.**
 
-Edit the egg fields from the table above. `User Uploaded Files` **must** become
-`0`, otherwise the installer keeps skipping the clone.
+Edit the egg fields from the table above. `User Uploaded Files` must be `0`,
+otherwise the install script keeps skipping the clone. Nothing happens at this
+point — your existing files stay exactly where they are.
 
-**Step 4 — Rebuild the server directory.**
+**Step 4 — Reinstall, which rebuilds the directory and clones the repo.**
 
-Choose one:
+Press **Reinstall** once and watch the install log for the clone. The installer
+needs the directory to itself, so the old upload is replaced — that is expected,
+it is what the repo is for.
 
-- Panel **Reinstall** (if available) — cleanest: it wipes the directory and runs
-  the install script, which clones the repo; or
-- Files → delete everything in the server root, then **Restart**.
+If the reinstall finishes but the log shows `destination path already exists` or
+`fatal: not a git repository`, the installer did not empty the directory. Delete
+everything in the server root (including the leftover `.env`) and press
+**Reinstall** again. Deleting files and pressing *Restart* is **not** a
+substitute: install scripts run on install, not on start.
 
-Either way the old upload is gone. That is expected — the repo replaces it.
+Verify before moving on: `src/`, `package.json`, `docs/` present; **no** `.env`
+and **no** `data/`.
 
 **Step 5 — Recreate `.env`.**
 
-After the clone, the server has code but no secrets. Files → New File → `.env` →
-paste what you saved in step 1. The bot cannot start before this exists.
+After the clone the server has code but no secrets. Panel → Files → root →
+**New File** → name it `.env` → paste what you saved in step 1 → Save.
+The bot cannot start before this exists. (Uploading a file named `.env` may
+trigger the panel's secret scanner — create it with the built-in editor instead.)
 
-**Step 6 — Restore the database (optional, only if it held real data).**
+**Step 6 — Restore the database.**
 
-Files → upload your `bot-YYYY-MM-DD.db` into `data/`, renamed to `bot.db`. If
-you had no real birthdays yet, skip this — the bot creates a fresh database.
+`data/` does not exist in a fresh clone — it is gitignored, and git does not
+create empty directories. Panel → Files → **New Folder** → `data` → open it →
+upload your `bot-YYYY-MM-DD.db` → rename to `bot.db`.
+
+Do this **before** the first start. If the bot starts first it creates `data/`
+and an empty `bot.db` of its own, and you would have to delete that file before
+uploading yours.
 
 **Step 7 — Start and verify.**
 
