@@ -674,6 +674,19 @@ export default {
           .join(', ')}. They will be printed literally.`,
       );
     }
+
+    // Discord parses mentions only in the description and field values.
+    const unrendered = style.pieces
+      .filter((piece) => piece.key === 'title' || piece.key === 'footer')
+      .filter((piece) => /\{(user|rules|general)\}/.test(values[piece.key] ?? ''))
+      .map((piece) => `**${piece.label}**`);
+
+    if (unrendered.length > 0) {
+      notes.push(
+        `⚠️ Discord does not render mentions in ${unrendered.join(' or ')}. \`{user}\`, \`{rules}\` and \`{general}\` will appear as raw text there — use \`{name}\` instead, or move the mention into the description.`,
+      );
+    }
+
     notes.push(`Preview it with \`/welcome test style:${style.name}\`.`);
 
     await interaction.reply(

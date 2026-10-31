@@ -91,11 +91,11 @@ export const STYLES = [
     summary: 'Onboarding card with link buttons to rules and chat',
     color: 0x1abc9c,
     pieces: [
-      { key: 'title', label: 'Title', default: '👋 Welcome to {server}, {user}', max: 256 },
+      { key: 'title', label: 'Title', default: '👋 Welcome to {server}', max: 256 },
       {
         key: 'description',
         label: 'Description',
-        default: '{count} of us now. A few things before you post:',
+        default: '{user}, {count} of us now. A few things before you post:',
         max: 2000,
         paragraph: true,
       },
@@ -323,7 +323,16 @@ export function buildWelcomePayload({
     );
   }
 
-  const hasMention = embeds.some((builder) => JSON.stringify(builder.data).includes(values.user));
+  // Discord parses mentions in descriptions and field values, but prints them
+  // literally in titles, footers and author lines. Only the parsed spots count,
+  // so a mention stuck in a title still lands in `content` and really pings.
+  const parsedText = embeds
+    .flatMap((builder) => [
+      builder.data.description ?? '',
+      ...(builder.data.fields ?? []).map((field) => field.value ?? ''),
+    ])
+    .join('\n');
+  const hasMention = parsedText.includes(values.user);
 
   const payload = {
     content: hasMention ? undefined : values.user,

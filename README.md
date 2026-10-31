@@ -227,6 +227,8 @@ New members get one of **six card styles**, chosen automatically. All six are en
 
 Link the two channels the cards point at with `/welcome links rules:#rules general:#general`. A card pings **only the new member** — never `@everyone` or a role.
 
+**Mentions only render in descriptions and field values.** Discord prints `<@id>` literally inside embed titles and footers, so the default text keeps `{user}` in the description; the editor warns you if you move it into a title or footer. When a card's text has no renderable mention, the bot puts the ping in the message content instead, so the new member is always notified.
+
 **Requires the Server Members privileged intent** (Developer Portal → Bot → Privileged Gateway Intents → Server Members). Without it `guildMemberAdd` never fires, so no card is posted.
 
 ## Project layout

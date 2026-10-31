@@ -94,6 +94,7 @@ Behavior that must be preserved:
 - `/welcome edit` is slash-only (Discord modals cannot open from a plain message). The modal id is `welcome:edit:<style>`; `interactionCreate` routes modal submits to `command.modal`.
 - Editing is admin-only (**Manage Server**). `list` and `test` are open to everyone; `test` is ephemeral so previews never spam the channel.
 - A card pings **only the new member**: `allowedMentions = { users: [id], parse: [] }`. The mention goes in `content` when no style text uses `{user}`.
+- **Discord does not render mentions in embed titles, footers, or author lines** — only in descriptions and field values. The mention that decides `content` is therefore scanned from descriptions and field values only; a `{user}` left in a title would otherwise suppress the ping and print raw. The Concierge default keeps `{user}` in the description for exactly this reason, and the edit modal warns when `{user}`, `{rules}`, or `{general}` is typed into a title or footer.
 - `poster` uses the guild banner, then splash, then icon as its image. `concierge` links `rules` and falls back to the welcome channel for "Say hi", so it always has at least one button.
 - Bots are never greeted, and a failed send does not record `last_style`.
 - **Requires the Server Members privileged intent** (`GatewayIntentBits.GuildMembers`, enabled in the Developer Portal). `guildMemberAdd` does not fire without it. `members.fetch` (used by birthdays) works without the intent, which is why it was never needed before.
