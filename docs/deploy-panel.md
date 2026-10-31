@@ -234,16 +234,32 @@ before inviting the bot to a real server.
 
 `data/bot.db` is the whole state of the bot. Download it every few weeks:
 
-1. Stop the server (so the file is not mid-write).
+1. **Stop the server first.** This is not optional — see the warning below.
 2. Files → `data/bot.db` → **Download**.
 3. Keep it somewhere outside the host, named like `bot-2026-10-30.db`.
 4. Start the server again.
 
 To restore: upload the file back to `data/bot.db` and start.
 
+> **A copy taken while the bot is running can silently be stale.**
+> The database runs in WAL mode, so a commit lands in `bot.db-wal` and is only
+> merged into `bot.db` at a checkpoint — which happens when the last connection
+> closes. Downloading `bot.db` from a running server can therefore hand you a
+> file that is hours behind, and nothing about it looks wrong.
+>
+> It happened on 2026-10-31: a backup taken at 12:07 held 2 birthdays while the
+> server held 25. The clean shutdown at 12:54 checkpointed the rest.
+>
+> So: **stop, then download**, and afterwards `data/` should contain only
+> `bot.db` (a leftover `bot.db-wal` means the checkpoint did not run). Then
+> verify the row count rather than assuming:
+>
+> ```
+> node -e "const{DatabaseSync}=require('node:sqlite');const d=new DatabaseSync('bot.db',{readOnly:true});console.log(d.prepare('select count(*) c from birthdays').get())"
+> ```
+
 Losing the database means losing every birthday, greeting message, channel and
-time zone setting — not the bot itself, which redeploys from `dist/bot.zip` in
-a minute.
+time zone setting — not the bot itself, which redeploys from GitHub in a minute.
 
 ---
 

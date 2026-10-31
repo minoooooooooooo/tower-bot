@@ -14,8 +14,21 @@ Two files must be in your hands, not just on the server:
 
 | File | Where | Verified |
 |---|---|---|
-| `bot.db` | desktop copy, e.g. `bot-2026-10-31.db` | 2 birthdays + guild settings, 2026-10-31 |
-| `.env` | desktop copy (`env`) or the panel's copy/paste | 6 keys, token validated with `GET /users/@me` → 200 |
+| `bot.db` | desktop copy, e.g. `bot-final.db` | **25 birthdays** + guild settings + 2 greeting records, 2026-10-31 |
+| `.env` | desktop copy (`.env`) | 6 keys, token validated with `GET /users/@me` → 200 |
+
+> **Stop the server before downloading `bot.db`.** In WAL mode the newest commits
+> live in `bot.db-wal` until a clean shutdown checkpoints them into `bot.db`. A
+> download taken while the bot is running can be hours stale and looks perfectly
+> valid — this cost half an hour on 2026-10-31, when a 12:07 copy held 2 of 25
+> birthdays. After stopping, `data/` should hold only `bot.db`: a remaining
+> `bot.db-wal` means the checkpoint did not run.
+>
+> Count the rows, don't assume:
+>
+> ```
+> node -e "const{DatabaseSync}=require('node:sqlite');const d=new DatabaseSync('bot.db',{readOnly:true});console.log(d.prepare('select count(*) c from birthdays').get())"
+> ```
 
 The code is **not** a backup concern — it is in
 <https://github.com/minoooooooooooo/tower-bot>.
