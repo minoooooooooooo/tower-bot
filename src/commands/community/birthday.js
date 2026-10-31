@@ -1,5 +1,9 @@
 import {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
   ChannelType,
+  ComponentType,
   InteractionContextType,
   MessageFlags,
   PermissionFlagsBits,
@@ -10,6 +14,7 @@ import {
   daysInMonth,
   daysUntil,
   describeNow,
+  formatListDate,
   formatMonthDay,
   isBirthdayToday,
   isValidTimeZone,
@@ -315,12 +320,143 @@ async function handleRemove(ctx) {
   );
 }
 
+const LIST_ORDERS = {
+  nearest: { label: 'Nearest first', button: 'Calendar order', next: 'calendar' },
+  calendar: { label: 'Calendar order (Jan → Dec)', button: 'Nearest first', next: 'nearest' },
+};
+
+const LIST_TIMEOUT_MS = 5 * 60 * 1000;
+const LIST_DESCRIPTION_LIMIT = 3900;
+
+function listEntries(guildId, defaultZone) {
+  return store.listBirthdays(guildId).map((row) => {
+    const zone = row.timezone ?? defaultZone;
+    return { ...row, zone, next: nextOccurrence(row.month, row.day, zone) };
+  });
+}
+
+function sortList(entries, order) {
+  if (order === 'calendar') {
+    return entries.sort(
+      (a, b) => a.month - b.month || a.day - b.day || a.userId.localeCompare(b.userId),
+    );
+  }
+
+  return entries.sort(
+    (a, b) =>
+      a.next.days - b.next.days ||
+      a.month - b.month ||
+      a.day - b.day ||
+      a.userId.localeCompare(b.userId),
+  );
+}
+
+function missingZoneNotice(missingZone, defaultZone) {
+  if (missingZone === 0) return null;
+
+  const fix = `Fix with \`/birthday timezone user:@member zone:<IANA>\`.`;
+
+  return missingZone === 1
+    ? `⚠️ 1 member has no time zone and follows **${defaultZone}**. ${fix}`
+    : `⚠️ ${missingZone} members have no time zone and follow **${defaultZone}**. ${fix}`;
+}
+
+function listButtonRow(order) {
+  const info = LIST_ORDERS[order];
+
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`birthday-list:${info.next}`)
+      .setLabel(info.button)
+      .setStyle(ButtonStyle.Secondary),
+  );
+}
+
+/**
+ * The list as Discord shows it: one aligned line per member, date first, no
+ * per-row time zone noise. `order` decides whether it is a countdown or a
+ * calendar, and both render from the same rows.
+ */
+async function buildListPayload(ctx, api, order) {
+  const defaultZone = timezoneForGuild(ctx.guildId);
+  const entries = sortList(listEntries(ctx.guildId, defaultZone), order);
+  const names = await Promise.all(
+    entries.map((entry) => displayName(api, ctx.guild, entry.userId)),
+  );
+
+  const lines = entries.map((entry, index) => {
+    // The calendar view spans years anyway, so the year would only be noise.
+    const date =
+      order === 'calendar'
+        ? formatListDate(null, entry.month, entry.day)
+        : formatListDate(entry.next.year, entry.month, entry.day);
+    const cake = entry.next.days === 0 ? ' 🎂' : '';
+    const flag = entry.timezone ? '' : ' ⚠️';
+
+    return `\`${date}\` · ${names[index]}${cake}${flag}`;
+  });
+
+  const missingZone = entries.filter((entry) => !entry.timezone).length;
+  const notice = missingZoneNotice(missingZone, defaultZone);
+  const chunks = chunkLines(lines, LIST_DESCRIPTION_LIMIT);
+
+  const embeds = chunks.map((chunk, index) => {
+    const isLast = index === chunks.length - 1;
+
+    return embed({
+      title: index === 0 ? '🎂 Birthday List' : undefined,
+      description: isLast && notice ? `${chunk}\n\n${notice}` : chunk,
+      footer:
+        index === 0
+          ? `${entries.length} member${entries.length === 1 ? '' : 's'} · ${LIST_ORDERS[order].label} · server default ${defaultZone}`
+          : undefined,
+      timestamp: index === 0,
+    });
+  });
+
+  return { embeds, components: [listButtonRow(order)] };
+}
+
+function attachListCollector({ ctx, message, api, state }) {
+  if (!message?.createMessageComponentCollector) return;
+
+  const collector = message.createMessageComponentCollector({
+    componentType: ComponentType.Button,
+    time: LIST_TIMEOUT_MS,
+  });
+
+  collector.on('collect', async (interaction) => {
+    if (interaction.user.id !== ctx.user.id) {
+      await interaction
+        .reply(
+          ephemeral({
+            embeds: [
+              errorEmbed(
+                'That list is not yours',
+                'Run `/birthday list` yourself to switch the order.',
+              ),
+            ],
+          }),
+        )
+        .catch(() => {});
+      return;
+    }
+
+    state.order = interaction.customId.endsWith(':calendar') ? 'calendar' : 'nearest';
+
+    const payload = await buildListPayload(ctx, api, state.order);
+    await interaction.update({ ...payload, allowedMentions: { parse: [] } }).catch(() => {});
+  });
+
+  collector.on('end', () => {
+    message.edit({ components: [] }).catch(() => {});
+  });
+}
+
 async function handleList(ctx, client) {
   const api = ctx.client ?? client;
-  const defaultZone = timezoneForGuild(ctx.guildId);
-  const rows = store.listBirthdays(ctx.guildId);
 
-  if (rows.length === 0) {
+  if (store.listBirthdays(ctx.guildId).length === 0) {
     await ctx.reply({
       embeds: [
         embed({
@@ -333,76 +469,16 @@ async function handleList(ctx, client) {
     return;
   }
 
-  const entries = rows
-    .map((row) => {
-      const zone = row.timezone ?? defaultZone;
-      return { ...row, zone, days: daysUntil(row.month, row.day, zone) };
-    })
-    .sort(
-      (a, b) =>
-        a.days - b.days ||
-        a.month - b.month ||
-        a.day - b.day ||
-        a.userId.localeCompare(b.userId),
-    );
+  const state = { order: 'nearest' };
+  const payload = await buildListPayload(ctx, api, state.order);
+  const sent = await ctx.reply({ ...payload, allowedMentions: { parse: [] } });
 
-  // Members without their own zone silently follow the server default, which is
-  // wrong for anyone living elsewhere. Flag them so admins can work through the
-  // list instead of guessing who is still missing one.
-  const missingZone = entries.filter((entry) => !entry.timezone).length;
-  const names = await Promise.all(
-    entries.map((entry) => displayName(api, ctx.guild, entry.userId)),
-  );
-
-  const lines = entries.map((entry, index) => {
-    const name = names[index];
-    const when =
-      entry.days === 0 ? '**today**' : `in ${entry.days} day${entry.days === 1 ? '' : 's'}`;
-    const zoneNote = entry.timezone
-      ? entry.timezone !== defaultZone
-        ? `, ${entry.timezone}`
-        : ''
-      : ', ⚠️ no zone';
-
-    return `• ${name} — ${formatMonthDay(entry.month, entry.day)} (${when}${zoneNote})`;
-  });
-
-  const chunks = chunkLines(lines);
-  const visible = chunks.slice(0, 25);
-
-  const summary = [
-    "Sorted by the next occurrence in each member's time zone.",
-    `Server default: **${defaultZone}**.`,
-  ];
-
-  if (missingZone > 0) {
-    const subject =
-      missingZone === 1
-        ? '**1** member has no time zone of their own and follows the default'
-        : `**${missingZone}** members have no time zone of their own and follow the default`;
-
-    summary.push(
-      `⚠️ ${subject}. Fix with \`/birthday timezone user:@member zone:<IANA>\` or \`${config.prefix}birthday timezone @member <IANA>\`.`,
-    );
+  let message = ctx.isSlash ? null : sent;
+  if (ctx.isSlash && ctx.interaction?.fetchReply) {
+    message = await ctx.interaction.fetchReply().catch(() => null);
   }
 
-  await ctx.reply({
-    allowedMentions: { parse: [] },
-    embeds: [
-      embed({
-        title: 'Birthdays',
-        description: summary.join('\n'),
-        fields: visible.map((value, index) => ({
-          name: index === 0 ? `Registered: ${entries.length}` : 'continued',
-          value,
-        })),
-        footer:
-          chunks.length > visible.length
-            ? 'List truncated to fit Discord limits.'
-            : undefined,
-      }),
-    ],
-  });
+  attachListCollector({ ctx, message, api, state });
 }
 
 async function handleToday(ctx, client) {
@@ -1190,7 +1266,7 @@ function overviewEmbed(ctx) {
     description: [
       '`/birthday set <month> <day> [year] [user]` — save a birthday (admins: others)',
       '`/birthday remove [user]` - delete a birthday (admins: others)',
-      '`/birthday list` — everyone, sorted by next occurrence',
+      '`/birthday list` - everyone, nearest first or January to December',
       '`/birthday today` — who is celebrating today',
       '`/birthday next [user]` — countdown for you or someone else',
       '`/birthday role [role]` — admin: choose the birthday role',
@@ -1270,7 +1346,9 @@ export default {
         ),
     )
     .addSubcommand((sub) =>
-      sub.setName('list').setDescription('List every birthday, sorted by next occurrence'),
+      sub
+        .setName('list')
+        .setDescription('List every birthday (nearest first, or calendar order)'),
     )
     .addSubcommand((sub) => sub.setName('today').setDescription("Show whose birthday is today"))
     .addSubcommand((sub) =>

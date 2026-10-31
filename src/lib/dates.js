@@ -159,6 +159,20 @@ export function nextOccurrence(month, day, timeZone, now = new Date()) {
 }
 
 /**
+ * "08 Nov 2026" / "08 Nov" for the birthday list. Fixed en-GB ordering keeps
+ * the column aligned no matter what locale the reader uses.
+ */
+export function formatListDate(year, month, day) {
+  // Composed by hand because Intl's "short" month is "Sept" in en-GB and the
+  // column stops lining up. en-US gives the three-letter form everywhere.
+  const name = new Intl.DateTimeFormat('en-US', { month: 'short', timeZone: 'UTC' }).format(
+    new Date(Date.UTC(year ?? 2000, month - 1, day)),
+  );
+
+  return `${pad(day)} ${name}${year ? ` ${year}` : ''}`;
+}
+
+/**
  * "May 14" style label. Uses a leap reference year so Feb 29 is formattable.
  */
 export function formatMonthDay(month, day) {
