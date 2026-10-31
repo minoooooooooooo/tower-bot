@@ -10,6 +10,19 @@ Address** and **Auto Update** are for.
 > rebuild the server directory. `.env` and `data/bot.db` are deliberately not in
 > the repo, so they are destroyed unless you save them first.
 
+## This repo — already live
+
+| | |
+|---|---|
+| Repository | <https://github.com/minoooooooooooo/tower-bot> |
+| Visibility | public — so **no** username or token goes in the egg |
+| Branch | `main` |
+| Files tracked | 45 (code + docs; `.env`, `data/`, `dist/`, `node_modules/`, `.tools/` all ignored) |
+| Pushed | 2026-10-31 |
+
+Steps 1–2 of the migration below are done; **step 3 onwards still needs the
+panel**, which is why they are waiting.
+
 ---
 
 ## How it works
@@ -40,14 +53,11 @@ That is why the migration below is staged the way it is.
 
 ## Prerequisites
 
-- A GitHub account.
-- A way to push. `git` is **not installed** on the dev PC yet. Either:
-  - install it (no admin needed): `winget install --id Git.Git -e --source winget`, or
-  - create the repo on github.com and use **Add file → Upload files**, dragging
-    the project folder in. The web uploader respects nothing, so deselect
-    `node_modules`, `data`, `dist`, `.tools` and `.env` manually.
+- A GitHub account. **Done** — `minoooooooooooo`.
+- Git and the GitHub CLI, installed on the dev PC. **Done** — `Git 2.56.0`,
+  `gh 2.103.3`, authenticated through the browser (no token in any file).
 - Backup of the current server state: the `.env` contents (copy/paste) and
-  `data/bot.db` (Files → Download).
+  `data/bot.db` (Files → Download). **Still outstanding** — needs the panel.
 
 ---
 
@@ -59,20 +69,18 @@ That is why the migration below is staged the way it is.
 - Stop the server → Files → `data/bot.db` → Download → keep it safe.
 - Start the server again if you want it live while you prepare the repo.
 
-**Step 2 — Create the repo and push.**
+**Step 2 — Create the repo and push. ✅ Done 2026-10-31.**
 
 ```powershell
-# from C:\Users\mino\Documents\Default Project
-git init
-git add .
-git commit -m "Initial bot"
-git branch -M main
-git remote add origin https://github.com/<you>/<repo>.git
-git push -u origin main
+git init -b main
+git add -A
+git commit -m "Initial commit"
+gh repo create tower-bot --public --source . --remote origin --push
 ```
 
-Check what got committed before pushing — `git status` must **not** list
-`.env`, `data/`, `node_modules/` or `dist/`.
+The result is <https://github.com/minoooooooooooo/tower-bot>. Verified before
+pushing: 45 files staged, `.env` / `data/` / `dist/` / `node_modules/` absent
+from the commit, and absent from the remote tree afterwards.
 
 **Step 3 — Flip the panel to git mode.**
 

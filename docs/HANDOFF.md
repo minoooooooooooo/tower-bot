@@ -8,6 +8,12 @@ OpenCode session can resume without the original conversation.
 The bot is **built and running locally** from `start.bat`. Five commands are
 implemented: `/ping`, `/help`, `/botinfo`, `/birthday`, `/clear`.
 
+**Source is now on GitHub:** <https://github.com/minoooooooooooo/tower-bot>
+(public, branch `main`, 45 files). Pushed 2026-10-31 with Git 2.56.0 + `gh`
+browser auth; no token lives in the repo or in any local config. Auto-deploy is
+**prepared but not active** — the panel still uploads files, because switching it
+over wipes `.env` and `data/bot.db` and the panel has been unreachable.
+
 The birthday package now includes automatic greeting messages with a
 configurable channel, template placeholders (`{user}`, `{age}`, …) and an
 optional GIF, plus per-member time zones and a manual `send` for testing the
@@ -118,7 +124,7 @@ Behavior that must be preserved:
 - [ ] **Check `TIMEZONE`.** The operator's clock is UTC+3 (console shows 15:48 local / 12:48 UTC). If `.env` still says `Asia/Manila` from the template, greetings fire 5 hours early. Fix with `/birthday timezone default:true zone:<IANA>` or by editing `.env`.
 - [ ] Download `data/bot.db` once the first birthdays are saved, and keep it outside the host.
 - [ ] Finish the deploy checks before changing anything else: restart test (`data/bot.db` survives), default time zone, birthday role + channel.
-- [ ] **Then** migrate to GitHub auto-deploy per `docs/deploy-github.md`. Deliberately deferred: the switch wipes the server directory, so `.env` and `bot.db` must be saved first. Do not flip `User Uploaded Files` to `0` while the checks are still outstanding.
+- [ ] **Then** migrate to GitHub auto-deploy per `docs/deploy-github.md`. Repo is live and pushed; what remains is the panel half, which needs the panel back: save `.env` text → download `data/bot.db` → set `Git Repo Address`, `Install Branch=main`, `User Uploaded Files=0`, `Auto Update=1` → reinstall → recreate `.env` → restore DB → start. Do not touch `User Uploaded Files` before `.env` and `bot.db` are saved.
 - [ ] Ask the user for the next batch of commands (games were mentioned).
 
 ## Verification used so far
