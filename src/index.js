@@ -11,6 +11,7 @@ const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.GuildMembers,
     GatewayIntentBits.MessageContent,
   ],
   partials: [Partials.Channel],
@@ -134,7 +135,7 @@ async function connect() {
 
       if (message.includes('disallowed intents')) {
         logger.error(
-          'Enable the "Message Content" intent in the Discord Developer Portal -> Bot -> Privileged Gateway Intents.',
+          'Enable "Message Content" AND "Server Members" in the Discord Developer Portal -> Bot -> Privileged Gateway Intents, then restart.',
         );
         process.exit(1);
       }

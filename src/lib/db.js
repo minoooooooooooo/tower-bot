@@ -51,6 +51,28 @@ const SCHEMA = `
     sent_at    INTEGER NOT NULL,
     PRIMARY KEY (guild_id, user_id, date_key)
   );
+
+  CREATE TABLE IF NOT EXISTS welcome_settings (
+    guild_id           TEXT PRIMARY KEY,
+    channel_id         TEXT,
+    rules_channel_id   TEXT,
+    general_channel_id TEXT,
+    mode               TEXT,
+    forced_style       TEXT,
+    enabled            TEXT,
+    last_style         TEXT,
+    updated_at         INTEGER NOT NULL
+  );
+
+  -- Only edited pieces are stored; anything missing falls back to the style's
+  -- default text in welcome-styles.js.
+  CREATE TABLE IF NOT EXISTS welcome_texts (
+    guild_id TEXT NOT NULL,
+    style    TEXT NOT NULL,
+    piece    TEXT NOT NULL,
+    value    TEXT NOT NULL,
+    PRIMARY KEY (guild_id, style, piece)
+  );
 `;
 
 // Columns added after the first release. `CREATE TABLE IF NOT EXISTS` does not

@@ -18,8 +18,7 @@ A Discord bot with **both slash (`/ping`) and prefix (`:-ping`) commands**, buil
 
 1. Open <https://discord.com/developers/applications> and click **New Application**.
 2. Go to **Bot** and click **Reset Token** → **Copy**. This is your `DISCORD_TOKEN`.
-3. On the same **Bot** page, scroll to **Privileged Gateway Intents** and enable **Message Content Intent**.
-   Prefix commands will not work without it.
+3. On the same **Bot** page, scroll to **Privileged Gateway Intents** and enable **Message Content Intent** (prefix commands) **and Server Members Intent** (welcome cards — without it the bot refuses to log in after the next update).
 4. Go to **General Information** and copy the **Application ID**. This is your `CLIENT_ID`.
 
 ### 2. Invite the bot
@@ -67,6 +66,7 @@ Both run `src/boot.js`, which checks the Node version before loading the bot and
 | `/help [command]` | `:-commands`, `:-h` | Command list or details for one command |
 | `/botinfo` | `:-info`, `:-stats` | Uptime, servers, memory, versions |
 | `/birthday <subcommand>` | `:-bd`, `:-bday` | Birthday registry, countdowns, automatic birthday role and greetings |
+| `/welcome <subcommand>` | `:-greet` | Welcome cards for new members: six styles, random or rotating, editable text |
 | `/clear <amount> [user]` | `:-purge`, `:-prune` | Delete recent messages, optionally only from one member |
 
 ## Clearing messages
@@ -179,6 +179,55 @@ To test the current template without waiting for a birthday, an admin can run `/
 ### Data
 
 Birthdays and settings live in SQLite at `data/bot.db` (Node's built-in `node:sqlite`, no native dependencies). In Docker it is stored in the `bot-data` named volume. See [`docs/deploy-oracle.md`](docs/deploy-oracle.md) for backup steps.
+
+## Welcome cards
+
+New members get one of **six card styles**, chosen automatically. All six are enabled by default and the text of every style can be rewritten in Discord — no code changes.
+
+```
+:-welcome channel #welcome
+:-welcome test                  # preview the next style, only you see it
+:-welcome test Poster           # preview one specific style
+```
+
+| Style | Look |
+|---|---|
+| **Ledger** | Aligned date-first rows — the same grammar as `/birthday list` |
+| **Classic** | Avatar, mention, two inline fields, warm copy |
+| **Poster** | Full-width server banner with one headline |
+| **Story** | Narrative welcome, member count becomes "Floor 48" |
+| **Whisper** | Two quiet lines, no fields |
+| **Concierge** | Onboarding card with link buttons to rules and chat |
+
+### Choosing the style
+
+| Command | Effect |
+|---|---|
+| `/welcome mode random` | Random, never the same style twice in a row (default) |
+| `/welcome mode rotate` | Walk the enabled styles in order |
+| `/welcome mode single style:Story` | Always the same card |
+| `/welcome toggle style:Poster` | Turn one style off or on |
+| `/welcome list` | Channel, mode, links, and which styles are active |
+
+### Editing the text
+
+`/welcome edit style:Ledger` opens a form with one box per text slot for that style. Change a word, submit, and the card keeps its layout — only strings are stored, never structure. Emptying a box (or typing the default back) restores that piece. `/welcome reset style:Ledger` restores the whole style; `/welcome reset` restores all six.
+
+| Placeholder | Becomes |
+|---|---|
+| `{user}` | Mention of the new member (the only ping) |
+| `{name}` | Their display name |
+| `{count}` | Member count after they joined |
+| `{ordinal}` | The same number, e.g. `48th` |
+| `{server}` | Server name |
+| `{joined}` | Join date, e.g. `31 Oct 2026` |
+| `{account_age}` | Account age, e.g. `7 years ago` |
+| `{rules}` | Rules channel, or `#rules` when unset |
+| `{general}` | General channel, or `#general` when unset |
+
+Link the two channels the cards point at with `/welcome links rules:#rules general:#general`. A card pings **only the new member** — never `@everyone` or a role.
+
+**Requires the Server Members privileged intent** (Developer Portal → Bot → Privileged Gateway Intents → Server Members). Without it `guildMemberAdd` never fires, so no card is posted.
 
 ## Project layout
 

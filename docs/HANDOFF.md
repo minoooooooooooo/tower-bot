@@ -1,12 +1,12 @@
 # Handoff — Discord bot
 
-Last updated: 2026-10-30. Read this before continuing work. It exists so a fresh
+Last updated: 2026-10-31. Read this before continuing work. It exists so a fresh
 OpenCode session can resume without the original conversation.
 
 ## Status
 
-The bot is **built and running locally** from `start.bat`. Five commands are
-implemented: `/ping`, `/help`, `/botinfo`, `/birthday`, `/clear`.
+The bot is **built and running locally** from `start.bat`. Six commands are
+implemented: `/ping`, `/help`, `/botinfo`, `/birthday`, `/welcome`, `/clear`.
 
 **Source is on GitHub:** <https://github.com/minoooooooooooo/tower-bot>
 (public, branch `main`). Pushed 2026-10-31 with Git 2.56.0 + `gh` browser auth; no
@@ -46,6 +46,7 @@ Oracle Cloud is kept as the card-verification alternative in
 | `/help [command]` | `commands`, `h` | Autocomplete, grouped by category |
 | `/botinfo` | `info`, `stats` | Uptime, servers, memory, versions |
 | `/birthday <sub>` | `bd`, `bday`, `birthdays` | 10 subcommands, see below |
+| `/welcome <sub>` | `greet` | 8 subcommands, six card styles with editable text |
 | `/clear <amount> [user]` | `purge`, `prune` | Bulk-delete recent messages, optionally from one member |
 
 ### Birthday package
@@ -77,6 +78,25 @@ Behavior that must be preserved:
 - Time zone resolution: `birthdays.timezone` (member override) → `guild_settings.timezone` (server default) → `config.timezone` (`TIMEZONE` env). `/birthday timezone <zone>` sets your own; the `user` option lets an admin set another member's; `default:true` changes the server fallback (admins only).
 - A time zone can only be stored once the member has a birthday row; otherwise the command replies "No birthday saved". Clearing the zone sets it back to `NULL`.
 - Failed role additions are retried hourly, and repeated warnings (missing permissions, deleted channel) are throttled to once per hour to survive minute-level reconciliation.
+
+### Welcome package
+
+`/welcome` (prefix `:-greet`) posts a card when a member joins, chosen from six styles.
+
+Subcommands: `channel`, `mode`, `toggle`, `list`, `test [style]`, `edit`, `reset [style]`, `links [rules] [general]`.
+
+Behavior that must be preserved:
+
+- Six styles live in `src/services/welcome-styles.js`: `ledger`, `classic`, `poster`, `story`, `whisper`, `concierge`. A style owns its skeleton; only text *pieces* are stored, so editing can never break a layout. Every style exposes at most five pieces because Discord modals hold exactly five inputs.
+- All six are enabled by default (`welcome_settings.enabled = NULL` means "all"). `mode` is `random` (default), `rotate`, or `single`.
+- `random` excludes the previous style, so the same card never appears twice in a row; the choice is remembered in `last_style`.
+- Only *edited* pieces are stored in `welcome_texts`. Typing the default back, or emptying a box, deletes the override — the database never accumulates noise.
+- `/welcome edit` is slash-only (Discord modals cannot open from a plain message). The modal id is `welcome:edit:<style>`; `interactionCreate` routes modal submits to `command.modal`.
+- Editing is admin-only (**Manage Server**). `list` and `test` are open to everyone; `test` is ephemeral so previews never spam the channel.
+- A card pings **only the new member**: `allowedMentions = { users: [id], parse: [] }`. The mention goes in `content` when no style text uses `{user}`.
+- `poster` uses the guild banner, then splash, then icon as its image. `concierge` links `rules` and falls back to the welcome channel for "Say hi", so it always has at least one button.
+- Bots are never greeted, and a failed send does not record `last_style`.
+- **Requires the Server Members privileged intent** (`GatewayIntentBits.GuildMembers`, enabled in the Developer Portal). `guildMemberAdd` does not fire without it. `members.fetch` (used by birthdays) works without the intent, which is why it was never needed before.
 
 ### Clear command
 
@@ -144,6 +164,9 @@ Behavior that must be preserved:
 - [ ] **Give user `1271481754779389983` a time zone** (it is null, so it shows the ⚠️ marker) and re-set `758686823437697044`, whose zone is stored lowercase as `asia/amman`.
 - [ ] **Take a fresh `bot.db` backup** now that 25 birthdays exist — stop the server first, then download, then verify the count.
 - [ ] Ask the user for the next batch of commands (games were mentioned).
+- [ ] **Enable the Server Members intent in the Discord Developer Portal** before the next restart. The bot now requests `GatewayIntentBits.GuildMembers` for welcome cards; without the portal toggle Discord refuses the login (`Used disallowed intents`) and the bot stays offline until it is enabled.
+- [ ] After that restart: `/welcome channel #welcome`, then `/welcome test` to see each of the six styles, then join with an alt (or ask a member to rejoin) to confirm `guildMemberAdd` fires.
+- [ ] Decide whether `poster` should use a custom banner. It currently falls back banner → splash → icon, so it works with no setup.
 
 ## Verification used so far
 
@@ -156,7 +179,8 @@ Behavior that must be preserved:
 - Clear integration test on a mocked channel (39 checks): basic 100-message purge, author filter (mention, raw id, either argument order), partial matches, 100-message batching above 100, empty channel, invalid/missing amounts, bot permission failure, 14-day-old messages skipped, 2,000-message scan cap, slash defer/editReply path, and slash schema.
 - `package.bat` produces `dist/bot.zip` with no `node_modules`, `.tools`, `.env`, or `data`, and no entry containing a backslash (the script verifies this and fails loudly).
 - Runtime guard test (20 checks): `hasSqliteModule` across Node 18/20/22.4/22.5/24/26 and a malformed version, `needsSqliteFlag` across the 22.5–23.3 boundary, and the three message branches (unsupported version, flag required, unexpected failure).
-- `node src/boot.js` with a fake token logs the runtime version, loads 5 commands / 3 events, then fails login cleanly with `TokenInvalid`.
+- `node src/boot.js` with a fake token logs the runtime version, loads 6 commands / 4 events, then fails login cleanly with `TokenInvalid`.
+- Welcome integration test on a temp DB (154 checks): style metadata (six keys, ≤5 pieces, unique keys, label/default limits, known placeholders), settings and text store roundtrips (JSON `enabled`, last style, per-piece override, clear one/all), style selection (random never repeats, stays inside the enabled set, rotate cycles and wraps, single pins, disabled style falls back, empty list means all), all six payloads (ledger rows/date/count/timestamp, classic thumbnail/fields, poster banner→splash→icon fallback, story floor, whisper two lines without timestamp, concierge link buttons and the welcome-channel fallback), overrides and blank-override fallback, unknown style fallback, ping rules (`allowedMentions` = new member only), ordinal helper, `guildMemberAdd` (posts once, records the style, skips bots, skips without a channel, failed send keeps `last_style`), and the command surface (channel set/clear + admin guard, mode validation, toggle + last-style guard, list, ephemeral preview, modal open and prefill, prefix edit redirect, reset one/all, links, overview) including modal submit (save, default-detection, empty clears, unknown placeholder warning, admin guard) and the slash schema.
 
 ## Useful context
 

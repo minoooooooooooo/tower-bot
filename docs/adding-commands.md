@@ -73,6 +73,7 @@ Prefix arguments support quotes: `:-echo "hello world"` arrives as one argument.
 | `permissions` | string[] | Required member permissions, e.g. `['KickMembers']` |
 | `slashOnly` | boolean | Skip prefix handling |
 | `autocomplete` | function | `(interaction, client) => Promise` |
+| `modal` | function | `(interaction, client) => Promise`; handles modal submits whose custom id starts with `<command>:`. See `welcome.js`. |
 
 ## Context API
 

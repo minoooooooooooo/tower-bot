@@ -3,6 +3,10 @@ import { config } from '../config.js';
 import { ageTurning, dateKey, formatMonthDay, isBirthdayToday, zonedDate } from '../lib/dates.js';
 import { COLORS, embed } from '../lib/embeds.js';
 import { createLogger } from '../lib/logger.js';
+import {
+  renderMessage,
+  unknownPlaceholders as findUnknownPlaceholders,
+} from '../lib/template.js';
 import * as store from './birthday-store.js';
 
 const logger = createLogger('birthday-greeting');
@@ -39,24 +43,10 @@ export const PLACEHOLDERS = [
 
 const PLACEHOLDER_KEYS = new Set(PLACEHOLDERS.map((placeholder) => placeholder.key));
 
-/**
- * Replace placeholders and tidy the result, so a blank value (an empty custom
- * placeholder, say) does not leave a double space or "  today" behind.
- */
-export function renderMessage(template, values) {
-  return template
-    .replace(/\{(\w+)\}/g, (match, key) => (key in values ? String(values[key]) : match))
-    .replace(/[ \t]{2,}/g, ' ')
-    .replace(/[ \t]+([,.!?;:])/g, '$1')
-    .trim();
-}
+export { renderMessage };
 
 export function unknownPlaceholders(template) {
-  const found = new Set();
-  for (const match of template.matchAll(/\{(\w+)\}/g)) {
-    if (!PLACEHOLDER_KEYS.has(match[1])) found.add(match[1]);
-  }
-  return [...found];
+  return findUnknownPlaceholders(template, PLACEHOLDER_KEYS);
 }
 
 export function validateMessage(template) {
