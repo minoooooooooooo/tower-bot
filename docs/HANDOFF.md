@@ -8,23 +8,32 @@ OpenCode session can resume without the original conversation.
 The bot is **built and running locally** from `start.bat`. Five commands are
 implemented: `/ping`, `/help`, `/botinfo`, `/birthday`, `/clear`.
 
-**Source is now on GitHub:** <https://github.com/minoooooooooooo/tower-bot>
-(public, branch `main`, 45 files). Pushed 2026-10-31 with Git 2.56.0 + `gh`
-browser auth; no token lives in the repo or in any local config. Auto-deploy is
-**prepared but not active** — the panel still uploads files, because switching it
-over wipes `.env` and `data/bot.db` and the panel has been unreachable.
+**Source is on GitHub:** <https://github.com/minoooooooooooo/tower-bot>
+(public, branch `main`). Pushed 2026-10-31 with Git 2.56.0 + `gh` browser auth; no
+token lives in the repo or in any local config.
+
+**Deploying is `git push` + panel Restart.** The egg's startup command runs
+`git pull` when `.git` exists and `AUTO_UPDATE=1`; verified end to end on
+2026-10-31 (`a40e925..1d65c0d  main -> origin/main` printed in the console).
 
 The birthday package now includes automatic greeting messages with a
 configurable channel, template placeholders (`{user}`, `{age}`, …) and an
 optional GIF, plus per-member time zones and a manual `send` for testing the
 template.
 
-**Hosting: deployed and running on Wispbyte** (free panel), per
-[`deploy-panel.md`](deploy-panel.md). First successful boot 2026-10-30:
-Node **26.12.1**, 5 commands / 3 events loaded, logged in as `11/10#8627`,
-SQLite at `/home/container/data/bot.db`, scheduler running, 5 slash commands
-registered **instantly** (so `GUILD_ID` is set) in the guild
-"𝗧𝗵𝗲 𝗧𝗼𝘄𝗲𝗿 v2".
+**Hosting: Wispbyte free panel, rebuilt 2026-10-31.** The original server died
+twice: the node's shared IP was rate limited by Discord (`HTTP 429` on
+`discord.com/api/v10/gateway`, gateway closed instantly, `ws=CLOSED`) and its
+install script could never clone because stray files from a bad zip were
+undeletable. The server was deleted and recreated; the new node logged in on the
+first attempt. Current state (boot 10:29 UTC): Node **26.12.1**, 5 commands / 3
+events, `Logged in as 11/10#8627`, `SQLite ready at /home/container/data/bot.db`,
+scheduler running, 5 slash commands registered instantly in "𝗧𝗵𝗲 𝗧𝗼𝘄𝗲𝗿 v2".
+
+Two consequences worth remembering: the install/reinstall script on this panel
+does **not** run (two reinstalls produced an empty directory), so the code is
+placed with `dist/bot-git.zip` (code + `.git`) and kept current by the pull; and
+the new server's directory is clean, with none of the old junk files.
 
 Oracle Cloud is kept as the card-verification alternative in
 [`deploy-oracle.md`](deploy-oracle.md).
@@ -127,7 +136,10 @@ Behavior that must be preserved:
 - [ ] **Check `TIMEZONE`.** The operator's clock is UTC+3 (console shows 15:48 local / 12:48 UTC). If `.env` still says `Asia/Manila` from the template, greetings fire 5 hours early. Fix with `/birthday timezone default:true zone:<IANA>` or by editing `.env`.
 - [ ] Download `data/bot.db` once the first birthdays are saved, and keep it outside the host.
 - [ ] Finish the deploy checks before changing anything else: restart test (`data/bot.db` survives), default time zone, birthday role + channel.
-- [ ] **Then** migrate to GitHub auto-deploy per `docs/deploy-github.md`. Repo is live and pushed; what remains is the panel half, which needs the panel back: save `.env` text → download `data/bot.db` → set `Git Repo Address`, `Install Branch=main`, `User Uploaded Files=0`, `Auto Update=1` → reinstall → recreate `.env` → restore DB → start. Do not touch `User Uploaded Files` before `.env` and `bot.db` are saved.
+- [x] **GitHub auto-deploy is live** (2026-10-31). Code reaches the host by `git pull` on Restart; nothing is uploaded. See `deploy-github.md` for the fields and `recreate-server.md` for how the server was rebuilt.
+- [ ] **Fix the two rows dated 31 October 2026** left behind by testing: user `492043876538908692` should be `month:4 day:6 year:2003`, and user `758686823437697044` needs its real date. As stored, both look like birthdays on every 31 October with age 0.
+- [ ] **Give user `1271481754779389983` a time zone** (it is null, so it shows the ⚠️ marker) and re-set `758686823437697044`, whose zone is stored lowercase as `asia/amman`.
+- [ ] **Take a fresh `bot.db` backup** now that 25 birthdays exist — stop the server first, then download, then verify the count.
 - [ ] Ask the user for the next batch of commands (games were mentioned).
 
 ## Verification used so far
