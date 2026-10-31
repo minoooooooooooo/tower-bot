@@ -3,6 +3,7 @@ import { config } from '../config.js';
 import { ageTurning, dateKey, formatMonthDay, isBirthdayToday, zonedDate } from '../lib/dates.js';
 import { COLORS, embed } from '../lib/embeds.js';
 import { createLogger } from '../lib/logger.js';
+import { MAX_IMAGE_URL_LENGTH } from '../lib/media.js';
 import {
   renderMessage,
   unknownPlaceholders as findUnknownPlaceholders,
@@ -27,7 +28,9 @@ function warnThrottled(key, message) {
 
 export const DEFAULT_MESSAGE = '🎉 Happy birthday, {user}! Wishing you a fantastic day.';
 export const MAX_MESSAGE_LENGTH = 2000;
-export const MAX_GIF_URL_LENGTH = 1000;
+export const MAX_GIF_URL_LENGTH = MAX_IMAGE_URL_LENGTH;
+
+export { isClearValue, validateImageUrl as validateGifUrl } from '../lib/media.js';
 
 /**
  * Placeholders understood by the greeting template. `{age}` renders as 0 when
@@ -58,32 +61,6 @@ export function validateMessage(template) {
   }
 
   return null;
-}
-
-export function validateGifUrl(raw) {
-  const value = raw.trim();
-
-  if (!value) return 'Paste a direct image/GIF URL, or use `none` to remove it.';
-  if (value.length > MAX_GIF_URL_LENGTH) {
-    return `The GIF link must be ${MAX_GIF_URL_LENGTH} characters or fewer.`;
-  }
-
-  let parsed;
-  try {
-    parsed = new URL(value);
-  } catch {
-    return 'That is not a valid URL.';
-  }
-
-  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    return 'The GIF link must start with http:// or https://.';
-  }
-
-  return null;
-}
-
-export function isClearValue(value) {
-  return ['none', 'off', 'clear', 'remove', '-'].includes(value.trim().toLowerCase());
 }
 
 /**

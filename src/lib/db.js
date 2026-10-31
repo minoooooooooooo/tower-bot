@@ -61,6 +61,7 @@ const SCHEMA = `
     forced_style       TEXT,
     enabled            TEXT,
     last_style         TEXT,
+    gif_url            TEXT,
     updated_at         INTEGER NOT NULL
   );
 
@@ -82,6 +83,7 @@ const COLUMN_MIGRATIONS = [
   ['guild_settings', 'birthday_message', 'TEXT'],
   ['guild_settings', 'birthday_gif_url', 'TEXT'],
   ['birthdays', 'timezone', 'TEXT'],
+  ['welcome_settings', 'gif_url', 'TEXT'],
 ];
 
 function applyMigrations(db) {

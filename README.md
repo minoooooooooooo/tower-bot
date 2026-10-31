@@ -193,7 +193,7 @@ New members get one of **six card styles**, chosen automatically. All six are en
 | Style | Look |
 |---|---|
 | **Ledger** | Aligned date-first rows — the same grammar as `/birthday list` |
-| **Classic** | Avatar, mention, two inline fields, warm copy |
+| **Classic** | Avatar, mention, two inline fields, optional GIF |
 | **Poster** | Full-width server banner with one headline |
 | **Story** | Narrative welcome, member count becomes "Floor 48" |
 | **Whisper** | Two quiet lines, no fields |
@@ -226,6 +226,10 @@ New members get one of **six card styles**, chosen automatically. All six are en
 | `{general}` | General channel, or `#general` when unset |
 
 Link the two channels the cards point at with `/welcome links rules:#rules general:#general`. A card pings **only the new member** — never `@everyone` or a role.
+
+### Classic GIF
+
+`/welcome gif url:https://media.example.com/wave.gif` adds a full-width GIF to the **Classic** card (prefix: `:-welcome gif <url>`). `/welcome gif` with no URL shows the current one, and `/welcome gif url:none` removes it. Use a **direct image URL** — a Tenor or Giphy *page* link passes validation but will not render.
 
 **Mentions only render in descriptions and field values.** Discord prints `<@id>` literally inside embed titles and footers, so the default text keeps `{user}` in the description; the editor warns you if you move it into a title or footer. When a card's text has no renderable mention, the bot puts the ping in the message content instead, so the new member is always notified.
 

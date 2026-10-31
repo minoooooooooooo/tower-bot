@@ -24,6 +24,7 @@ function mapSettings(guildId, row) {
     forcedStyle: row?.forced_style ?? null,
     enabled: parseEnabled(row?.enabled),
     lastStyle: row?.last_style ?? null,
+    gifUrl: row?.gif_url ?? null,
   };
 }
 
@@ -45,8 +46,8 @@ export function updateWelcomeSettings(guildId, patch = {}) {
     .prepare(
       `INSERT INTO welcome_settings
          (guild_id, channel_id, rules_channel_id, general_channel_id,
-          mode, forced_style, enabled, last_style, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          mode, forced_style, enabled, last_style, gif_url, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (guild_id) DO UPDATE SET
          channel_id = excluded.channel_id,
          rules_channel_id = excluded.rules_channel_id,
@@ -55,6 +56,7 @@ export function updateWelcomeSettings(guildId, patch = {}) {
          forced_style = excluded.forced_style,
          enabled = excluded.enabled,
          last_style = excluded.last_style,
+         gif_url = excluded.gif_url,
          updated_at = excluded.updated_at`,
     )
     .run(
@@ -66,6 +68,7 @@ export function updateWelcomeSettings(guildId, patch = {}) {
       next.forcedStyle,
       next.enabled ? JSON.stringify(next.enabled) : null,
       next.lastStyle,
+      next.gifUrl,
       Date.now(),
     );
 

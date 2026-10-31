@@ -28,7 +28,7 @@ export const STYLES = [
   {
     key: 'classic',
     name: 'Classic',
-    summary: 'Avatar, mention, two inline fields and a warm welcome',
+    summary: 'Avatar, mention, two inline fields and an optional GIF',
     color: 0x57f287,
     pieces: [
       { key: 'title', label: 'Title', default: 'Welcome to {server}', max: 256 },
@@ -246,6 +246,7 @@ export function buildWelcomePayload({
         title: text.title,
         description: text.description,
         thumbnail: member.user?.displayAvatarURL?.({ size: 256 }),
+        image: settings.gifUrl ?? undefined,
         fields: [
           { name: text.createdLabel, value: values.account_age, inline: true },
           { name: text.joinedLabel, value: `<t:${joinedUnix}:R>`, inline: true },

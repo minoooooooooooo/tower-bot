@@ -10,7 +10,8 @@ import {
   TextInputStyle,
 } from 'discord.js';
 import { config } from '../../config.js';
-import { embed, errorEmbed, successEmbed } from '../../lib/embeds.js';
+import { COLORS, embed, errorEmbed, successEmbed } from '../../lib/embeds.js';
+import { isClearValue, validateImageUrl } from '../../lib/media.js';
 import { getGuildSettings } from '../../services/birthday-store.js';
 import {
   STYLES,
@@ -113,6 +114,7 @@ function overviewEmbed(ctx) {
       '`/welcome toggle <style>` — turn one style on or off',
       '`/welcome list` — current setup and which styles are on',
       '`/welcome test [style]` — preview one card, only you see it',
+      '`/welcome gif [url]` — GIF for the Classic card (`none` removes it)',
       '`/welcome edit <style>` — rewrite that style\'s text (admin)',
       '`/welcome reset [style]` — restore the default text (admin)',
       '`/welcome links [rules] [general]` — channels used by the cards (admin)',
@@ -312,6 +314,7 @@ async function handleList(ctx) {
     `Channel: ${channelLabel(ctx.guild, settings.channelId)}`,
     `Mode: ${MODE_LABELS[settings.mode] ?? settings.mode}${settings.forcedStyle ? ` (${getStyle(settings.forcedStyle)?.name ?? settings.forcedStyle})` : ''}`,
     `Links: rules ${channelLabel(ctx.guild, settings.rulesChannelId)} · general ${channelLabel(ctx.guild, settings.generalChannelId)}`,
+    `Classic GIF: ${settings.gifUrl ? 'set' : 'not set'}`,
     '',
     `**Styles (${enabled.length} of ${STYLES.length} active)**`,
     ...lines,
@@ -352,6 +355,67 @@ async function handleTest(ctx) {
       content: payload.content
         ? `${payload.content} — preview of the **${getStyle(styleKey).name}** card (nobody was pinged)`
         : `Preview of the **${getStyle(styleKey).name}** card.`,
+    }),
+  );
+}
+
+async function handleGif(ctx) {
+  if (!(await requireAdmin(ctx))) return;
+
+  const raw = (ctx.isSlash ? ctx.getString('url') : ctx.args[1]) ?? '';
+
+  if (!raw.trim()) {
+    const settings = getWelcomeSettings(ctx.guildId);
+
+    await ctx.reply(
+      ephemeral({
+        embeds: [
+          embed({
+            title: 'Classic GIF',
+            description: settings.gifUrl
+              ? `${settings.gifUrl}\n\nRemove it with \`/welcome gif url:none\`.`
+              : 'No GIF is set. Add one with `/welcome gif url:https://media.example.com/wave.gif`.',
+            image: settings.gifUrl ?? undefined,
+            color: settings.gifUrl ? COLORS.primary : COLORS.muted,
+          }),
+        ],
+      }),
+    );
+    return;
+  }
+
+  if (isClearValue(raw)) {
+    updateWelcomeSettings(ctx.guildId, { gifUrl: null });
+
+    await ctx.reply(
+      ephemeral({
+        embeds: [successEmbed('Classic GIF removed', 'The Classic card no longer has an image.')],
+      }),
+    );
+    return;
+  }
+
+  const problem = validateImageUrl(raw, 'GIF');
+
+  if (problem) {
+    await ctx.reply(ephemeral({ embeds: [errorEmbed('Invalid GIF', problem)] }));
+    return;
+  }
+
+  const gifUrl = raw.trim();
+  updateWelcomeSettings(ctx.guildId, { gifUrl });
+
+  await ctx.reply(
+    ephemeral({
+      embeds: [
+        embed({
+          title: 'Classic GIF set',
+          description:
+            'It now appears on the Classic card. Preview with `/welcome test style:Classic`.',
+          image: gifUrl,
+          color: COLORS.success,
+        }),
+      ],
     }),
   );
 }
@@ -541,6 +605,17 @@ export default {
     )
     .addSubcommand((sub) =>
       sub
+        .setName('gif')
+        .setDescription('Admin: GIF for the Classic card (empty shows the current one)')
+        .addStringOption((option) =>
+          option
+            .setName('url')
+            .setDescription('Direct image/GIF URL, or "none" to remove it')
+            .setRequired(false),
+        ),
+    )
+    .addSubcommand((sub) =>
+      sub
         .setName('edit')
         .setDescription('Admin: rewrite the text of one style')
         .addStringOption((option) =>
@@ -587,7 +662,7 @@ export default {
   aliases: ['greet'],
   description: 'Welcome cards for new members: six styles, editable text',
   category: 'Community',
-  usage: 'welcome <channel|mode|toggle|list|test|edit|reset|links>',
+  usage: 'welcome <channel|mode|toggle|list|test|gif|edit|reset|links>',
   cooldown: 3,
   guildOnly: true,
 
@@ -607,6 +682,8 @@ export default {
         return handleList(ctx);
       case 'test':
         return handleTest(ctx);
+      case 'gif':
+        return handleGif(ctx);
       case 'edit':
         return handleEdit(ctx);
       case 'reset':
