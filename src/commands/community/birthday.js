@@ -376,15 +376,16 @@ function listButtonRow(order) {
  * The list as Discord shows it: one aligned line per member, date first, no
  * per-row time zone noise. `order` decides whether it is a countdown or a
  * calendar, and both render from the same rows.
+ *
+ * Rows use mentions rather than resolved names: Discord draws the current
+ * display name and role colour itself, it survives renames without a re-render,
+ * and it costs no REST calls. `parse: []` on the payload means nobody is pinged.
  */
-async function buildListPayload(ctx, api, order) {
+function buildListPayload(ctx, order) {
   const defaultZone = timezoneForGuild(ctx.guildId);
   const entries = sortList(listEntries(ctx.guildId, defaultZone), order);
-  const names = await Promise.all(
-    entries.map((entry) => displayName(api, ctx.guild, entry.userId)),
-  );
 
-  const lines = entries.map((entry, index) => {
+  const lines = entries.map((entry) => {
     // The calendar view spans years anyway, so the year would only be noise.
     const date =
       order === 'calendar'
@@ -393,7 +394,7 @@ async function buildListPayload(ctx, api, order) {
     const cake = entry.next.days === 0 ? ' 🎂' : '';
     const flag = entry.timezone ? '' : ' ⚠️';
 
-    return `\`${date}\` · ${names[index]}${cake}${flag}`;
+    return `\`${date}\` · <@${entry.userId}>${cake}${flag}`;
   });
 
   const missingZone = entries.filter((entry) => !entry.timezone).length;
@@ -417,7 +418,7 @@ async function buildListPayload(ctx, api, order) {
   return { embeds, components: [listButtonRow(order)] };
 }
 
-function attachListCollector({ ctx, message, api, state }) {
+function attachListCollector({ ctx, message, state }) {
   if (!message?.createMessageComponentCollector) return;
 
   const collector = message.createMessageComponentCollector({
@@ -444,7 +445,7 @@ function attachListCollector({ ctx, message, api, state }) {
 
     state.order = interaction.customId.endsWith(':calendar') ? 'calendar' : 'nearest';
 
-    const payload = await buildListPayload(ctx, api, state.order);
+    const payload = buildListPayload(ctx, state.order);
     await interaction.update({ ...payload, allowedMentions: { parse: [] } }).catch(() => {});
   });
 
@@ -453,9 +454,7 @@ function attachListCollector({ ctx, message, api, state }) {
   });
 }
 
-async function handleList(ctx, client) {
-  const api = ctx.client ?? client;
-
+async function handleList(ctx) {
   if (store.listBirthdays(ctx.guildId).length === 0) {
     await ctx.reply({
       embeds: [
@@ -470,7 +469,7 @@ async function handleList(ctx, client) {
   }
 
   const state = { order: 'nearest' };
-  const payload = await buildListPayload(ctx, api, state.order);
+  const payload = buildListPayload(ctx, state.order);
   const sent = await ctx.reply({ ...payload, allowedMentions: { parse: [] } });
 
   let message = ctx.isSlash ? null : sent;
@@ -478,11 +477,10 @@ async function handleList(ctx, client) {
     message = await ctx.interaction.fetchReply().catch(() => null);
   }
 
-  attachListCollector({ ctx, message, api, state });
+  attachListCollector({ ctx, message, state });
 }
 
-async function handleToday(ctx, client) {
-  const api = ctx.client ?? client;
+async function handleToday(ctx) {
   const defaultZone = timezoneForGuild(ctx.guildId);
   const rows = store
     .listBirthdays(ctx.guildId)
@@ -502,15 +500,11 @@ async function handleToday(ctx, client) {
   }
 
   const settings = store.getGuildSettings(ctx.guildId);
-  const names = await Promise.all(
-    rows.map((row) => displayName(api, ctx.guild, row.userId)),
-  );
-  const lines = rows.map((row, index) => {
-    const name = names[index];
+  const lines = rows.map((row) => {
     const zoneNote =
       row.timezone && row.timezone !== defaultZone ? ` (${row.timezone})` : '';
 
-    return `• ${name}${zoneNote}`;
+    return `• <@${row.userId}>${zoneNote}`;
   });
   const fields = [];
 
