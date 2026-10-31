@@ -50,13 +50,14 @@ Oracle Cloud is kept as the card-verification alternative in
 
 ### Birthday package
 
-Subcommands: `set`, `remove`, `list`, `today`, `next [user]`, `role [role]`,
+Subcommands: `set`, `remove [user]`, `list`, `today`, `next [user]`, `role [role]`,
 `channel [#channel]`, `message [text] [gif]`, `send [user]`, `timezone [zone] [user]`.
 
 Behavior that must be preserved:
 
 - `set` validates real dates (Apr 31 rejected; Feb 29 accepted, celebrated Feb 28 in non-leap years).
 - `set` accepts a `user` option/target so members with **Manage Server** can register someone else's birthday. Without that permission, targeting anyone but yourself is refused.
+- `remove` accepts the same target: yourself by default, someone else with **Manage Server** (added 2026-10-31). It syncs the member afterwards, so a birthday role granted today is revoked immediately.
 - `list` is generated live from SQLite, sorted by next occurrence, so it updates immediately. Members with no time zone of their own are marked `⚠️ no zone` and counted in the header, because they silently follow the server default — that is the admin's checklist for setting 60 members' zones.
 - `role`, `channel`, `message`, and `send` require **Manage Server** at runtime (slash has no per-subcommand default permissions).
 - The role is granted on the member's birthday and removed the next day, driven by a scheduler that checks every minute **per member, using that member's own time zone**.

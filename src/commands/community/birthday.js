@@ -143,6 +143,18 @@ function userIdArg(ctx) {
   return ctx.client?.users?.cache?.get(raw) ?? { id: raw, username: raw, bot: false };
 }
 
+/**
+ * Resolves who a subcommand is about: `user` on slash, a mention or a raw id on
+ * prefix, and yourself when nothing is given.
+ */
+function readTargetInput(ctx) {
+  if (ctx.isSlash) return ctx.getUser('user') ?? ctx.user;
+
+  const mention = mentionedUser(ctx);
+  const byId = mention ? null : userIdArg(ctx);
+  return mention ?? byId ?? ctx.user;
+}
+
 function readSetInput(ctx) {
   if (ctx.isSlash) {
     return {
@@ -252,7 +264,25 @@ async function handleSet(ctx) {
 }
 
 async function handleRemove(ctx) {
-  const removed = store.removeBirthday(ctx.guildId, ctx.user.id);
+  const target = readTargetInput(ctx);
+  const isSelf = target.id === ctx.user.id;
+
+  if (!isSelf && !isAdmin(ctx)) {
+    await ctx.reply(
+      ephemeral({
+        embeds: [
+          errorEmbed(
+            'Missing permissions',
+            "Only members with **Manage Server** can remove someone else's birthday.",
+          ),
+        ],
+      }),
+    );
+    return;
+  }
+
+  const who = isSelf ? null : await displayName(ctx.client, ctx.guild, target.id);
+  const removed = store.removeBirthday(ctx.guildId, target.id);
 
   if (!removed) {
     await ctx.reply(
@@ -260,7 +290,9 @@ async function handleRemove(ctx) {
         embeds: [
           embed({
             title: 'Nothing to remove',
-            description: 'You have not registered a birthday yet.',
+            description: isSelf
+              ? 'You have not registered a birthday yet.'
+              : `${who} has no birthday saved.`,
             color: COLORS.muted,
           }),
         ],
@@ -269,10 +301,17 @@ async function handleRemove(ctx) {
     return;
   }
 
-  await syncUserBirthday(ctx.guild, ctx.user.id);
+  await syncUserBirthday(ctx.guild, target.id);
 
   await ctx.reply(
-    ephemeral({ embeds: [successEmbed('Birthday removed', 'Your birthday was deleted.')] }),
+    ephemeral({
+      embeds: [
+        successEmbed(
+          isSelf ? 'Birthday removed' : `Birthday removed for ${who}`,
+          isSelf ? 'Your birthday was deleted.' : 'Their saved birthday was deleted.',
+        ),
+      ],
+    }),
   );
 }
 
@@ -1147,7 +1186,7 @@ function overviewEmbed(ctx) {
     title: 'Birthday commands',
     description: [
       '`/birthday set <month> <day> [year] [user]` — save a birthday (admins: others)',
-      '`/birthday remove` — delete your birthday',
+      '`/birthday remove [user]` - delete a birthday (admins: others)',
       '`/birthday list` — everyone, sorted by next occurrence',
       '`/birthday today` — who is celebrating today',
       '`/birthday next [user]` — countdown for you or someone else',
@@ -1216,7 +1255,17 @@ export default {
             .setRequired(false),
         ),
     )
-    .addSubcommand((sub) => sub.setName('remove').setDescription('Delete your saved birthday'))
+    .addSubcommand((sub) =>
+      sub
+        .setName('remove')
+        .setDescription('Delete a saved birthday (admins can target someone else)')
+        .addUserOption((option) =>
+          option
+            .setName('user')
+            .setDescription("Admin: remove someone else's birthday (Manage Server)")
+            .setRequired(false),
+        ),
+    )
     .addSubcommand((sub) =>
       sub.setName('list').setDescription('List every birthday, sorted by next occurrence'),
     )
