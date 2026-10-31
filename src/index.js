@@ -3,6 +3,7 @@ import { config } from './config.js';
 import { closeDb } from './lib/db.js';
 import { loadCommands, loadEvents } from './lib/loaders.js';
 import { createLogger } from './lib/logger.js';
+import { reportDiscordReachability } from './lib/net-check.js';
 
 const logger = createLogger('bot');
 
@@ -81,7 +82,7 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
  */
 const WS_STATE = { 0: 'CONNECTING', 1: 'OPEN', 2: 'CLOSING', 3: 'CLOSED' };
 const CONNECT_TIMEOUT_MS = 60_000;
-const MAX_ATTEMPTS = 5;
+const RETRY_CAP_MS = 60_000;
 
 function wsState(client) {
   return WS_STATE[client?.ws?.status] ?? `unknown(${client?.ws?.status})`;
@@ -110,12 +111,18 @@ async function connectOnce() {
   }
 }
 
+/**
+ * Retries forever, capped at one attempt a minute. Giving up and exiting would
+ * leave the bot dead until someone noticed and pressed Start — on a 24/7 host
+ * a network blip should heal on its own. Credential problems are the exception:
+ * those exit immediately, because no amount of retrying fixes a bad token.
+ */
 async function connect() {
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+  for (let attempt = 1; ; attempt += 1) {
     logger.info(
       attempt === 1
         ? 'Connecting to the Discord gateway...'
-        : `Connecting to the Discord gateway (attempt ${attempt}/${MAX_ATTEMPTS})...`,
+        : `Connecting to the Discord gateway (attempt ${attempt})...`,
     );
 
     try {
@@ -123,7 +130,7 @@ async function connect() {
       return;
     } catch (error) {
       const message = String(error?.message ?? '');
-      logger.error(`Login attempt ${attempt}/${MAX_ATTEMPTS} failed`, error);
+      logger.error(`Login attempt ${attempt} failed`, error);
 
       if (message.includes('disallowed intents')) {
         logger.error(
@@ -141,9 +148,9 @@ async function connect() {
         process.exit(1);
       }
 
-      if (attempt === MAX_ATTEMPTS) {
-        logger.error('Giving up after repeated connection failures.');
-        process.exit(1);
+      // One report is enough: repeating it every retry only floods the console.
+      if (attempt === 1) {
+        await reportDiscordReachability((line) => logger.warn(`[net] ${line}`));
       }
 
       try {
@@ -152,8 +159,8 @@ async function connect() {
         // Nothing to tear down.
       }
 
-      const waitMs = Math.min(60_000, 5_000 * 2 ** (attempt - 1));
-      logger.warn(`Retrying in ${Math.round(waitMs / 1000)}s...`);
+      const waitMs = Math.min(RETRY_CAP_MS, 5_000 * 2 ** (attempt - 1));
+      logger.warn(`Retrying in ${Math.round(waitMs / 1000)}s (will keep trying)`);
       await new Promise((resolve) => setTimeout(resolve, waitMs));
     }
   }
