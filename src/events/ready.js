@@ -3,6 +3,7 @@ import { config } from '../config.js';
 import { registerCommands } from '../handlers/command-registry.js';
 import { createLogger } from '../lib/logger.js';
 import { startBirthdayScheduler } from '../services/birthday-scheduler.js';
+import { startSummaryScheduler } from '../services/summary-scheduler.js';
 
 const logger = createLogger('ready');
 
@@ -19,6 +20,7 @@ export default {
     });
 
     startBirthdayScheduler(client);
+    startSummaryScheduler(client);
 
     if (!config.clientId) {
       logger.warn('CLIENT_ID is not set - skipping slash command registration');

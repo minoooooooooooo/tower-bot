@@ -5,9 +5,9 @@ OpenCode session can resume without the original conversation.
 
 ## Status
 
-The bot is **built and running locally** from `start.bat`. Nine commands are
+The bot is **built and running locally** from `start.bat`. Ten commands are
 implemented: `/ping`, `/help`, `/botinfo`, `/birthday`, `/welcome`, `/clear`,
-`/summary`, `/watch`, `/glossary`.
+`/summary`, `/watch`, `/glossary`, `/autoreport`.
 
 **Source is on GitHub:** <https://github.com/minoooooooooooo/tower-bot>
 (public, branch `main`). Pushed 2026-10-31 with Git 2.56.0 + `gh` browser auth; no
@@ -30,7 +30,8 @@ undeletable. The server was deleted and recreated; the new node logged in on the
 first attempt. Current state (boot 10:29 UTC): Node **26.12.1**, `Logged in as
 11/10#8627`, `SQLite ready at /home/container/data/bot.db`, scheduler running,
 slash commands registered instantly in "𝗧𝗵𝗲 𝗧𝗼𝘄𝗲𝗿 v2". The process now loads
-**9 commands / 4 events** (birthday, welcome, clear, summary, watch, glossary).
+**10 commands / 4 events** (birthday, welcome, clear, summary, watch, glossary,
+autoreport).
 
 Two consequences worth remembering: the install/reinstall script on this panel
 does **not** run (two reinstalls produced an empty directory), so the code is
@@ -53,6 +54,7 @@ Oracle Cloud is kept as the card-verification alternative in
 | `/summary <sub>` | `summarize`, `report` | AI summary of any channel into the management channel + HTML export |
 | `/watch <sub>` | `alert`, `keywords` | DM on a keyword mentioned anywhere in the server |
 | `/glossary <sub>` | `jargon` | Server terms sent to the summarizer as context |
+| `/autoreport <sub>` | `schedule`, `digest` | Scheduled summaries: interval (`6h`) or daily (`09:00`) |
 
 ### Birthday package
 
@@ -158,6 +160,21 @@ Behavior that must be preserved:
 - Terms are stored in `glossary` (max 200, term ≤60, meaning ≤200) and rendered into every summary prompt by `glossaryPrompt`, capped at ~1,800 characters so a runaway glossary cannot crowd out the transcript.
 - Prefix syntax is `:-glossary add term | meaning` (split on the first `|`).
 
+`/autoreport` (prefix `:-autoreport`, aliases `schedule`, `digest`) subcommands: `set`, `remove`, `pause`, `resume`, `list`.
+
+- **One schedule per channel**, enforced by `UNIQUE (guild_id, channel_id)`. Saving again updates in place and restarts the countdown (`last_run_at = now`), so "every 6h" begins now instead of inheriting the old clock.
+- Cadence is `mode = 'interval'` (`interval_ms`) **or** `mode = 'daily'` (`minute_of_day`), never both. Slash takes `every:` or `time:`; the prefix form decides by shape — a colon means a clock, otherwise a duration; a bare number means hours.
+- Intervals are clamped to `MIN_INTERVAL_MS`/`MAX_INTERVAL_MS` (15 minutes – 7 days) in `parseInterval`, so a nonsense value is rejected at the command, not inside the tick.
+- **A schedule requires the management channel to exist.** Without one the report would land in the very channel it read, which is the bug `/summary` was built to avoid; `set` refuses and says so.
+- The window is `max(last_run_at, now - 7 days) … now`, i.e. time since the last run, capped. An empty window is skipped (no model call, no empty embed).
+- `runScheduledReport` marks `last_run_at` **before** posting, so a failed `send` cannot make the next tick re-read the same window and double-charge the model.
+- Never throws: a deleted channel, missing guild, rate limit or provider outage is logged and skipped, because the tick loop must survive. A `Set` of running schedule ids prevents the boot tick and the interval tick overlapping.
+- `startSummaryScheduler` is called from `ready.js` next to the birthday scheduler. It ticks every 60s and runs one **immediately** via `setImmediate`, so a report that came due while the bot was offline still fires (bounded by the 7-day cap).
+- `daily` fires once per local day: due when `now >= today's minute_of_day` and `last_run_at <` that instant, which makes the tick idempotent even if it runs several times inside the same minute.
+- The manual `/summary run` and the scheduled path share `produceSummary`/`reportPayload`/`exportPayload`/`attachExportButton` in `services/report-runner.js`, so the two can never drift into different embed shapes.
+- Max 10 schedules per server; mutations need **Manage Server**, `list` is open to everyone.
+- `zonedClock` in `lib/dates.js` supplies the wall clock; `dailyInstant` converts a local midnight via `zonedMidnightUnix` so the report fires at the right minute in `Asia/Riyadh`, DST zones included.
+
 ## Key decisions
 
 - **Node 26.13 LTS portable** in `.tools/node` (no admin install, no system changes).
@@ -180,6 +197,11 @@ Behavior that must be preserved:
 - **Saved reports keep the structured JSON body.** Exporting must not depend on the model still being reachable, and must not produce a *different* report than the one the team approved.
 - **Keyword alerts skip the user's own messages and rate-limit per user.** Without both, a moderator watching a common word DMs themselves on every sentence they type and hits Discord's DM limits within minutes.
 - **Tasks/to-do management was deliberately left out.** The user marked it optional; automatic action-item extraction (`kind:tasks`) already produces the useful part of a to-do list without a second, half-used scheduling feature. Revisit only if asked.
+- **Automatic reports are one schedule per channel with two cadences, not two commands.** The user asked for both an interval and a fixed daily time; `mode` in the row carries which one, so `/autoreport set` is the only entry point and there is no ambiguity about which schedule wins. A channel either has a schedule or does not.
+- **Scheduled reports reuse the manual pipeline instead of a second implementation.** `produceSummary`/`reportPayload`/`exportPayload`/`attachExportButton` live in `services/report-runner.js`; the command and the scheduler are thin callers. A scheduled report and a manual one are therefore byte-identical in shape, and a fix to one is a fix to both.
+- **A schedule needs a management channel before it can be created.** The alternative — delivering into the channel being summarized — is exactly the behavior `/summary` exists to prevent, so the command refuses rather than quietly doing the wrong thing.
+- **The scheduler marks the run before posting.** If Discord rejects the message, the window is still consumed; otherwise the next tick would re-read the same messages and bill the model twice for a failure the user may never see.
+- **Interval schedules survive downtime; the window is capped at 7 days.** A boot tick runs immediately, so a report that came due while the process was stopped is delivered with a bounded window instead of being silently lost or summarizing a month of history in one call.
 
 ## Known issues / caveats
 
@@ -224,6 +246,7 @@ Behavior that must be preserved:
 - [ ] Test the export: press **Export as HTML** under a report (or `/summary export`), open the file, check Arabic direction if the channel is Arabic, and print it to PDF once.
 - [ ] Test alerts end to end: `/watch add keyword:<a word you can post>`, post it from an alt or ask a member, confirm the DM and that the jump link opens the message. Also run `/watch test` with DMs closed (should explain the privacy setting).
 - [ ] Add a few real terms with `/glossary add` so summaries stop guessing at server vocabulary.
+- [ ] Test automatic reports: `/autoreport set channel:#general every:6h`, then `list` to confirm the next run, then force one by waiting or by lowering the interval to `15m` temporarily. Also confirm `/autoreport set channel:#general time:09:00` fires once per day at 09:00 in the server time zone, that a silent channel produces no empty report, and that `pause`/`resume`/`remove` behave.
 - [ ] Ask the user for the next batch of commands (games were mentioned).
 - [ ] **Enable the Server Members intent in the Discord Developer Portal** before the next restart. The bot now requests `GatewayIntentBits.GuildMembers` for welcome cards; without the portal toggle Discord refuses the login (`Used disallowed intents`) and the bot stays offline until it is enabled.
 - [ ] After that restart: `/welcome channel #welcome`, then `/welcome test` to see each of the six styles, then join with an alt (or ask a member to rejoin) to confirm `guildMemberAdd` fires.
@@ -232,7 +255,7 @@ Behavior that must be preserved:
 ## Verification used so far
 
 - `node --check` across all `src/**/*.js`.
-- Load test with a fake token: 9 commands, 4 events, clean login failure.
+- Load test with a fake token: 10 commands, 4 events, clean login failure.
 - Date math: Feb 29 in leap/non-leap years, timezone date shift (`America/New_York`), year rollover.
 - Scheduler: role added on birthday, removed the next day, removed immediately when the birthday is deleted.
 - Command paths: set (valid/invalid), list, next, today, remove, admin guards, role set/clear, timezone invalid/valid.
@@ -240,9 +263,10 @@ Behavior that must be preserved:
 - Clear integration test on a mocked channel (49 checks): basic 100-message purge, author filter (mention, raw id, either argument order, authorship actually respected), amount-before-mention regression (`:-clear 1 @member` keeps the filter and deletes nothing else), role mention refused without deleting, the command message excluded (alone and inside a filtered scan), partial matches, 100-message batching above 100, empty channel, invalid/missing amounts, bot permission failure, 14-day-old messages skipped, 2,000-message scan cap, slash defer/editReply path, and slash schema. The mock feeds args **without** the command name, matching `messageCreate`.
 - `package.bat` produces `dist/bot.zip` with no `node_modules`, `.tools`, `.env`, or `data`, and no entry containing a backslash (the script verifies this and fails loudly).
 - Runtime guard test (20 checks): `hasSqliteModule` across Node 18/20/22.4/22.5/24/26 and a malformed version, `needsSqliteFlag` across the 22.5–23.3 boundary, and the three message branches (unsupported version, flag required, unexpected failure).
-- `node src/boot.js` with a fake token logs the runtime version, loads 9 commands / 4 events, then fails login cleanly with `TokenInvalid`.
+- `node src/boot.js` with a fake token logs the runtime version, loads 10 commands / 4 events, then fails login cleanly with `TokenInvalid`.
 - Welcome integration test on a temp DB (207 checks): style metadata (six keys, modal inputs ≤5, unique keys, label/default limits, known placeholders), settings/text/gif store roundtrips (JSON `enabled`, last style, per-style GIF, per-piece override, clear one/all), style selection (random never repeats, stays inside the enabled set, rotate cycles and wraps, single pins, disabled style falls back, empty list means all), all six payloads (ledger rows/date/count/timestamp, classic thumbnail/fields/shared labels/GIF, poster banner→splash→icon fallback and GIF precedence, story floor, whisper two lines without timestamp, concierge link buttons and the welcome-channel fallback), a GIF on every style, overrides and blank-override fallback, unknown style fallback, ping rules (`allowedMentions` = new member only, title mentions still ping from content), ordinal helper, `guildMemberAdd` (posts once, records the style, skips bots, skips without a channel, failed send keeps `last_style`), and the command surface (channel set/clear + admin guard, mode validation, toggle + last-style guard, list with GIF markers, ephemeral preview, per-style gif set/show/invalid/clear, modal open and prefill, prefix edit redirect, reset one/all, links, overview) including modal submit (save, default-detection, empty clears, unknown placeholder warning, title/footer mention warning, GIF saved per style from any card's modal, invalid GIF rejecting the whole submit, admin guard) and the slash schema. A separate migration script moves a legacy `welcome_settings.gif_url` into `welcome_gifs` on boot.
-- Report integration test on a temp DB with a stubbed `fetch` (105 checks): windowed history reads (only the requested range, oldest-first, cap + truncation flag), transcript format and chunking, `normalizeSummary` against drifted model output (strings for objects, unknown keys, overlong text, item caps), single-call vs map-reduce paths (progress callback, merge call content, glossary and focus reaching the prompt), provider failures (retry on 5xx, non-JSON reply, `aiProblemHint` wording, fenced/prose JSON extraction), summary-channel store roundtrip and clear, saved-report roundtrip and guild scoping, glossary upsert/remove/clear and prompt formatting, keyword normalization (diacritics, alef variants, case), whole-word matching for Latin and Arabic, term CRUD and duplicates, DM payload (jump link, keyword, no pings, quote), skips for own messages/bots/unrelated text, closed-DM marking via `50007`, HTML export (RTL detection, action items, print stylesheet, safe filename, HTML escaping), and the command surfaces (missing key hint, targeted-without-focus, hours bounds, prefix run posting + storage + export button, management-channel routing, private run, slash run, channel config + Manage Server guard, export file, history list, watch add/list/remove/validation, glossary add/list/guard) plus the four new tables.
+- Report integration test on a temp DB with a stubbed `fetch` (158 checks): windowed history reads (only the requested range, oldest-first, cap + truncation flag), transcript format and chunking, `normalizeSummary` against drifted model output (strings for objects, unknown keys, overlong text, item caps), single-call vs map-reduce paths (progress callback, merge call content, glossary and focus reaching the prompt), provider failures (retry on 5xx, non-JSON reply, `aiProblemHint` wording, fenced/prose JSON extraction), summary-channel store roundtrip and clear, saved-report roundtrip and guild scoping, glossary upsert/remove/clear and prompt formatting, keyword normalization (diacritics, alef variants, case), whole-word matching for Latin and Arabic, term CRUD and duplicates, DM payload (jump link, keyword, no pings, quote), skips for own messages/bots/unrelated text, closed-DM marking via `50007`, HTML export (RTL detection, action items, print stylesheet, safe filename, HTML escaping), and the command surfaces (missing key hint, targeted-without-focus, hours bounds, prefix run posting + storage + export button, management-channel routing, private run, slash run, channel config + Manage Server guard, export file, history list, watch add/list/remove/validation, glossary add/list/guard) plus the five new tables.
+- Schedule integration test in the same suite (53 of those 158): `parseInterval` for `6h`/`90m`/`2d`/bare hours and rejection of 5m, 10d and nonsense, `parseClock` for `09:00`/`9:05` and rejection of `24:00`/`09:60`, `formatClock`/`formatInterval` round trips, schedule upsert (cadence stored, countdown starts at creation, one row per channel, second save updates in place and restarts the clock), `isScheduleDue` for interval/paused/daily including "not early" and "not twice in a day" across `Asia/Riyadh`, `nextRunAt` for intervals and daily rollover, a full `runScheduledReport` (delivered to the management channel, export button present, no pings, stored with the scheduler as author, whole window summarized), empty window skipped without sending, missing management channel skipped, and the `/autoreport` surface (prefix interval + daily, in-place switch to daily, missing cadence, targeted without focus, list shows the cadence, pause/resume/remove, Manage Server guard, refusal without a summary channel) plus the slash schema.
 
 ## Useful context
 

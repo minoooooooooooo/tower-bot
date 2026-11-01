@@ -29,6 +29,20 @@ export const SUMMARY_KINDS = {
 
 export const KIND_KEYS = Object.keys(SUMMARY_KINDS);
 
+/** Typed aliases, shared by `/summary run` and `/autoreport set`. */
+export const KIND_ALIASES = {
+  general: 'general',
+  g: 'general',
+  topics: 'general',
+  tasks: 'tasks',
+  task: 'tasks',
+  items: 'tasks',
+  todo: 'tasks',
+  targeted: 'targeted',
+  ask: 'targeted',
+  focus: 'targeted',
+};
+
 const MAX_ITEMS = { topics: 8, decisions: 8, tasks: 10, questions: 6, highlights: 4 };
 const MAX_LENGTH = { headline: 400, topicTitle: 120, topicSummary: 700, item: 400, quote: 300, answer: 900 };
 

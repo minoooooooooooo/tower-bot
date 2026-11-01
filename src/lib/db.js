@@ -132,6 +132,25 @@ const SCHEMA = `
     updated_at INTEGER NOT NULL,
     PRIMARY KEY (guild_id, term)
   );
+
+  -- Recurring reports, one row per channel. mode is 'interval' or 'daily';
+  -- interval_ms or minute_of_day carries the cadence. last_run_at is both the
+  -- window start for the next report and the "already ran" marker.
+  CREATE TABLE IF NOT EXISTS summary_schedules (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    guild_id      TEXT    NOT NULL,
+    channel_id    TEXT    NOT NULL,
+    kind          TEXT    NOT NULL,
+    prompt        TEXT,
+    mode          TEXT    NOT NULL,
+    interval_ms   INTEGER,
+    minute_of_day INTEGER,
+    enabled       INTEGER NOT NULL DEFAULT 1,
+    last_run_at   INTEGER,
+    created_by    TEXT    NOT NULL,
+    created_at    INTEGER NOT NULL,
+    UNIQUE (guild_id, channel_id)
+  );
 `;
 
 // Columns added after the first release. `CREATE TABLE IF NOT EXISTS` does not

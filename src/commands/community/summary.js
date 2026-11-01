@@ -1,9 +1,4 @@
 import {
-  ActionRowBuilder,
-  AttachmentBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  ComponentType,
   InteractionContextType,
   MessageFlags,
   PermissionFlagsBits,
@@ -12,43 +7,27 @@ import {
 import { config } from '../../config.js';
 import { COLORS, embed, errorEmbed, infoEmbed, successEmbed } from '../../lib/embeds.js';
 import { createLogger } from '../../lib/logger.js';
-import { aiConfigured, aiProblemHint } from '../../lib/ai.js';
+import { AiError, aiConfigured, aiProblemHint } from '../../lib/ai.js';
 import { getGuildSettings } from '../../services/birthday-store.js';
 import {
   getSummary,
   getSummaryChannel,
-  glossaryPrompt,
   listSummaries,
   saveSummary,
   setSummaryChannel,
 } from '../../services/report-store.js';
-import { buildSummaryHtml } from '../../services/report-export.js';
 import {
-  KIND_KEYS,
-  SUMMARY_KINDS,
-  renderSummary,
-  summarizeTranscript,
-} from '../../services/summary.js';
-import { buildTranscript, collectRangeMessages } from '../../services/summary-source.js';
+  attachExportButton,
+  exportPayload,
+  produceSummary,
+  reportPayload,
+} from '../../services/report-runner.js';
+import { KIND_KEYS, SUMMARY_KINDS, KIND_ALIASES } from '../../services/summary.js';
 
 const logger = createLogger('summary');
 
 const MAX_HOURS = 168;
 const DEFAULT_HOURS = 24;
-const LIST_TIMEOUT_MS = 5 * 60 * 1000;
-
-const KIND_ALIASES = {
-  general: 'general',
-  g: 'general',
-  topics: 'general',
-  tasks: 'tasks',
-  task: 'tasks',
-  items: 'tasks',
-  todo: 'tasks',
-  targeted: 'targeted',
-  ask: 'targeted',
-  focus: 'targeted',
-};
 
 function ephemeral(payload) {
   return { ...payload, flags: MessageFlags.Ephemeral };
@@ -155,75 +134,6 @@ function parsePrefix(ctx) {
   return { channelId, hours, kind, prompt: prompt.join(' ').trim(), isPrivate };
 }
 
-function exportButton(id) {
-  return new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId(`summary:export:${id}`)
-      .setLabel('Export as HTML')
-      .setEmoji('📄')
-      .setStyle(ButtonStyle.Secondary),
-  );
-}
-
-function exportPayload(summary, timeZone) {
-  const { buffer, filename } = buildSummaryHtml({
-    data: summary.body,
-    meta: {
-      kind: summary.kind,
-      channelId: summary.channelId,
-      channelName: null,
-      messageCount: summary.messageCount,
-      rangeStart: summary.rangeStart,
-      rangeEnd: summary.rangeEnd,
-      model: config.ai.model,
-      requestedBy: `<@${summary.createdBy}>`,
-      prompt: summary.prompt,
-      timeZone,
-      generatedAt: summary.createdAt,
-    },
-  });
-
-  return {
-    embeds: [
-      infoEmbed(
-        'Report exported',
-        `The HTML file opens in any browser. Use **Print → Save as PDF** for a PDF copy.`,
-      ),
-    ],
-    files: [new AttachmentBuilder(buffer, { name: filename })],
-  };
-}
-
-function attachExportButton({ message, summary, timeZone, ownerId }) {
-  if (!message?.createMessageComponentCollector) return;
-
-  const collector = message.createMessageComponentCollector({
-    componentType: ComponentType.Button,
-    time: LIST_TIMEOUT_MS,
-  });
-
-  collector.on('collect', async (interaction) => {
-    const canExport = interaction.memberPermissions?.has(PermissionFlagsBits.ManageMessages);
-
-    if (!canExport && interaction.user.id !== ownerId) {
-      await interaction
-        .reply(ephemeral({ embeds: [errorEmbed('Not allowed', 'Only moderators can export this.')] }))
-        .catch(() => {});
-      return;
-    }
-
-    try {
-      await interaction.reply(ephemeral(exportPayload(summary, timeZone)));
-    } catch (error) {
-      logger.warn(`Export failed: ${error.message}`);
-    }
-  });
-
-  collector.on('end', () => {
-    message.edit({ components: [] }).catch(() => {});
-  });
-}
-
 async function handleRun(ctx) {
   if (!aiConfigured()) {
     await ctx.reply(
@@ -322,19 +232,44 @@ async function handleRun(ctx) {
     await ctx.reply(working);
   }
 
-  let collected;
+  let lastUpdate = Date.now();
+
+  const onProgress = async (part, total) => {
+    if (Date.now() - lastUpdate < 2500) return;
+    lastUpdate = Date.now();
+    await ctx
+      .editReply({ content: `🧠 Summarizing part ${part}/${total}…`, allowedMentions: { parse: [] } })
+      .catch(() => {});
+  };
+
+  let result;
 
   try {
-    collected = await collectRangeMessages(channel, { since });
+    result = await produceSummary({
+      guildId: ctx.guildId,
+      channel,
+      kind: params.kind,
+      prompt: params.prompt || null,
+      since,
+      until: now,
+      timeZone,
+      requestedBy: ctx.user.username,
+      onProgress,
+    });
   } catch (error) {
+    if (error instanceof AiError) {
+      await ctx.editReply({ embeds: [errorEmbed('Summary failed', aiProblemHint(error))] });
+      return;
+    }
+
     logger.warn(`Could not read #${channel.name}: ${error.message}`);
     await ctx.editReply({
-      embeds: [errorEmbed('Could not read messages', 'I was unable to fetch that channel\'s history.')],
+      embeds: [errorEmbed('Could not read messages', "I was unable to fetch that channel's history.")],
     });
     return;
   }
 
-  if (collected.messages.length === 0) {
+  if (!result.data) {
     await ctx.editReply({
       embeds: [
         errorEmbed(
@@ -346,94 +281,27 @@ async function handleRun(ctx) {
     return;
   }
 
-  const transcript = buildTranscript(collected.messages, { timeZone });
-  const glossary = glossaryPrompt(ctx.guildId);
-  let lastUpdate = Date.now();
-
-  const onProgress = async (part, total) => {
-    if (Date.now() - lastUpdate < 2500) return;
-    lastUpdate = Date.now();
-    await ctx
-      .editReply({ content: `🧠 Summarizing part ${part}/${total}…`, allowedMentions: { parse: [] } })
-      .catch(() => {});
-  };
-
-  let data;
-
-  try {
-    data = await summarizeTranscript({
-      transcript,
-      kind: params.kind,
-      prompt: params.prompt,
-      glossary,
-      onProgress,
-    });
-  } catch (error) {
-    await ctx.editReply({
-      embeds: [errorEmbed('Summary failed', aiProblemHint(error))],
-    });
-    return;
-  }
-
-  const meta = {
-    kind: params.kind,
-    channelId: channel.id,
-    channelName: channel.name,
-    messageCount: collected.messages.length,
-    rangeStart: since,
-    rangeEnd: now,
-    model: config.ai.model,
-    requestedBy: ctx.user.username,
-    prompt: params.prompt || null,
-    timeZone,
-  };
-
+  const { data, collected, meta } = result;
   const id = saveSummary({
     guildId: ctx.guildId,
     channelId: channel.id,
     kind: params.kind,
     prompt: params.prompt || null,
-    rangeStart: since,
-    rangeEnd: now,
-    messageCount: collected.messages.length,
+    rangeStart: meta.rangeStart,
+    rangeEnd: meta.rangeEnd,
+    messageCount: meta.messageCount,
     body: data,
     createdBy: ctx.user.id,
   });
 
-  const { embeds } = renderSummary({ data, meta });
-  const notes = [];
-
-  if (collected.truncated) {
-    notes.push(`Scanned the newest ${collected.scanned} messages only — narrow the window for full coverage.`);
-  }
-
-  if (notes.length > 0) {
-    embeds[embeds.length - 1].setFooter({ text: notes.join(' ').slice(0, 200) });
-  }
-
-  const payload = {
-    embeds,
-    components: [exportButton(id)],
-    allowedMentions: { parse: [] },
-  };
-
+  const payload = reportPayload({ data, meta, id, collected });
   const destinationId = getSummaryChannel(ctx.guildId);
   const destination = destinationId ? await resolveChannel(ctx, destinationId) : ctx.channel;
 
+  const showHere = params.isPrivate || !destination || destination.id === ctx.channel.id;
+
   try {
-    if (params.isPrivate || !destination) {
-      const message = await ctx.editReply(payload);
-
-      attachExportButton({
-        message,
-        summary: getSummary(ctx.guildId, id),
-        timeZone,
-        ownerId: ctx.user.id,
-      });
-      return;
-    }
-
-    if (destination.id === ctx.channel.id) {
+    if (showHere) {
       const message = await ctx.editReply(payload);
 
       attachExportButton({

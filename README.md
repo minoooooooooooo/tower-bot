@@ -71,6 +71,7 @@ Both run `src/boot.js`, which checks the Node version before loading the bot and
 | `/summary <subcommand>` | `:-summarize`, `:-report` | AI summary of any channel, delivered to your management channel, exportable as HTML |
 | `/watch <subcommand>` | `:-alert`, `:-keywords` | DM you when a keyword is mentioned anywhere in the server |
 | `/glossary <subcommand>` | `:-jargon` | Terms and jargon the summarizer should understand |
+| `/autoreport <subcommand>` | `:-schedule`, `:-digest` | Post a channel summary automatically, on an interval or at a fixed daily time |
 
 ## Clearing messages
 
@@ -89,7 +90,7 @@ Both run `src/boot.js`, which checks the Node version before loading the bot and
 - Ping the **member**, not a role — a role mention is rejected (`Unknown member`) rather than treated as "everyone".
 - The command's own message is **never deleted**: `:-clear 1` removes the message above it, and with a member filter the command is skipped too. For slash commands there is no command message to skip.
 
-## Reports, keyword alerts and glossary
+## Reports, keyword alerts, glossary and automatic reports
 
 An optional AI layer: summarize any channel into a report, get DMs when a keyword appears, and teach the summarizer your server's vocabulary.
 
@@ -176,6 +177,46 @@ The glossary and the alerts are per server; each member's keywords are private.
 ```
 
 Up to 200 terms (**Manage Server** required to change them) are sent with every summary as context, so the model stops guessing at acronyms and map names. `/glossary list` is open to everyone so members can see how the server's jargon is being described.
+
+### Automatic reports
+
+`/autoreport` (aliases `/schedule`, `/digest`) posts a report on its own, so nobody has to remember to run one:
+
+```
+/autoreport set channel:#general every:6h
+/autoreport set channel:#general time:09:00 kind:Action items
+/autoreport set channel:#news time:21:30 kind:Targeted prompt:the event schedule
+/autoreport list
+/autoreport pause channel:#general
+/autoreport resume channel:#general
+/autoreport remove channel:#general
+```
+
+Prefix form, order-independent:
+
+```
+:-autoreport set #general 6h
+:-autoreport set #general 09:00 tasks
+:-autoreport set #news 2d ask the event schedule
+:-autoreport list
+```
+
+| Option | Meaning |
+|---|---|
+| `channel` | The channel to read. One schedule per channel — setting it again replaces the old one |
+| `every` | Interval between reports: `90m`, `6h`, `2d` (15 minutes to 7 days) |
+| `time` | Daily at `HH:MM` in the server time zone, 24-hour |
+| `kind` | Same three kinds as `/summary run` |
+| `prompt` | Required for `Targeted` |
+
+Give **either** `every` **or** `time` — never both, never neither. Prefix form decides by shape: a colon means a clock (`09:00`), otherwise a duration (`6h`).
+
+- Reports land in the **management channel** from `/summary channel`, so set that first; the command refuses to schedule otherwise and tells you why. A scheduled report is never posted into the channel it just read.
+- The window is the time since the last run, capped at 7 days. Nothing is summarized twice, and setting the schedule again restarts the countdown from now.
+- A window with no messages is skipped silently, so an idle channel does not produce empty reports.
+- A minute-level tick checks the schedules; the first check runs at boot, so a report that came due while the bot was offline still fires (within the 7-day cap). Everything else is the same pipeline as a manual run — same prompt, same glossary, same export button.
+- Times follow the server time zone (`/birthday timezone default:true` sets it); interval schedules count from the last run regardless of zone.
+- Max 10 schedules per server. **Manage Server** required to change them; `/autoreport list` is open to everyone.
 
 ## Birthdays
 
@@ -355,6 +396,7 @@ src/
       summary.js        AI channel summaries + export
       watch.js          personal keyword alerts
       glossary.js       server jargon for the summarizer
+      autoreport.js     scheduled summaries (interval or daily)
     moderation/
       clear.js          bulk message deletion with author filter
   events/
@@ -373,8 +415,10 @@ src/
     welcome-styles.js   the six card layouts and their text pieces
     summary-source.js   reads Discord history, builds the transcript
     summary.js          prompts, chunk/merge, rendering
-    report-store.js     summary channel, saved reports, glossary
+    report-store.js     summary channel, saved reports, glossary, schedules
+    report-runner.js    shared read → summarize → render pipeline
     report-export.js    self-contained HTML/PDF-ready export
+    summary-scheduler.js interval/clock math + the minute-level tick
     watch-store.js      per-member keyword CRUD
     watch.js            matching, Arabic normalization, DM delivery
   lib/
