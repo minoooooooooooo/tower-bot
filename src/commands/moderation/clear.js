@@ -18,40 +18,65 @@ function ephemeral(payload) {
   return { ...payload, flags: MessageFlags.Ephemeral };
 }
 
-/**
- * Resolves a mention or a raw user id from one prefix token. Returns null when
- * the token is not a user reference, so the caller can try it as an amount.
- */
-function resolveUser(ctx, token) {
-  const mention = ctx.message?.mentions?.users?.first();
+// `<@123>`, `<@!123>` and `<@&123>` — the last one is a role, not a member.
+const MENTION = /^<@([!&]?)(\d{17,20})>$/;
+const RAW_ID = /^\d{17,20}$/;
 
-  if (mention && (token === `<@${mention.id}>` || token === `<@!${mention.id}>`)) {
-    return mention;
+/**
+ * Classifies one prefix token. `{ user }` for a member reference, `{ reason }`
+ * for a role mention (so the caller can explain instead of silently dropping
+ * the filter), and null for anything that is not a member reference at all.
+ */
+function parseUserToken(ctx, token) {
+  const mention = MENTION.exec(token);
+
+  if (mention) {
+    if (mention[1] === '&') return { reason: 'role' };
+
+    const id = mention[2];
+    const known = ctx.message?.mentions?.users?.get?.(id);
+
+    return { user: known ?? { id, username: id, bot: false } };
   }
 
-  if (/^\d{17,20}$/.test(token)) {
-    return ctx.client?.users?.cache?.get(token) ?? { id: token, username: token, bot: false };
+  if (RAW_ID.test(token)) {
+    return {
+      user: ctx.client?.users?.cache?.get(token) ?? { id: token, username: token, bot: false },
+    };
   }
 
   return null;
 }
 
+/**
+ * Prefix args never include the command name — `messageCreate` splits it off
+ * before building the context — so every token here is a real argument.
+ * Amount and member may be given in either order.
+ */
 function parseInput(ctx) {
   if (ctx.isSlash) {
-    return { amount: ctx.getInteger('amount'), user: ctx.getUser('user') ?? null };
+    return { amount: ctx.getInteger('amount'), user: ctx.getUser('user') ?? null, problem: null };
   }
 
-  const tokens = ctx.args.slice(1);
   let amount = null;
   let user = null;
 
-  for (const token of tokens) {
-    if (!user) {
-      const resolved = resolveUser(ctx, token);
-      if (resolved) {
-        user = resolved;
-        continue;
-      }
+  for (const token of ctx.args) {
+    const parsed = parseUserToken(ctx, token);
+
+    // A role mention cannot be filtered on. Refuse rather than quietly
+    // clearing messages from everyone.
+    if (parsed?.reason === 'role') {
+      return {
+        amount,
+        user,
+        problem: 'That is a role, not a member. Ping the member whose messages you want removed.',
+      };
+    }
+
+    if (parsed?.user) {
+      user ??= parsed.user;
+      continue;
     }
 
     if (amount === null && /^\d+$/.test(token)) {
@@ -59,7 +84,7 @@ function parseInput(ctx) {
     }
   }
 
-  return { amount, user };
+  return { amount, user, problem: null };
 }
 
 /**
@@ -216,6 +241,11 @@ export default {
     }
 
     const input = parseInput(ctx);
+
+    if (input.problem) {
+      await ctx.reply(ephemeral({ embeds: [errorEmbed('Unknown member', input.problem)] }));
+      return;
+    }
 
     if (!Number.isInteger(input.amount) || input.amount < 1 || input.amount > MAX_AMOUNT) {
       await ctx.reply(

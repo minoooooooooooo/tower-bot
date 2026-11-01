@@ -83,6 +83,8 @@ Both run `src/boot.js`, which checks the Node version before loading the bot and
 - Discord only allows bulk deletion of messages younger than 14 days; older ones are skipped and reported.
 - When filtering by a member, the bot reads further back through history (up to 2,000 messages) until it finds the requested number.
 - Amounts over 100 are split into batches of 100. The maximum is 1,000 per command.
+- Ping the **member**, not a role — a role mention is rejected (`Unknown member`) rather than treated as "everyone".
+- Without a `user`, the command's own message counts as one of the deleted messages.
 
 ## Birthdays
 
