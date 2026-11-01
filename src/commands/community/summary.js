@@ -1,4 +1,4 @@
-﻿import {
+import {
   ActionRowBuilder,
   AttachmentBuilder,
   ButtonBuilder,
@@ -105,7 +105,7 @@ function slashParams(ctx) {
 }
 
 /**
- * `:-summary [#channel] [hours|Nd] [general|tasks|ask] [private] [focusâ€¦]` in any
+ * `:-summary [#channel] [hours|Nd] [general|tasks|ask] [private] [focus…]` in any
  * order. A leading `run` / `channel` / `export` / `history` picks the action.
  */
 function parsePrefix(ctx) {
@@ -160,7 +160,7 @@ function exportButton(id) {
     new ButtonBuilder()
       .setCustomId(`summary:export:${id}`)
       .setLabel('Export as HTML')
-      .setEmoji('ðŸ“„')
+      .setEmoji('📄')
       .setStyle(ButtonStyle.Secondary),
   );
 }
@@ -187,7 +187,7 @@ function exportPayload(summary, timeZone) {
     embeds: [
       infoEmbed(
         'Report exported',
-        `The HTML file opens in any browser. Use **Print â†’ Save as PDF** for a PDF copy.`,
+        `The HTML file opens in any browser. Use **Print → Save as PDF** for a PDF copy.`,
       ),
     ],
     files: [new AttachmentBuilder(buffer, { name: filename })],
@@ -235,7 +235,7 @@ async function handleRun(ctx) {
               'Add these to the server environment, then restart:',
               '```',
               'AI_API_KEY=your-key',
-              'AI_MODEL=gemini-2.5-flash',
+              'AI_MODEL=gemini-3.6-flash',
               '# optional, defaults to Google:',
               'AI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai',
               '```',
@@ -313,7 +313,7 @@ async function handleRun(ctx) {
   const now = Date.now();
   const since = now - hours * 60 * 60 * 1000;
   const timeZone = getGuildSettings(ctx.guildId).timezone ?? config.timezone;
-  const working = { content: `ðŸ”Ž Reading ${channel}â€¦`, allowedMentions: { parse: [] } };
+  const working = { content: `🔎 Reading ${channel}…`, allowedMentions: { parse: [] } };
 
   if (ctx.isSlash) {
     await ctx.defer({ ephemeral: params.isPrivate });
@@ -354,7 +354,7 @@ async function handleRun(ctx) {
     if (Date.now() - lastUpdate < 2500) return;
     lastUpdate = Date.now();
     await ctx
-      .editReply({ content: `ðŸ§  Summarizing part ${part}/${total}â€¦`, allowedMentions: { parse: [] } })
+      .editReply({ content: `🧠 Summarizing part ${part}/${total}…`, allowedMentions: { parse: [] } })
       .catch(() => {});
   };
 
@@ -404,7 +404,7 @@ async function handleRun(ctx) {
   const notes = [];
 
   if (collected.truncated) {
-    notes.push(`Scanned the newest ${collected.scanned} messages only â€” narrow the window for full coverage.`);
+    notes.push(`Scanned the newest ${collected.scanned} messages only — narrow the window for full coverage.`);
   }
 
   if (notes.length > 0) {
@@ -551,7 +551,7 @@ async function handleHistory(ctx) {
 
   const lines = reports.map(
     (report) =>
-      `\`#${report.id}\` Â· ${SUMMARY_KINDS[report.kind]?.emoji ?? ''} ${SUMMARY_KINDS[report.kind]?.label ?? report.kind} Â· <#${report.channelId}> Â· ${report.messageCount} msg Â· <t:${Math.floor(report.createdAt / 1000)}:R>`,
+      `\`#${report.id}\` · ${SUMMARY_KINDS[report.kind]?.emoji ?? ''} ${SUMMARY_KINDS[report.kind]?.label ?? report.kind} · <#${report.channelId}> · ${report.messageCount} msg · <t:${Math.floor(report.createdAt / 1000)}:R>`,
   );
 
   await ctx.reply(

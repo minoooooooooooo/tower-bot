@@ -29,7 +29,11 @@ export function aiProblemHint(error) {
   }
 
   if (error.status === 404) {
-    return `The model \`${config.ai.model}\` was not found at \`${config.ai.baseUrl}\`. Check \`AI_MODEL\` and \`AI_BASE_URL\`.`;
+    return [
+      `The model \`${config.ai.model}\` is not available at \`${config.ai.baseUrl}\`.`,
+      `Provider said: ${error.message}`,
+      'Google retires model ids for new keys: try `AI_MODEL=gemini-3.6-flash` (or `gemini-3.5-flash-lite`).',
+    ].join('\n');
   }
 
   if (error.status === 429) {

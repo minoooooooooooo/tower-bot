@@ -101,8 +101,10 @@ The summarizer talks to **any OpenAI-compatible endpoint**, so the provider is a
 AI_API_KEY=your-key
 # optional, these are the defaults:
 AI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai
-AI_MODEL=gemini-2.5-flash
+AI_MODEL=gemini-3.6-flash
 ```
+
+Google retires old model ids for new keys — `gemini-2.5-flash` now answers `404 no longer available to new users`. If a model stops working, check the error: it names a replacement. Current good choices are `gemini-3.6-flash`, `gemini-3.5-flash-lite` (cheapest) and `gemini-3.8-flash` (newest, sometimes busy).
 
 Google AI Studio, OpenAI, OpenRouter, Groq, DeepSeek and a local llama-server all work — only `AI_API_KEY` is required. Restart after adding it. Without a key, `/summary` replies with this snippet instead of crashing.
 
