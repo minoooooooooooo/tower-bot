@@ -68,6 +68,9 @@ Both run `src/boot.js`, which checks the Node version before loading the bot and
 | `/birthday <subcommand>` | `:-bd`, `:-bday` | Birthday registry, countdowns, automatic birthday role and greetings |
 | `/welcome <subcommand>` | `:-greet` | Welcome cards for new members: six styles, random or rotating, editable text |
 | `/clear <amount> [user]` | `:-purge`, `:-prune` | Delete recent messages, optionally only from one member |
+| `/summary <subcommand>` | `:-summarize`, `:-report` | AI summary of any channel, delivered to your management channel, exportable as HTML |
+| `/watch <subcommand>` | `:-alert`, `:-keywords` | DM you when a keyword is mentioned anywhere in the server |
+| `/glossary <subcommand>` | `:-jargon` | Terms and jargon the summarizer should understand |
 
 ## Clearing messages
 
@@ -85,6 +88,92 @@ Both run `src/boot.js`, which checks the Node version before loading the bot and
 - Amounts over 100 are split into batches of 100. The maximum is 1,000 per command.
 - Ping the **member**, not a role — a role mention is rejected (`Unknown member`) rather than treated as "everyone".
 - The command's own message is **never deleted**: `:-clear 1` removes the message above it, and with a member filter the command is skipped too. For slash commands there is no command message to skip.
+
+## Reports, keyword alerts and glossary
+
+An optional AI layer: summarize any channel into a report, get DMs when a keyword appears, and teach the summarizer your server's vocabulary.
+
+### Setup
+
+The summarizer talks to **any OpenAI-compatible endpoint**, so the provider is a `.env` decision, not a code change:
+
+```env
+AI_API_KEY=your-key
+# optional, these are the defaults:
+AI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai
+AI_MODEL=gemini-2.5-flash
+```
+
+Google AI Studio, OpenAI, OpenRouter, Groq, DeepSeek and a local llama-server all work — only `AI_API_KEY` is required. Restart after adding it. Without a key, `/summary` replies with this snippet instead of crashing.
+
+Grant the bot **Read Message History** in every channel you plan to summarize, and **Manage Messages** for the members who may run the commands.
+
+### Summarizing a channel
+
+Reports go to a **management channel**, never into the channel being summarized:
+
+```
+/summary channel channel:#management     # set the destination
+/summary run channel:#general hours:24 kind:General
+```
+
+| Option | Meaning |
+|---|---|
+| `channel` | The channel to read (required for `run`) |
+| `hours` | How far back, 1–168 (default 24) |
+| `kind` | `General` (topics, news, decisions), `Action items` (requests, problems, owners), `Targeted` (needs `prompt`) |
+| `prompt` | The focus for a Targeted summary, e.g. `the new spawn rules` |
+| `private` | Show the report only to you and skip the management channel |
+
+Prefix form, order-independent:
+
+```
+:-summary run #general 2h
+:-summary #general 24h tasks
+:-summary #general 7d ask when is the next event
+:-summary 1h general private
+```
+
+- **Nothing is archived.** The bot reads Discord's own history, page by page, so there is no message log on disk. A window is capped at 3,000 scanned messages; if it hits that, the report says so and you narrow the window.
+- Long windows are split into parts and merged by a second model call, so a 7-day summary still fits the context.
+- Each report is stored in SQLite (structure, not transcript), so `/summary history` and `/summary export` never call the model again.
+- Reports never ping anyone, and the model is told to use only the transcript, in the language people actually spoke.
+
+### Exporting
+
+`/summary export [id]` sends a **single self-contained HTML file** (latest report by default). Open it in any browser and use **Print → Save as PDF**.
+
+That is deliberate: a real PDF with Arabic text needs a bundled font plus shaping support, while the browser has both already. The export detects Arabic content and lays the page out right-to-left, escapes HTML, and has a print stylesheet (`@media print`) so the PDF has no margins or hint boxes.
+
+### Keyword alerts
+
+```
+/watch add keyword:nitro scam       # prefix: :-watch add nitro scam
+/watch list
+/watch remove keyword:nitro scam
+/watch clear
+/watch test                         # check that DMs actually arrive
+```
+
+When anyone posts a watched word **anywhere** in the server, the bot DMs you the author, the channel, a short quote, and a **clickable jump link** to the message.
+
+- Matching is whole-word and Unicode aware: `ass` does not fire on `classic`, and Arabic diacritics, tatweel and the alef/ya/ta-marbuta variants are normalized so `مُحَمّد` matches `محمد`.
+- Your own messages and other bots never trigger an alert.
+- At most 25 keywords per member, 2 seconds apart and 12 per 10 minutes, so a busy phrase cannot flood a DM.
+- If your DMs are closed the bot records it: `/watch list` shows ⚠️ and `/watch test` explains the privacy setting to change.
+
+The glossary and the alerts are per server; each member's keywords are private.
+
+### Glossary
+
+```
+/glossary add term:nap meaning:the new event map
+/glossary list
+/glossary remove term:nap
+/glossary clear
+```
+
+Up to 200 terms (**Manage Server** required to change them) are sent with every summary as context, so the model stops guessing at acronyms and map names. `/glossary list` is open to everyone so members can see how the server's jargon is being described.
 
 ## Birthdays
 
@@ -260,12 +349,17 @@ src/
       botinfo.js
     community/
       birthday.js       birthday registry + automatic role
+      welcome.js        welcome cards
+      summary.js        AI channel summaries + export
+      watch.js          personal keyword alerts
+      glossary.js       server jargon for the summarizer
     moderation/
       clear.js          bulk message deletion with author filter
   events/
     ready.js            presence, slash registration, scheduler start
+    guildMemberAdd.js   welcome card delivery
     interactionCreate.js
-    messageCreate.js    prefix parsing
+    messageCreate.js    prefix parsing + keyword alerts
   handlers/
     command-registry.js slash command payloads + registration
   services/
@@ -273,15 +367,27 @@ src/
     birthday-roles.js   role add/remove with permission-safe errors
     birthday-greetings.js greeting rendering, preview, delivery + dedupe
     birthday-scheduler.js per-member reconciliation + scheduler
+    welcome-store.js    welcome settings, per-style text and GIFs
+    welcome-styles.js   the six card layouts and their text pieces
+    summary-source.js   reads Discord history, builds the transcript
+    summary.js          prompts, chunk/merge, rendering
+    report-store.js     summary channel, saved reports, glossary
+    report-export.js    self-contained HTML/PDF-ready export
+    watch-store.js      per-member keyword CRUD
+    watch.js            matching, Arabic normalization, DM delivery
   lib/
+    ai.js               OpenAI-compatible client + error hints
     context.js          unified slash/prefix context
     db.js               SQLite connection + schema
     dates.js            time zone and birthday date math
     embeds.js           embed helpers + colour palette
     loaders.js          recursive command/event loader
     logger.js           levelled logger
+    media.js            image URL validation
+    net-check.js        DNS → TCP → TLS → HTTPS probe for hosting issues
     run-command.js      shared execution pipeline
     runtime.js          Node capability checks
+    template.js         placeholder substitution
 ```
 
 ## Adding a command

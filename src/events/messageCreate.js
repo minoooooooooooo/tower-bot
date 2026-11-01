@@ -2,6 +2,7 @@ import { config } from '../config.js';
 import { CommandContext } from '../lib/context.js';
 import { createLogger } from '../lib/logger.js';
 import { runCommand } from '../lib/run-command.js';
+import { handleKeywordAlerts } from '../services/watch.js';
 
 const logger = createLogger('prefix');
 
@@ -50,7 +51,15 @@ export default {
     if (message.author.bot) return;
 
     const usedPrefix = resolvePrefix(message.content, client);
-    if (!usedPrefix) return;
+
+    if (!usedPrefix) {
+      // Every ordinary message is checked against subscribers' keywords. The
+      // handler swallows its own failures so a DM problem cannot break chat.
+      handleKeywordAlerts(message, client).catch((error) =>
+        logger.error('Keyword alert failed', error),
+      );
+      return;
+    }
 
     const withoutPrefix = message.content.slice(usedPrefix.length).trim();
     if (!withoutPrefix) return;

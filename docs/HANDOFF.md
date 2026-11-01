@@ -1,12 +1,13 @@
 # Handoff — Discord bot
 
-Last updated: 2026-10-31. Read this before continuing work. It exists so a fresh
+Last updated: 2026-11-02. Read this before continuing work. It exists so a fresh
 OpenCode session can resume without the original conversation.
 
 ## Status
 
-The bot is **built and running locally** from `start.bat`. Six commands are
-implemented: `/ping`, `/help`, `/botinfo`, `/birthday`, `/welcome`, `/clear`.
+The bot is **built and running locally** from `start.bat`. Nine commands are
+implemented: `/ping`, `/help`, `/botinfo`, `/birthday`, `/welcome`, `/clear`,
+`/summary`, `/watch`, `/glossary`.
 
 **Source is on GitHub:** <https://github.com/minoooooooooooo/tower-bot>
 (public, branch `main`). Pushed 2026-10-31 with Git 2.56.0 + `gh` browser auth; no
@@ -26,9 +27,10 @@ twice: the node's shared IP was rate limited by Discord (`HTTP 429` on
 `discord.com/api/v10/gateway`, gateway closed instantly, `ws=CLOSED`) and its
 install script could never clone because stray files from a bad zip were
 undeletable. The server was deleted and recreated; the new node logged in on the
-first attempt. Current state (boot 10:29 UTC): Node **26.12.1**, 5 commands / 3
-events, `Logged in as 11/10#8627`, `SQLite ready at /home/container/data/bot.db`,
-scheduler running, 5 slash commands registered instantly in "𝗧𝗵𝗲 𝗧𝗼𝘄𝗲𝗿 v2".
+first attempt. Current state (boot 10:29 UTC): Node **26.12.1**, `Logged in as
+11/10#8627`, `SQLite ready at /home/container/data/bot.db`, scheduler running,
+slash commands registered instantly in "𝗧𝗵𝗲 𝗧𝗼𝘄𝗲𝗿 v2". The process now loads
+**9 commands / 4 events** (birthday, welcome, clear, summary, watch, glossary).
 
 Two consequences worth remembering: the install/reinstall script on this panel
 does **not** run (two reinstalls produced an empty directory), so the code is
@@ -48,6 +50,9 @@ Oracle Cloud is kept as the card-verification alternative in
 | `/birthday <sub>` | `bd`, `bday`, `birthdays` | 10 subcommands, see below |
 | `/welcome <sub>` | `greet` | 8 subcommands, six card styles with editable text |
 | `/clear <amount> [user]` | `purge`, `prune` | Bulk-delete recent messages, optionally from one member |
+| `/summary <sub>` | `summarize`, `report` | AI summary of any channel into the management channel + HTML export |
+| `/watch <sub>` | `alert`, `keywords` | DM on a keyword mentioned anywhere in the server |
+| `/glossary <sub>` | `jargon` | Server terms sent to the summarizer as context |
 
 ### Birthday package
 
@@ -115,6 +120,44 @@ Behavior that must be preserved:
 - **Prefix args never contain the command name** — `messageCreate` splits it off (`const [rawName, ...args]`). `clear.js` originally did `ctx.args.slice(1)` and threw away the first argument, which made `:-clear 1` report "Invalid amount" and `:-clear @someone 1` drop the mention and delete the newest messages from anyone. Never slice prefix args; a token is an amount only when it is 1–4 digits, otherwise a member reference.
 - A **role** mention (`<@&…>`) is refused with "Unknown member" rather than ignored, so a mis-pinged filter can never quietly clear the whole channel.
 
+### Report package (summaries, alerts, glossary)
+
+`/summary` (prefix `:-summary`), `/watch` (prefix `:-watch`), `/glossary` (prefix `:-glossary`).
+
+`/summary` subcommands: `run`, `channel`, `export`, `history`.
+
+Behavior that must be preserved:
+
+- **A summary is delivered to the configured management channel, never into the channel it reads.** `/summary channel #room` stores it in `summary_settings`; with nothing set, the report lands where the command was run. This was the user's core complaint about the original bot.
+- `run` options: `channel` (read), `hours` (1–168, default 24), `kind` (`general` / `tasks` / `targeted`), `prompt` (required for `targeted`), `private`. Prefix form is order-independent: `:-summary run #general 7d ask when is the next event`, `:-summary #general 24h tasks`, `:-summary 1h general private`.
+- Prefix subcommand detection shifts the action off `ctx.args` (`run`, `channel`, `export`, `history`); anything else is a `run`. Prefix args never include the command name.
+- **No message archive.** `collectRangeMessages` pages through `channel.messages.fetch` newest-first until `since`, then returns oldest-first. Cap is 3,000 scanned messages; hitting it sets `truncated` and the report footer says to narrow the window.
+- Three kinds are prompt emphases in `SUMMARY_KINDS`, not different pipelines. The model always returns one JSON shape; `normalizeSummary` clamps lengths, accepts strings-instead-of-objects, and caps item counts so a drifted reply cannot break rendering.
+- Long windows go through map-reduce: `chunkLines` splits the transcript at `AI_MAX_INPUT_CHARS`, each part is summarized, then a merge call deduplicates. The merge call is the only one whose system prompt says "merge".
+- Reports are persisted in `summaries` **with the structured body JSON**, so `/summary history` and `/summary export` never call the model again.
+- `/summary export [id]` (latest by default) sends a **self-contained HTML file**, not a PDF. Arabic PDFs need font embedding plus shaping; every browser already has both and prints to PDF with `Ctrl/Cmd + P`. The export detects RTL content, escapes HTML, and hides the "print to PDF" hint under `@media print`. Filename: `summary-<channel>-<YYYYMMDD-HHMM>.html`.
+- The export button under a report is a **per-message component collector** (same pattern as the birthday list), not global button routing. Moderators (`ManageMessages`) and the original requester can press it; it times out after five minutes.
+- Reports send `allowedMentions: { parse: [] }`, so a summary can never ping a member or `@everyone`.
+- Missing `AI_API_KEY` is a **setup hint reply**, not an exception. Provider errors are translated by `aiProblemHint` (401/403 key, 404 model+URL, 429 rate limit, 5xx retry later). The client retries once on 429/5xx.
+- `chatJson` demands JSON, strips code fences, and re-tries once if the model returns prose — cheaper than failing a 20-message summary.
+
+`/watch` subcommands: `add`, `remove`, `list`, `clear`, `test`.
+
+- Alerts are **per member** and per server, stored in `watch_terms` (max 25 each).
+- Matching is Unicode whole-word (`(?<![\p{L}\p{N}])term(?![\p{L}\p{N}])`) after `normalizeForMatch`, which strips Arabic diacritics/tatweel and folds alef/ya/ta-marbuta variants. `ass` must not fire on `classic`; `محمد` must match `مُحَمّد`.
+- The alert DM carries the keyword, the author, the channel, a quote, and `message.url` as a jump link. `allowedMentions: { parse: [] }`.
+- Own messages and bots are skipped, and messages **with no content** (attachment-only) are skipped.
+- Per-user rate limit: 2s quiet between DMs, 12 per 10 minutes. A busy phrase cannot flood a DM.
+- `50007` ("Cannot send messages to this user") sets `broken`, shown as ⚠️ in `/watch list`; a later successful DM clears it. `/watch test` sends a real DM so the member can check their privacy setting.
+- `handleKeywordAlerts` is called from `messageCreate` for **every non-prefix message** and swallows its own errors, so a DM failure can never break chat.
+- The guild term cache TTL is 30s; `invalidateWatchCache(guildId)` is called by every mutation.
+
+`/glossary` subcommands: `add`, `remove`, `list`, `clear`.
+
+- `add` and `remove`/`clear` need **Manage Server**; `list` is open to everyone.
+- Terms are stored in `glossary` (max 200, term ≤60, meaning ≤200) and rendered into every summary prompt by `glossaryPrompt`, capped at ~1,800 characters so a runaway glossary cannot crowd out the transcript.
+- Prefix syntax is `:-glossary add term | meaning` (split on the first `|`).
+
 ## Key decisions
 
 - **Node 26.13 LTS portable** in `.tools/node` (no admin install, no system changes).
@@ -130,6 +173,12 @@ Behavior that must be preserved:
 - **Free panel hosting (Wispbyte) over Oracle Cloud.** The operator will not put a card on file, which rules out Oracle and GCP. Wispbyte was chosen over Raven Host on **track record, not specs**: it is three years old with 350k+ users, a public status page and an independent review history, whereas Raven Host launched in 2026, has no third-party reviews, and its own pages disagree on the free tier (45% CPU / 512 MB / 5 GB vs 100% CPU / 1.5 GB / 10 GB). Disk size was not a factor — the whole database is kilobytes.
 - **`src/boot.js` is the entry point everywhere.** A version guard must run *before* `src/index.js` is linked, or `node:sqlite` fails with an unhelpful "Cannot find module". `boot.js` imports `node:sqlite` inside a `try`, then dynamically imports the bot. `start.bat`, `dev.bat` and `npm start` all use it; `node src/index.js` still works directly.
 - **`node:sqlite` needs Node 22.5+, and the flag until 23.4.** Panels ship older images, so `lib/runtime.js` decides whether to tell the operator to upgrade or to add `--experimental-sqlite`, rather than printing a raw module error.
+- **AI is provider-agnostic through one OpenAI-compatible endpoint**, configured entirely in `.env` (`AI_API_KEY`, `AI_BASE_URL`, `AI_MODEL`, `AI_MAX_INPUT_CHARS`). Default is Google's compatibility layer with `gemini-2.5-flash` because a free key is the easiest to obtain; OpenAI, OpenRouter, Groq, DeepSeek and local servers work unchanged. No provider SDK, no lock-in, and `fetch` is the only dependency.
+- **Summaries read Discord history live instead of storing messages.** A local archive would need a full retention policy, disk on a 512 MB panel, and would duplicate data the user did not ask to keep. Discord already has the history; the cost is a `fetch` loop bounded by a 3,000-message cap.
+- **The export is HTML, not PDF.** Arabic PDF generation needs an embedded font and shaping (HarfBuzz), which is a native dependency and a whole failure mode; every browser prints HTML to PDF with correct Arabic. The report is delivered as one self-contained file that also opens readably on a phone.
+- **Saved reports keep the structured JSON body.** Exporting must not depend on the model still being reachable, and must not produce a *different* report than the one the team approved.
+- **Keyword alerts skip the user's own messages and rate-limit per user.** Without both, a moderator watching a common word DMs themselves on every sentence they type and hits Discord's DM limits within minutes.
+- **Tasks/to-do management was deliberately left out.** The user marked it optional; automatic action-item extraction (`kind:tasks`) already produces the useful part of a to-do list without a second, half-used scheduling feature. Revisit only if asked.
 
 ## Known issues / caveats
 
@@ -169,6 +218,11 @@ Behavior that must be preserved:
 - [ ] **Fix the two rows dated 31 October 2026** left behind by testing: user `492043876538908692` should be `month:4 day:6 year:2003`, and user `758686823437697044` needs its real date. As stored, both look like birthdays on every 31 October with age 0.
 - [ ] **Give user `1271481754779389983` a time zone** (it is null, so it shows the ⚠️ marker) and re-set `758686823437697044`, whose zone is stored lowercase as `asia/amman`.
 - [ ] **Take a fresh `bot.db` backup** now that 25 birthdays exist — stop the server first, then download, then verify the count.
+- [ ] **Set up the reports feature on the host:** add `AI_API_KEY` (and optionally `AI_MODEL` / `AI_BASE_URL`) to the panel environment, restart, then run `/summary channel channel:#management`.
+- [ ] Test `/summary run channel:#general hours:24` (expect the report in the management channel, not in `#general`), then `/summary run channel:#general kind:Action items`, then a targeted one with `prompt:"..."`.
+- [ ] Test the export: press **Export as HTML** under a report (or `/summary export`), open the file, check Arabic direction if the channel is Arabic, and print it to PDF once.
+- [ ] Test alerts end to end: `/watch add keyword:<a word you can post>`, post it from an alt or ask a member, confirm the DM and that the jump link opens the message. Also run `/watch test` with DMs closed (should explain the privacy setting).
+- [ ] Add a few real terms with `/glossary add` so summaries stop guessing at server vocabulary.
 - [ ] Ask the user for the next batch of commands (games were mentioned).
 - [ ] **Enable the Server Members intent in the Discord Developer Portal** before the next restart. The bot now requests `GatewayIntentBits.GuildMembers` for welcome cards; without the portal toggle Discord refuses the login (`Used disallowed intents`) and the bot stays offline until it is enabled.
 - [ ] After that restart: `/welcome channel #welcome`, then `/welcome test` to see each of the six styles, then join with an alt (or ask a member to rejoin) to confirm `guildMemberAdd` fires.
@@ -177,7 +231,7 @@ Behavior that must be preserved:
 ## Verification used so far
 
 - `node --check` across all `src/**/*.js`.
-- Load test with a fake token: 5 commands, 3 events, clean login failure.
+- Load test with a fake token: 9 commands, 4 events, clean login failure.
 - Date math: Feb 29 in leap/non-leap years, timezone date shift (`America/New_York`), year rollover.
 - Scheduler: role added on birthday, removed the next day, removed immediately when the birthday is deleted.
 - Command paths: set (valid/invalid), list, next, today, remove, admin guards, role set/clear, timezone invalid/valid.
@@ -185,8 +239,9 @@ Behavior that must be preserved:
 - Clear integration test on a mocked channel (49 checks): basic 100-message purge, author filter (mention, raw id, either argument order, authorship actually respected), amount-before-mention regression (`:-clear 1 @member` keeps the filter and deletes nothing else), role mention refused without deleting, the command message excluded (alone and inside a filtered scan), partial matches, 100-message batching above 100, empty channel, invalid/missing amounts, bot permission failure, 14-day-old messages skipped, 2,000-message scan cap, slash defer/editReply path, and slash schema. The mock feeds args **without** the command name, matching `messageCreate`.
 - `package.bat` produces `dist/bot.zip` with no `node_modules`, `.tools`, `.env`, or `data`, and no entry containing a backslash (the script verifies this and fails loudly).
 - Runtime guard test (20 checks): `hasSqliteModule` across Node 18/20/22.4/22.5/24/26 and a malformed version, `needsSqliteFlag` across the 22.5–23.3 boundary, and the three message branches (unsupported version, flag required, unexpected failure).
-- `node src/boot.js` with a fake token logs the runtime version, loads 6 commands / 4 events, then fails login cleanly with `TokenInvalid`.
+- `node src/boot.js` with a fake token logs the runtime version, loads 9 commands / 4 events, then fails login cleanly with `TokenInvalid`.
 - Welcome integration test on a temp DB (207 checks): style metadata (six keys, modal inputs ≤5, unique keys, label/default limits, known placeholders), settings/text/gif store roundtrips (JSON `enabled`, last style, per-style GIF, per-piece override, clear one/all), style selection (random never repeats, stays inside the enabled set, rotate cycles and wraps, single pins, disabled style falls back, empty list means all), all six payloads (ledger rows/date/count/timestamp, classic thumbnail/fields/shared labels/GIF, poster banner→splash→icon fallback and GIF precedence, story floor, whisper two lines without timestamp, concierge link buttons and the welcome-channel fallback), a GIF on every style, overrides and blank-override fallback, unknown style fallback, ping rules (`allowedMentions` = new member only, title mentions still ping from content), ordinal helper, `guildMemberAdd` (posts once, records the style, skips bots, skips without a channel, failed send keeps `last_style`), and the command surface (channel set/clear + admin guard, mode validation, toggle + last-style guard, list with GIF markers, ephemeral preview, per-style gif set/show/invalid/clear, modal open and prefill, prefix edit redirect, reset one/all, links, overview) including modal submit (save, default-detection, empty clears, unknown placeholder warning, title/footer mention warning, GIF saved per style from any card's modal, invalid GIF rejecting the whole submit, admin guard) and the slash schema. A separate migration script moves a legacy `welcome_settings.gif_url` into `welcome_gifs` on boot.
+- Report integration test on a temp DB with a stubbed `fetch` (105 checks): windowed history reads (only the requested range, oldest-first, cap + truncation flag), transcript format and chunking, `normalizeSummary` against drifted model output (strings for objects, unknown keys, overlong text, item caps), single-call vs map-reduce paths (progress callback, merge call content, glossary and focus reaching the prompt), provider failures (retry on 5xx, non-JSON reply, `aiProblemHint` wording, fenced/prose JSON extraction), summary-channel store roundtrip and clear, saved-report roundtrip and guild scoping, glossary upsert/remove/clear and prompt formatting, keyword normalization (diacritics, alef variants, case), whole-word matching for Latin and Arabic, term CRUD and duplicates, DM payload (jump link, keyword, no pings, quote), skips for own messages/bots/unrelated text, closed-DM marking via `50007`, HTML export (RTL detection, action items, print stylesheet, safe filename, HTML escaping), and the command surfaces (missing key hint, targeted-without-focus, hours bounds, prefix run posting + storage + export button, management-channel routing, private run, slash run, channel config + Manage Server guard, export file, history list, watch add/list/remove/validation, glossary add/list/guard) plus the four new tables.
 
 ## Useful context
 

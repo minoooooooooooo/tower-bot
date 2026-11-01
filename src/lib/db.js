@@ -82,6 +82,56 @@ const SCHEMA = `
     url      TEXT NOT NULL,
     PRIMARY KEY (guild_id, style)
   );
+
+  -- The channel that receives summaries (the "management" room). The channel
+  -- being summarized is a command option, never this one.
+  CREATE TABLE IF NOT EXISTS summary_settings (
+    guild_id   TEXT PRIMARY KEY,
+    channel_id TEXT,
+    updated_at INTEGER NOT NULL
+  );
+
+  -- Every generated report, with the exact range it covered, so a PDF/HTML
+  -- export can be regenerated later without calling the model again.
+  CREATE TABLE IF NOT EXISTS summaries (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    guild_id      TEXT    NOT NULL,
+    channel_id    TEXT    NOT NULL,
+    kind          TEXT    NOT NULL,
+    prompt        TEXT,
+    range_start   INTEGER NOT NULL,
+    range_end     INTEGER NOT NULL,
+    message_count INTEGER NOT NULL,
+    body          TEXT    NOT NULL,
+    created_by    TEXT    NOT NULL,
+    created_at    INTEGER NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_summaries_guild
+    ON summaries (guild_id, created_at DESC);
+
+  -- Personal keyword alerts: the subscriber gets a DM with a jump link.
+  CREATE TABLE IF NOT EXISTS watch_terms (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    guild_id   TEXT    NOT NULL,
+    user_id    TEXT    NOT NULL,
+    term       TEXT    NOT NULL,
+    broken     INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    UNIQUE (guild_id, user_id, term)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_watch_terms_guild
+    ON watch_terms (guild_id);
+
+  -- Server jargon handed to the model so summaries use the right vocabulary.
+  CREATE TABLE IF NOT EXISTS glossary (
+    guild_id   TEXT NOT NULL,
+    term       TEXT NOT NULL,
+    meaning    TEXT NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (guild_id, term)
+  );
 `;
 
 // Columns added after the first release. `CREATE TABLE IF NOT EXISTS` does not

@@ -45,6 +45,8 @@ if (!isValidTimeZone(timezone)) {
 
 const interval = Number.parseInt(process.env.BIRTHDAY_CHECK_INTERVAL_MS ?? '', 10);
 
+const aiMaxInput = Number.parseInt(process.env.AI_MAX_INPUT_CHARS ?? '', 10);
+
 export const config = {
   token,
   clientId: process.env.CLIENT_ID?.trim() || null,
@@ -57,6 +59,17 @@ export const config = {
   birthdayCheckIntervalMs: Number.isFinite(interval) && interval >= 10_000 ? interval : 60_000,
   commandsDir: path.join(rootDir, 'src', 'commands'),
   eventsDir: path.join(rootDir, 'src', 'events'),
+  // Any OpenAI-compatible endpoint works: Google's compatibility layer, OpenAI,
+  // OpenRouter, Groq, DeepSeek, or a local server. Only the key is mandatory;
+  // an unconfigured key turns the summary command into a setup hint.
+  ai: {
+    apiKey: process.env.AI_API_KEY?.trim() || '',
+    baseUrl:
+      process.env.AI_BASE_URL?.trim() || 'https://generativelanguage.googleapis.com/v1beta/openai',
+    model: process.env.AI_MODEL?.trim() || 'gemini-2.5-flash',
+    maxInputChars:
+      Number.isFinite(aiMaxInput) && aiMaxInput >= 4000 ? aiMaxInput : 60_000,
+  },
 };
 
 export function requireClientId() {

@@ -1,0 +1,408 @@
+import { config } from '../config.js';
+import { chatJson } from '../lib/ai.js';
+import { COLORS, embed } from '../lib/embeds.js';
+import { chunkLines } from './summary-source.js';
+
+export const SUMMARY_KINDS = {
+  general: {
+    label: 'General',
+    emoji: '🧭',
+    brief: 'topics, news and decisions',
+    emphasis:
+      'Cover the topics discussed, news or links shared, decisions that were made, and anything that changed.',
+  },
+  tasks: {
+    label: 'Action items',
+    emoji: '📌',
+    brief: 'requests, problems and owners',
+    emphasis:
+      'Focus on actionable items: requests, suggestions, problems that need a solution, follow-ups, and who took each one. Ignore pure chatter.',
+  },
+  targeted: {
+    label: 'Targeted',
+    emoji: '🎯',
+    brief: 'one topic, on request',
+    emphasis:
+      'Answer the requested focus using only the transcript. Include every message that relates to it and ignore everything else. If the transcript never covers it, say so in "answer" and leave the arrays empty.',
+  },
+};
+
+export const KIND_KEYS = Object.keys(SUMMARY_KINDS);
+
+const MAX_ITEMS = { topics: 8, decisions: 8, tasks: 10, questions: 6, highlights: 4 };
+const MAX_LENGTH = { headline: 400, topicTitle: 120, topicSummary: 700, item: 400, quote: 300, answer: 900 };
+
+const SYSTEM_PROMPT = [
+  'You write operational summaries of a Discord channel for a server management team.',
+  'Rules:',
+  '- Use ONLY the transcript. Never invent names, numbers, links, or decisions.',
+  '- Write in the language used most in the transcript (Arabic stays Arabic, English stays English).',
+  '- Be specific about who said or proposed what when it matters.',
+  '- Skip greetings, spam, and small talk unless it is the topic.',
+  '- Reply with a single JSON object and nothing else.',
+  'JSON shape:',
+  '{"headline":"one sentence overview","answer":"only for targeted summaries",',
+  ' "topics":[{"title":"short label","summary":"2-3 sentences"}],',
+  ' "decisions":["what was decided, by whom if stated"],',
+  ' "tasks":[{"task":"what must be done","owner":"who took it, or empty"}],',
+  ' "questions":["unresolved question"],',
+  ' "highlights":[{"quote":"short verbatim quote","author":"display name"}]}',
+  'Use empty arrays for anything that does not apply.',
+].join('\n');
+
+const REDUCE_PROMPT = [
+  'You merge partial summaries of the same Discord channel into one final summary.',
+  'Rules:',
+  '- Deduplicate overlapping points; keep the most specific wording.',
+  '- Never invent facts that are not in the partial summaries.',
+  '- Write in the dominant language of the partial summaries.',
+  '- Reply with a single JSON object using exactly this shape:',
+  '{"headline":"","answer":"","topics":[{"title":"","summary":""}],"decisions":[],"tasks":[{"task":"","owner":""}],"questions":[],"highlights":[{"quote":"","author":""}]}',
+].join('\n');
+
+function clean(value, max) {
+  return String(value ?? '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, max);
+}
+
+function list(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+/**
+ * Models drift: they add keys, return a string where an array belongs, or wrap
+ * everything in an extra object. Everything downstream can rely on this shape.
+ */
+export function normalizeSummary(raw) {
+  const data = raw && typeof raw === 'object' ? raw : {};
+
+  const topics = list(data.topics)
+    .map((topic) => ({
+      title: clean(topic?.title ?? topic, MAX_LENGTH.topicTitle),
+      summary: clean(topic?.summary ?? topic?.detail ?? '', MAX_LENGTH.topicSummary),
+    }))
+    .filter((topic) => topic.title || topic.summary)
+    .slice(0, MAX_ITEMS.topics);
+
+  const decisions = list(data.decisions)
+    .map((item) => clean(typeof item === 'object' ? (item?.decision ?? item?.text) : item, MAX_LENGTH.item))
+    .filter(Boolean)
+    .slice(0, MAX_ITEMS.decisions);
+
+  const tasks = list(data.tasks)
+    .map((item) => ({
+      task: clean(typeof item === 'string' ? item : (item?.task ?? item?.item), MAX_LENGTH.item),
+      owner: clean(typeof item === 'string' ? '' : (item?.owner ?? item?.assignee), 80),
+    }))
+    .filter((item) => item.task)
+    .slice(0, MAX_ITEMS.tasks);
+
+  const questions = list(data.questions)
+    .map((item) => clean(typeof item === 'object' ? (item?.question ?? item?.text) : item, MAX_LENGTH.item))
+    .filter(Boolean)
+    .slice(0, MAX_ITEMS.questions);
+
+  const highlights = list(data.highlights)
+    .map((item) => ({
+      quote: clean(typeof item === 'string' ? item : item?.quote, MAX_LENGTH.quote),
+      author: clean(typeof item === 'string' ? '' : item?.author, 80),
+    }))
+    .filter((item) => item.quote)
+    .slice(0, MAX_ITEMS.highlights);
+
+  return {
+    headline: clean(data.headline ?? data.overview ?? data.summary, MAX_LENGTH.headline),
+    answer: clean(data.answer, MAX_LENGTH.answer),
+    topics,
+    decisions,
+    tasks,
+    questions,
+    highlights,
+  };
+}
+
+export function isEmptySummary(data) {
+  return (
+    !data?.headline &&
+    !data?.answer &&
+    (data?.topics?.length ?? 0) === 0 &&
+    (data?.decisions?.length ?? 0) === 0 &&
+    (data?.tasks?.length ?? 0) === 0 &&
+    (data?.questions?.length ?? 0) === 0 &&
+    (data?.highlights?.length ?? 0) === 0
+  );
+}
+
+function buildUserPrompt({ kind, prompt, glossary, chunk, index, total }) {
+  const spec = SUMMARY_KINDS[kind] ?? SUMMARY_KINDS.general;
+  const parts = [`Task: ${spec.emphasis}`];
+
+  if (kind === 'targeted') {
+    parts.push(`Focus requested by the team: """${String(prompt ?? '').slice(0, 500)}"""`);
+  }
+
+  if (total > 1) {
+    parts.push(
+      `This is part ${index + 1} of ${total} of the transcript. Summarize only this part; the parts are merged afterwards.`,
+    );
+  }
+
+  if (glossary) {
+    parts.push(`Server glossary (use these meanings when they appear):\n${glossary}`);
+  }
+
+  parts.push('Transcript:\n"""');
+  parts.push(chunk);
+  parts.push('"""');
+
+  return parts.join('\n\n');
+}
+
+/**
+ * Summarize transcript lines. One call for a short window; map-reduce for a
+ * long one, which keeps each request inside the model's context.
+ */
+export async function summarizeTranscript({
+  transcript,
+  kind = 'general',
+  prompt = null,
+  glossary = '',
+  maxChars = config.ai.maxInputChars,
+  onProgress = null,
+}) {
+  const chunks = chunkLines(transcript, maxChars);
+
+  if (chunks.length === 0) return normalizeSummary({});
+
+  if (chunks.length === 1) {
+    const { data } = await chatJson({
+      system: SYSTEM_PROMPT,
+      user: buildUserPrompt({
+        kind,
+        prompt,
+        glossary,
+        chunk: chunks[0].join('\n'),
+        index: 0,
+        total: 1,
+      }),
+      maxTokens: 2200,
+    });
+
+    return normalizeSummary(data);
+  }
+
+  const partials = [];
+
+  for (let index = 0; index < chunks.length; index += 1) {
+    onProgress?.(index + 1, chunks.length);
+
+    const { data } = await chatJson({
+      system: SYSTEM_PROMPT,
+      user: buildUserPrompt({
+        kind,
+        prompt,
+        glossary,
+        chunk: chunks[index].join('\n'),
+        index,
+        total: chunks.length,
+      }),
+      maxTokens: 1500,
+    });
+
+    partials.push(normalizeSummary(data));
+  }
+
+  onProgress?.(chunks.length, chunks.length);
+
+  const { data } = await chatJson({
+    system: REDUCE_PROMPT,
+    user: `Merge these partial summaries into one:\n\n${JSON.stringify(partials).slice(0, maxChars)}`,
+    maxTokens: 2200,
+  });
+
+  return normalizeSummary(data);
+}
+
+// --- rendering --------------------------------------------------------------
+
+const FIELD_LIMIT = 1024;
+const MAX_FIELDS = 24;
+
+/** Splits a section across as many fields as needed, keeping whole lines. */
+function pushSection(fields, name, lines) {
+  const text = lines.filter(Boolean).join('\n');
+
+  if (!text.trim()) return;
+
+  const chunks = [];
+  let current = '';
+
+  for (const line of text.split('\n')) {
+    if (current && current.length + line.length + 1 > FIELD_LIMIT - 8) {
+      chunks.push(current);
+      current = '';
+    }
+
+    current = current ? `${current}\n${line}` : line;
+  }
+
+  if (current) chunks.push(current);
+
+  chunks.forEach((chunk, index) => {
+    if (fields.length >= MAX_FIELDS) return;
+
+    fields.push({
+      name: chunks.length > 1 ? `${name} (${index + 1}/${chunks.length})` : name,
+      value: chunk.slice(0, FIELD_LIMIT),
+      inline: false,
+    });
+  });
+}
+
+export function summaryFields(data) {
+  const fields = [];
+
+  if (data.answer) pushSection(fields, '🎯 Answer', [data.answer]);
+
+  pushSection(
+    fields,
+    '🧵 Topics',
+    data.topics.map((topic) =>
+      topic.summary ? `**${topic.title || 'Topic'}** — ${topic.summary}` : `**${topic.title}**`,
+    ),
+  );
+
+  pushSection(
+    fields,
+    '✅ Decisions',
+    data.decisions.map((decision) => `- ${decision}`),
+  );
+
+  pushSection(
+    fields,
+    '📌 Action items',
+    data.tasks.map((task) => `- ${task.task}${task.owner ? ` — **${task.owner}**` : ''}`),
+  );
+
+  pushSection(
+    fields,
+    '❓ Open questions',
+    data.questions.map((question) => `- ${question}`),
+  );
+
+  pushSection(
+    fields,
+    '💬 Highlights',
+    data.highlights.map((item) => `> ${item.quote}${item.author ? `\n> — ${item.author}` : ''}`),
+  );
+
+  return fields;
+}
+
+/**
+ * `meta` carries everything the reader needs to judge the summary: which
+ * channel, which window, how many messages, and who asked for it.
+ */
+export function renderSummary({ data, meta }) {
+  const fields = summaryFields(data);
+  const embeds = [];
+  const spec = SUMMARY_KINDS[meta.kind] ?? SUMMARY_KINDS.general;
+  const footer = [
+    meta.channelName ? `#${meta.channelName}` : null,
+    `${meta.messageCount} message${meta.messageCount === 1 ? '' : 's'}`,
+    meta.model,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
+  const title = `${spec.emoji} ${spec.label} summary${meta.channelName ? ` — #${meta.channelName}` : ''}`;
+
+  // Two embeds max: Discord caps an embed at 25 fields and 6000 characters, and
+  // a second embed reads better than 25 truncated fields.
+  const head = fields.slice(0, MAX_FIELDS);
+  const tail = fields.slice(MAX_FIELDS);
+
+  embeds.push(
+    embed({
+      title: title.slice(0, 256),
+      description: data.headline || undefined,
+      fields: head,
+      footer: footer.slice(0, 200),
+      color: COLORS.primary,
+    }),
+  );
+
+  if (tail.length > 0) {
+    embeds.push(
+      embed({
+        title: 'Continued',
+        fields: tail,
+        color: COLORS.primary,
+        timestamp: false,
+      }),
+    );
+  }
+
+  return { embeds, markdown: summaryMarkdown({ data, meta }) };
+}
+
+/** Plain markdown, reused by the HTML/PDF export. */
+export function summaryMarkdown({ data, meta }) {
+  const spec = SUMMARY_KINDS[meta.kind] ?? SUMMARY_KINDS.general;
+  const lines = [`# ${spec.label} summary — #${meta.channelName ?? meta.channelId}`, ''];
+
+  if (data.headline) lines.push(`_${data.headline}_`, '');
+  if (data.answer) lines.push('## Answer', '', data.answer, '');
+
+  if (data.topics.length > 0) {
+    lines.push('## Topics', '');
+
+    for (const topic of data.topics) {
+      lines.push(`### ${topic.title}`, '', topic.summary, '');
+    }
+  }
+
+  if (data.decisions.length > 0) {
+    lines.push('## Decisions', '', ...data.decisions.map((item) => `- ${item}`), '');
+  }
+
+  if (data.tasks.length > 0) {
+    lines.push('## Action items', '');
+
+    for (const task of data.tasks) {
+      lines.push(`- [ ] ${task.task}${task.owner ? ` — **${task.owner}**` : ''}`);
+    }
+
+    lines.push('');
+  }
+
+  if (data.questions.length > 0) {
+    lines.push('## Open questions', '', ...data.questions.map((item) => `- ${item}`), '');
+  }
+
+  if (data.highlights.length > 0) {
+    lines.push('## Highlights', '');
+
+    for (const item of data.highlights) {
+      lines.push(`> ${item.quote}`);
+
+      if (item.author) lines.push(`> — ${item.author}`);
+
+      lines.push('');
+    }
+  }
+
+  lines.push(
+    '---',
+    '',
+    `Channel: #${meta.channelName ?? meta.channelId} · ${meta.messageCount} messages`,
+    `Window: ${new Date(meta.rangeStart).toISOString()} → ${new Date(meta.rangeEnd).toISOString()}`,
+    `Requested by: ${meta.requestedBy ?? 'unknown'} · Model: ${meta.model ?? 'unknown'}`,
+  );
+
+  if (meta.prompt) lines.push(`Focus: ${meta.prompt}`);
+
+  return lines.join('\n');
+}
