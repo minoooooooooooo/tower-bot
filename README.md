@@ -141,6 +141,8 @@ Prefix form, order-independent:
 - Long windows are split into parts and merged by a second model call, so a 7-day summary still fits the context.
 - Each report is stored in SQLite (structure, not transcript), so `/summary history` and `/summary export` never call the model again.
 - Reports never ping anyone, and the model is told to use only the transcript, in the language people actually spoke.
+- **People keep their real names.** The transcript uses the member's nickname (or global name) instead of the raw handle, so the model writes `It's Emad` and not `e_a_0`. When the report is in Arabic, Latin names are written in Arabic letters: `It's Emad` becomes **عماد**, `ShinIsekai` becomes **شين ايسكاي**.
+- **Headings follow the report language.** An Arabic report is titled `ملخص عام` and uses `المواضيع` / `القرارات` / `المهام` / `أسئلة مفتوحة` / `أبرز النقاط`, with `233 رسالة` in the footer. English reports are unchanged, and the HTML export uses the same labels.
 
 ### Exporting
 

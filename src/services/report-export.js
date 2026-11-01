@@ -1,4 +1,4 @@
-import { SUMMARY_KINDS } from './summary.js';
+import { LABELS, SUMMARY_KINDS } from './summary.js';
 
 const RTL = /[\u0591-\u07FF\uFB1D-\uFDFD\uFE70-\uFEFC]/;
 
@@ -48,8 +48,10 @@ export function buildSummaryHtml({ data, meta }) {
   const spec = SUMMARY_KINDS[meta.kind] ?? SUMMARY_KINDS.general;
   const sample = [data.headline, data.answer, ...data.topics.map((t) => t.summary)].join(' ');
   const dir = detectDirection(sample);
+  const labels = dir === 'rtl' ? LABELS.ar : LABELS.en;
   const timeZone = meta.timeZone ?? 'UTC';
-  const title = `${spec.label} summary — #${meta.channelName ?? meta.channelId}`;
+  const kindLabel = dir === 'rtl' ? spec.arLabel : spec.label;
+  const title = `${kindLabel} — #${meta.channelName ?? meta.channelId}`;
 
   const topics = data.topics
     .map(
@@ -137,22 +139,26 @@ export function buildSummaryHtml({ data, meta }) {
   <p class="subtitle" dir="auto">${escapeHtml(data.headline || spec.brief)}</p>
   <div class="chips">
     <span class="chip">${escapeHtml(stamp(meta.rangeStart, timeZone))} → ${escapeHtml(stamp(meta.rangeEnd, timeZone))}</span>
-    <span class="chip">${meta.messageCount} messages</span>
+    <span class="chip">${escapeHtml(labels.messages(meta.messageCount))}</span>
     <span class="chip">${escapeHtml(meta.model ?? '')}</span>
   </div>
 </header>
-<p class="hint">To get a PDF: Print (Ctrl/Cmd + P) → “Save as PDF”. Arabic text renders with your system fonts.</p>
+<p class="hint">${
+    dir === 'rtl'
+      ? 'للحصول على PDF: اطبع الصفحة (Ctrl/Cmd + P) ثم اختر «حفظ كـ PDF». يظهر النص العربي بخطوط جهازك.'
+      : 'To get a PDF: Print (Ctrl/Cmd + P) → “Save as PDF”. Arabic text renders with your system fonts.'
+  }</p>
 ${data.headline ? `<p class="headline" dir="auto">${escapeHtml(data.headline)}</p>` : ''}
-${section('Answer', data.answer ? paragraph(data.answer) : '')}
-${section('Topics', topics)}
-${section('Decisions', list(data.decisions))}
-${section('Action items', tasks)}
-${section('Open questions', list(data.questions))}
-${section('Highlights', highlights)}
+${section(labels.sections.answer.heading, data.answer ? paragraph(data.answer) : '')}
+${section(labels.sections.topics.heading, topics)}
+${section(labels.sections.decisions.heading, list(data.decisions))}
+${section(labels.sections.tasks.heading, tasks)}
+${section(labels.sections.questions.heading, list(data.questions))}
+${section(labels.sections.highlights.heading, highlights)}
 <footer dir="auto">
-  Requested by ${escapeHtml(meta.requestedBy ?? 'unknown')} · ${escapeHtml(spec.label)} summary
-  ${meta.prompt ? `<br>Focus: ${escapeHtml(meta.prompt)}` : ''}
-  <br>Generated ${escapeHtml(new Date(meta.generatedAt ?? Date.now()).toISOString())}
+  ${escapeHtml(labels.requestedBy)} ${escapeHtml(meta.requestedBy ?? labels.unknown)} · ${escapeHtml(kindLabel)}
+  ${meta.prompt ? `<br>${escapeHtml(labels.focus)}: ${escapeHtml(meta.prompt)}` : ''}
+  <br>${dir === 'rtl' ? 'أُنشئ في' : 'Generated'} ${escapeHtml(new Date(meta.generatedAt ?? Date.now()).toISOString())}
 </footer>
 </body>
 </html>`;

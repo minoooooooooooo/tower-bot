@@ -6,6 +6,7 @@ import { chunkLines } from './summary-source.js';
 export const SUMMARY_KINDS = {
   general: {
     label: 'General',
+    arLabel: 'ملخص عام',
     emoji: '🧭',
     brief: 'topics, news and decisions',
     emphasis:
@@ -13,6 +14,7 @@ export const SUMMARY_KINDS = {
   },
   tasks: {
     label: 'Action items',
+    arLabel: 'ملخص المهام',
     emoji: '📌',
     brief: 'requests, problems and owners',
     emphasis:
@@ -20,6 +22,7 @@ export const SUMMARY_KINDS = {
   },
   targeted: {
     label: 'Targeted',
+    arLabel: 'ملخص موجّه',
     emoji: '🎯',
     brief: 'one topic, on request',
     emphasis:
@@ -46,12 +49,90 @@ export const KIND_ALIASES = {
 const MAX_ITEMS = { topics: 8, decisions: 8, tasks: 10, questions: 6, highlights: 4 };
 const MAX_LENGTH = { headline: 400, topicTitle: 120, topicSummary: 700, item: 400, quote: 300, answer: 900 };
 
+/**
+ * Section furniture. Labels follow the language of the report body, not the
+ * guild locale: an Arabic channel should not get English headings.
+ */
+export const LABELS = {
+  en: {
+    sections: {
+      answer: { field: '🎯 Answer', heading: 'Answer' },
+      topics: { field: '🧵 Topics', heading: 'Topics' },
+      decisions: { field: '✅ Decisions', heading: 'Decisions' },
+      tasks: { field: '📌 Action items', heading: 'Action items' },
+      questions: { field: '❓ Open questions', heading: 'Open questions' },
+      highlights: { field: '💬 Highlights', heading: 'Highlights' },
+    },
+    topicFallback: 'Topic',
+    continued: 'Continued',
+    messages: (count) => `${count} message${count === 1 ? '' : 's'}`,
+    channel: 'Channel',
+    window: 'Window',
+    requestedBy: 'Requested by',
+    model: 'Model',
+    focus: 'Focus',
+    unknown: 'unknown',
+  },
+  ar: {
+    sections: {
+      answer: { field: '🎯 الإجابة', heading: 'الإجابة' },
+      topics: { field: '🧵 المواضيع', heading: 'المواضيع' },
+      decisions: { field: '✅ القرارات', heading: 'القرارات' },
+      tasks: { field: '📌 المهام', heading: 'المهام' },
+      questions: { field: '❓ أسئلة مفتوحة', heading: 'أسئلة مفتوحة' },
+      highlights: { field: '💬 أبرز النقاط', heading: 'أبرز النقاط' },
+    },
+    topicFallback: 'موضوع',
+    continued: 'تكملة',
+    messages: (count) => `${count} رسالة`,
+    channel: 'القناة',
+    window: 'الفترة',
+    requestedBy: 'طلبها',
+    model: 'النموذج',
+    focus: 'التركيز',
+    unknown: 'غير معروف',
+  },
+};
+
+const ARABIC_RANGE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/g;
+
+/**
+ * True when the report itself is written in Arabic, which decides the labels.
+ * Uses the same 30% threshold as the export's direction check so headings and
+ * page direction can never disagree.
+ */
+export function isArabicContent(data) {
+  const sample = [
+    data?.headline,
+    data?.answer,
+    ...(data?.topics ?? []).map((topic) => `${topic?.title ?? ''} ${topic?.summary ?? ''}`),
+    ...(data?.decisions ?? []),
+    ...(data?.tasks ?? []).map((task) => `${task?.task ?? ''} ${task?.owner ?? ''}`),
+    ...(data?.questions ?? []),
+    ...(data?.highlights ?? []).map((item) => `${item?.quote ?? ''} ${item?.author ?? ''}`),
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  const letters = sample.replace(/[\s\d\p{P}]/gu, '');
+
+  if (letters.length < 12) return false;
+
+  return (sample.match(ARABIC_RANGE) ?? []).length / letters.length > 0.3;
+}
+
+export function labelsFor(data) {
+  return isArabicContent(data) ? LABELS.ar : LABELS.en;
+}
+
 const SYSTEM_PROMPT = [
   'You write operational summaries of a Discord channel for a server management team.',
   'Rules:',
   '- Use ONLY the transcript. Never invent names, numbers, links, or decisions.',
   '- Write in the language used most in the transcript (Arabic stays Arabic, English stays English).',
   '- Be specific about who said or proposed what when it matters.',
+  '- Name people exactly as the transcript does: their display name, never a raw Discord handle.',
+  '- When writing in Arabic, write names in Arabic letters: translate a meaningful name (It\'s Emad → عماد) or transliterate it phonetically (ShinIsekai → شين ايسكاي). Do not leave Latin handles inside an Arabic sentence.',
   '- Skip greetings, spam, and small talk unless it is the topic.',
   '- Reply with a single JSON object and nothing else.',
   'JSON shape:',
@@ -70,6 +151,7 @@ const REDUCE_PROMPT = [
   '- Deduplicate overlapping points; keep the most specific wording.',
   '- Never invent facts that are not in the partial summaries.',
   '- Write in the dominant language of the partial summaries.',
+  '- Keep names in the script of that language: one person must not appear as "عماد" in one section and "e_a_0" elsewhere.',
   '- Reply with a single JSON object using exactly this shape:',
   '{"headline":"","answer":"","topics":[{"title":"","summary":""}],"decisions":[],"tasks":[{"task":"","owner":""}],"questions":[],"highlights":[{"quote":"","author":""}]}',
 ].join('\n');
@@ -149,7 +231,7 @@ export function isEmptySummary(data) {
   );
 }
 
-function buildUserPrompt({ kind, prompt, glossary, chunk, index, total }) {
+function buildUserPrompt({ kind, prompt, glossary, roster, chunk, index, total }) {
   const spec = SUMMARY_KINDS[kind] ?? SUMMARY_KINDS.general;
   const parts = [`Task: ${spec.emphasis}`];
 
@@ -160,6 +242,15 @@ function buildUserPrompt({ kind, prompt, glossary, chunk, index, total }) {
   if (total > 1) {
     parts.push(
       `This is part ${index + 1} of ${total} of the transcript. Summarize only this part; the parts are merged afterwards.`,
+    );
+  }
+
+  if (roster?.length > 0) {
+    parts.push(
+      [
+        'Speakers in this transcript. Use the name on the left exactly; the handle is only there so you can tell two spellings are the same person:',
+        ...roster,
+      ].join('\n'),
     );
   }
 
@@ -183,6 +274,7 @@ export async function summarizeTranscript({
   kind = 'general',
   prompt = null,
   glossary = '',
+  roster = [],
   maxChars = config.ai.maxInputChars,
   onProgress = null,
 }) {
@@ -197,6 +289,7 @@ export async function summarizeTranscript({
         kind,
         prompt,
         glossary,
+        roster,
         chunk: chunks[0].join('\n'),
         index: 0,
         total: 1,
@@ -218,6 +311,7 @@ export async function summarizeTranscript({
         kind,
         prompt,
         glossary,
+        roster,
         chunk: chunks[index].join('\n'),
         index,
         total: chunks.length,
@@ -275,40 +369,42 @@ function pushSection(fields, name, lines) {
   });
 }
 
-export function summaryFields(data) {
+export function summaryFields(data, labels = LABELS.en) {
   const fields = [];
 
-  if (data.answer) pushSection(fields, '🎯 Answer', [data.answer]);
+  if (data.answer) pushSection(fields, labels.sections.answer.field, [data.answer]);
 
   pushSection(
     fields,
-    '🧵 Topics',
+    labels.sections.topics.field,
     data.topics.map((topic) =>
-      topic.summary ? `**${topic.title || 'Topic'}** — ${topic.summary}` : `**${topic.title}**`,
+      topic.summary
+        ? `**${topic.title || labels.topicFallback}** — ${topic.summary}`
+        : `**${topic.title}**`,
     ),
   );
 
   pushSection(
     fields,
-    '✅ Decisions',
+    labels.sections.decisions.field,
     data.decisions.map((decision) => `- ${decision}`),
   );
 
   pushSection(
     fields,
-    '📌 Action items',
+    labels.sections.tasks.field,
     data.tasks.map((task) => `- ${task.task}${task.owner ? ` — **${task.owner}**` : ''}`),
   );
 
   pushSection(
     fields,
-    '❓ Open questions',
+    labels.sections.questions.field,
     data.questions.map((question) => `- ${question}`),
   );
 
   pushSection(
     fields,
-    '💬 Highlights',
+    labels.sections.highlights.field,
     data.highlights.map((item) => `> ${item.quote}${item.author ? `\n> — ${item.author}` : ''}`),
   );
 
@@ -320,18 +416,20 @@ export function summaryFields(data) {
  * channel, which window, how many messages, and who asked for it.
  */
 export function renderSummary({ data, meta }) {
-  const fields = summaryFields(data);
+  const labels = labelsFor(data);
+  const fields = summaryFields(data, labels);
   const embeds = [];
   const spec = SUMMARY_KINDS[meta.kind] ?? SUMMARY_KINDS.general;
+  const heading = labels === LABELS.ar ? spec.arLabel : `${spec.label} summary`;
   const footer = [
     meta.channelName ? `#${meta.channelName}` : null,
-    `${meta.messageCount} message${meta.messageCount === 1 ? '' : 's'}`,
+    labels.messages(meta.messageCount),
     meta.model,
   ]
     .filter(Boolean)
     .join(' · ');
 
-  const title = `${spec.emoji} ${spec.label} summary${meta.channelName ? ` — #${meta.channelName}` : ''}`;
+  const title = `${spec.emoji} ${heading}${meta.channelName ? ` — #${meta.channelName}` : ''}`;
 
   // Two embeds max: Discord caps an embed at 25 fields and 6000 characters, and
   // a second embed reads better than 25 truncated fields.
@@ -351,7 +449,7 @@ export function renderSummary({ data, meta }) {
   if (tail.length > 0) {
     embeds.push(
       embed({
-        title: 'Continued',
+        title: labels.continued,
         fields: tail,
         color: COLORS.primary,
         timestamp: false,
@@ -364,14 +462,16 @@ export function renderSummary({ data, meta }) {
 
 /** Plain markdown, reused by the HTML/PDF export. */
 export function summaryMarkdown({ data, meta }) {
+  const labels = labelsFor(data);
   const spec = SUMMARY_KINDS[meta.kind] ?? SUMMARY_KINDS.general;
-  const lines = [`# ${spec.label} summary — #${meta.channelName ?? meta.channelId}`, ''];
+  const heading = labels === LABELS.ar ? spec.arLabel : `${spec.label} summary`;
+  const lines = [`# ${heading} — #${meta.channelName ?? meta.channelId}`, ''];
 
   if (data.headline) lines.push(`_${data.headline}_`, '');
-  if (data.answer) lines.push('## Answer', '', data.answer, '');
+  if (data.answer) lines.push(`## ${labels.sections.answer.heading}`, '', data.answer, '');
 
   if (data.topics.length > 0) {
-    lines.push('## Topics', '');
+    lines.push(`## ${labels.sections.topics.heading}`, '');
 
     for (const topic of data.topics) {
       lines.push(`### ${topic.title}`, '', topic.summary, '');
@@ -379,11 +479,16 @@ export function summaryMarkdown({ data, meta }) {
   }
 
   if (data.decisions.length > 0) {
-    lines.push('## Decisions', '', ...data.decisions.map((item) => `- ${item}`), '');
+    lines.push(
+      `## ${labels.sections.decisions.heading}`,
+      '',
+      ...data.decisions.map((item) => `- ${item}`),
+      '',
+    );
   }
 
   if (data.tasks.length > 0) {
-    lines.push('## Action items', '');
+    lines.push(`## ${labels.sections.tasks.heading}`, '');
 
     for (const task of data.tasks) {
       lines.push(`- [ ] ${task.task}${task.owner ? ` — **${task.owner}**` : ''}`);
@@ -393,11 +498,16 @@ export function summaryMarkdown({ data, meta }) {
   }
 
   if (data.questions.length > 0) {
-    lines.push('## Open questions', '', ...data.questions.map((item) => `- ${item}`), '');
+    lines.push(
+      `## ${labels.sections.questions.heading}`,
+      '',
+      ...data.questions.map((item) => `- ${item}`),
+      '',
+    );
   }
 
   if (data.highlights.length > 0) {
-    lines.push('## Highlights', '');
+    lines.push(`## ${labels.sections.highlights.heading}`, '');
 
     for (const item of data.highlights) {
       lines.push(`> ${item.quote}`);
@@ -411,12 +521,12 @@ export function summaryMarkdown({ data, meta }) {
   lines.push(
     '---',
     '',
-    `Channel: #${meta.channelName ?? meta.channelId} · ${meta.messageCount} messages`,
-    `Window: ${new Date(meta.rangeStart).toISOString()} → ${new Date(meta.rangeEnd).toISOString()}`,
-    `Requested by: ${meta.requestedBy ?? 'unknown'} · Model: ${meta.model ?? 'unknown'}`,
+    `${labels.channel}: #${meta.channelName ?? meta.channelId} · ${labels.messages(meta.messageCount)}`,
+    `${labels.window}: ${new Date(meta.rangeStart).toISOString()} → ${new Date(meta.rangeEnd).toISOString()}`,
+    `${labels.requestedBy}: ${meta.requestedBy ?? labels.unknown} · ${labels.model}: ${meta.model ?? labels.unknown}`,
   );
 
-  if (meta.prompt) lines.push(`Focus: ${meta.prompt}`);
+  if (meta.prompt) lines.push(`${labels.focus}: ${meta.prompt}`);
 
   return lines.join('\n');
 }

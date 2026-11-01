@@ -13,7 +13,7 @@ import { createLogger } from '../lib/logger.js';
 import { buildSummaryHtml } from './report-export.js';
 import { glossaryPrompt } from './report-store.js';
 import { renderSummary, summarizeTranscript } from './summary.js';
-import { buildTranscript, collectRangeMessages } from './summary-source.js';
+import { buildSpeakerRoster, buildTranscript, collectRangeMessages, resolveDisplayNames } from './summary-source.js';
 
 const logger = createLogger('report-runner');
 
@@ -122,12 +122,19 @@ export async function produceSummary({
 
   if (collected.messages.length === 0) return { data: null, collected, meta: null };
 
-  const transcript = buildTranscript(collected.messages, { timeZone });
+  // Nicknames are what the team calls each other; the raw handle is only there
+  // so the model can tell that two spellings are one person.
+  const names = await resolveDisplayNames(collected.messages, channel.guild, {
+    maxFetches: 30,
+  });
+  const transcript = buildTranscript(collected.messages, { timeZone, names });
+  const roster = buildSpeakerRoster(collected.messages, names);
   const data = await summarizeTranscript({
     transcript,
     kind,
     prompt,
     glossary: glossaryPrompt(guildId),
+    roster,
     onProgress,
   });
 

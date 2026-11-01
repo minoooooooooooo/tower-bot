@@ -107,14 +107,96 @@ export async function collectRangeMessages(channel, { since, until = Date.now(),
 }
 
 /**
+ * Display name per author. A nickname is what the team actually calls someone,
+ * so it beats both the global name and the raw handle. Messages fetched from
+ * history sometimes arrive without a `member`, which is why this falls back to
+ * the guild cache and then one bounded REST lookup per author.
+ */
+export async function resolveDisplayNames(messages, guild = null, { maxFetches = 30 } = {}) {
+  const names = new Map();
+  const seen = new Set();
+  let fetches = 0;
+
+  for (const message of messages) {
+    const id = message.author?.id;
+
+    if (!id || seen.has(id)) continue;
+
+    seen.add(id);
+
+    const inline = message.member?.displayName;
+
+    if (inline) {
+      names.set(id, inline);
+      continue;
+    }
+
+    const cached = guild?.members?.cache?.get?.(id)?.displayName;
+
+    if (cached) {
+      names.set(id, cached);
+      continue;
+    }
+
+    if (fetches < maxFetches && typeof guild?.members?.fetch === 'function') {
+      fetches += 1;
+      const member = await guild.members.fetch(id).catch(() => null);
+
+      if (member?.displayName) {
+        names.set(id, member.displayName);
+        continue;
+      }
+    }
+
+    const fallback = message.author?.globalName ?? message.author?.username;
+
+    if (fallback) names.set(id, fallback);
+  }
+
+  return names;
+}
+
+/**
+ * Names the model should use, paired with the raw handle so it can tell that
+ * two spellings are one person. Only speakers whose handle differs are listed.
+ */
+export function buildSpeakerRoster(messages, names) {
+  const seen = new Set();
+  const lines = [];
+
+  for (const message of messages) {
+    const id = message.author?.id;
+    const username = message.author?.username;
+
+    if (!id || !username || seen.has(id)) continue;
+
+    seen.add(id);
+
+    const display =
+      names?.get(id) ?? message.member?.displayName ?? message.author?.globalName;
+
+    if (!display || display === username) continue;
+
+    lines.push(`- ${display} (${username})`);
+  }
+
+  return lines.slice(0, 40);
+}
+
+/**
  * `[14:03 02 Nov] Name: text` — one line per message, trimmed hard so a single
  * wall of text cannot eat the whole budget.
  */
-export function buildTranscript(messages, { timeZone = 'UTC' } = {}) {
+export function buildTranscript(messages, { timeZone = 'UTC', names = null } = {}) {
   const format = timeFormatter(timeZone);
 
   return messages.map((message) => {
-    const name = message.member?.displayName ?? message.author?.username ?? 'unknown';
+    const name =
+      names?.get(message.author?.id) ??
+      message.member?.displayName ??
+      message.author?.globalName ??
+      message.author?.username ??
+      'unknown';
     const bot = message.author?.bot ? ' (bot)' : '';
     const extras = describeExtras(message);
     const text = String(message.content ?? '')
