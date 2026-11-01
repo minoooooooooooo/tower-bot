@@ -90,8 +90,9 @@ function parseInput(ctx) {
 /**
  * Walks history newest-first until `amount` recent messages match the optional
  * author filter. Stops at MAX_SCAN so a sparse filter cannot page forever.
+ * `excludeId` is the invoking command message's id, which is never deleted.
  */
-async function collectMessages(channel, amount, user) {
+async function collectMessages(channel, amount, user, excludeId = null) {
   const cutoff = Date.now() - TWO_WEEKS_MS;
   const maxScan = Math.min(amount * 10 + 100, MAX_SCAN);
   const messages = [];
@@ -122,6 +123,9 @@ async function collectMessages(channel, amount, user) {
         hitOld = true;
         continue;
       }
+
+      // `:-clear 1` must remove the message above the command, not the command.
+      if (excludeId && message.id === excludeId) continue;
 
       if (user && message.author.id !== user.id) continue;
 
@@ -295,6 +299,7 @@ export default {
         ctx.channel,
         input.amount,
         input.user,
+        ctx.message?.id ?? null,
       ));
     } catch (error) {
       logger.warn(`Could not read history in #${ctx.channel.name}: ${error.message}`);
