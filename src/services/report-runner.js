@@ -158,8 +158,12 @@ export async function produceSummary({
 
 /** Message payload for a finished report, including the export button. */
 export function reportPayload({ data, meta, id, collected }) {
-  const { embeds } = renderSummary({ data, meta });
+  const { embeds, truncated } = renderSummary({ data, meta });
   const notes = [];
+
+  if (truncated) {
+    notes.push('The report outgrew Discord\'s message limit — the export has the full text.');
+  }
 
   if (collected?.truncated) {
     notes.push(

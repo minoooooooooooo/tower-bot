@@ -46,8 +46,15 @@ export const KIND_ALIASES = {
   focus: 'targeted',
 };
 
-const MAX_ITEMS = { topics: 8, decisions: 8, tasks: 10, questions: 6, highlights: 4 };
-const MAX_LENGTH = { headline: 400, topicTitle: 120, topicSummary: 700, item: 400, quote: 300, answer: 900 };
+const MAX_ITEMS = { topics: 12, decisions: 15, tasks: 20, questions: 10, highlights: 6 };
+const MAX_LENGTH = {
+  headline: 500,
+  topicTitle: 150,
+  topicSummary: 900,
+  item: 300,
+  quote: 400,
+  answer: 1500,
+};
 
 /**
  * Section furniture. Labels follow the language of the report body, not the
@@ -133,12 +140,15 @@ const SYSTEM_PROMPT = [
   '- Be specific about who said or proposed what when it matters.',
   '- Name people exactly as the transcript does: their display name, never a raw Discord handle.',
   '- When writing in Arabic, write names in Arabic letters: translate a meaningful name (It\'s Emad → عماد) or transliterate it phonetically (ShinIsekai → شين ايسكاي). Do not leave Latin handles inside an Arabic sentence.',
+  '- Be exhaustive. Every distinct subject, decision, request, problem, number, date, link and name in the transcript must appear somewhere in the JSON. Do not merge unrelated subjects to save space, and do not drop minor points.',
+  '- Prefer many specific entries over few general ones. Give each topic its own entry with 4-8 sentences covering who raised it, what was said, any numbers or links, and how it ended.',
+  '- Aim for 700-1,200 words for a full day of chat. A short window can be shorter; never pad with filler or repeat yourself.',
   '- Skip greetings, spam, and small talk unless it is the topic.',
   '- Reply with a single JSON object and nothing else.',
   'JSON shape:',
   '{"headline":"one sentence overview","answer":"only for targeted summaries",',
-  ' "topics":[{"title":"short label","summary":"2-3 sentences"}],',
-  ' "decisions":["what was decided, by whom if stated"],',
+  ' "topics":[{"title":"short label","summary":"4-8 sentences"}],',
+  ' "decisions":["what was decided, by whom, and under what condition"],',
   ' "tasks":[{"task":"what must be done","owner":"who took it, or empty"}],',
   ' "questions":["unresolved question"],',
   ' "highlights":[{"quote":"short verbatim quote","author":"display name"}]}',
@@ -148,7 +158,8 @@ const SYSTEM_PROMPT = [
 const REDUCE_PROMPT = [
   'You merge partial summaries of the same Discord channel into one final summary.',
   'Rules:',
-  '- Deduplicate overlapping points; keep the most specific wording.',
+  '- Deduplicate only true duplicates; keep every distinct point from every partial summary. Merging is not compressing.',
+  '- The final summary must be at least as detailed as the partials. Never shorten for brevity.',
   '- Never invent facts that are not in the partial summaries.',
   '- Write in the dominant language of the partial summaries.',
   '- Keep names in the script of that language: one person must not appear as "عماد" in one section and "e_a_0" elsewhere.',
@@ -294,7 +305,8 @@ export async function summarizeTranscript({
         index: 0,
         total: 1,
       }),
-      maxTokens: 2200,
+      maxTokens: 4096,
+      timeoutMs: 180_000,
     });
 
     return normalizeSummary(data);
@@ -316,7 +328,8 @@ export async function summarizeTranscript({
         index,
         total: chunks.length,
       }),
-      maxTokens: 1500,
+      maxTokens: 2048,
+      timeoutMs: 120_000,
     });
 
     partials.push(normalizeSummary(data));
@@ -326,8 +339,9 @@ export async function summarizeTranscript({
 
   const { data } = await chatJson({
     system: REDUCE_PROMPT,
-    user: `Merge these partial summaries into one:\n\n${JSON.stringify(partials).slice(0, maxChars)}`,
-    maxTokens: 2200,
+    user: `Merge these partial summaries into one. Keep every distinct point:\n\n${JSON.stringify(partials).slice(0, maxChars)}`,
+    maxTokens: 4096,
+    timeoutMs: 180_000,
   });
 
   return normalizeSummary(data);
@@ -336,7 +350,13 @@ export async function summarizeTranscript({
 // --- rendering --------------------------------------------------------------
 
 const FIELD_LIMIT = 1024;
-const MAX_FIELDS = 24;
+const MAX_FIELDS = 25;
+
+// Discord rejects an embed whose text exceeds 6,000 characters, so sections are
+// packed into as many embeds as needed instead of being cut.
+const EMBED_CHAR_BUDGET = 5_600;
+const MAX_EMBEDS = 8;
+const MAX_TOTAL_FIELDS = MAX_FIELDS * MAX_EMBEDS;
 
 /** Splits a section across as many fields as needed, keeping whole lines. */
 function pushSection(fields, name, lines) {
@@ -359,7 +379,7 @@ function pushSection(fields, name, lines) {
   if (current) chunks.push(current);
 
   chunks.forEach((chunk, index) => {
-    if (fields.length >= MAX_FIELDS) return;
+    if (fields.length >= MAX_TOTAL_FIELDS) return;
 
     fields.push({
       name: chunks.length > 1 ? `${name} (${index + 1}/${chunks.length})` : name,
@@ -418,7 +438,6 @@ export function summaryFields(data, labels = LABELS.en) {
 export function renderSummary({ data, meta }) {
   const labels = labelsFor(data);
   const fields = summaryFields(data, labels);
-  const embeds = [];
   const spec = SUMMARY_KINDS[meta.kind] ?? SUMMARY_KINDS.general;
   const heading = labels === LABELS.ar ? spec.arLabel : `${spec.label} summary`;
   const footer = [
@@ -430,34 +449,47 @@ export function renderSummary({ data, meta }) {
     .join(' · ');
 
   const title = `${spec.emoji} ${heading}${meta.channelName ? ` — #${meta.channelName}` : ''}`;
+  const description = data.headline || undefined;
 
-  // Two embeds max: Discord caps an embed at 25 fields and 6000 characters, and
-  // a second embed reads better than 25 truncated fields.
-  const head = fields.slice(0, MAX_FIELDS);
-  const tail = fields.slice(MAX_FIELDS);
+  // Pack fields into embeds: 25 fields and ~5,600 characters each. A long report
+  // becomes two or three embeds instead of a rejected message.
+  const groups = [];
+  let current = [];
+  let used = (title.length + (description?.length ?? 0) + footer.length) + 40;
 
-  embeds.push(
+  for (const field of fields) {
+    const cost = field.name.length + field.value.length + 1;
+
+    if (current.length > 0 && (current.length >= MAX_FIELDS || used + cost > EMBED_CHAR_BUDGET)) {
+      groups.push(current);
+      current = [];
+      used = 40;
+    }
+
+    current.push(field);
+    used += cost;
+  }
+
+  if (current.length > 0) groups.push(current);
+
+  const truncated = groups.length > MAX_EMBEDS;
+  const kept = groups.slice(0, MAX_EMBEDS);
+
+  const embeds = kept.map((group, index) =>
     embed({
-      title: title.slice(0, 256),
-      description: data.headline || undefined,
-      fields: head,
-      footer: footer.slice(0, 200),
+      title: (index === 0
+        ? title
+        : `${labels.continued} (${index + 1}/${kept.length})`
+      ).slice(0, 256),
+      description: index === 0 ? description : undefined,
+      fields: group,
+      footer: index === 0 ? footer.slice(0, 200) : undefined,
       color: COLORS.primary,
+      timestamp: index === 0,
     }),
   );
 
-  if (tail.length > 0) {
-    embeds.push(
-      embed({
-        title: labels.continued,
-        fields: tail,
-        color: COLORS.primary,
-        timestamp: false,
-      }),
-    );
-  }
-
-  return { embeds, markdown: summaryMarkdown({ data, meta }) };
+  return { embeds, truncated, markdown: summaryMarkdown({ data, meta }) };
 }
 
 /** Plain markdown, reused by the HTML/PDF export. */
