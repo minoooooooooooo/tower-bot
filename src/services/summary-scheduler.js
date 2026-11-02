@@ -148,7 +148,7 @@ export async function runScheduledReport(client, schedule, { now = Date.now() } 
       now - MAX_WINDOW_MS,
     );
 
-    const { data, collected, meta } = await produceSummary({
+    const { data, collected, meta, reason } = await produceSummary({
       guildId: schedule.guildId,
       channel: source,
       kind: schedule.kind,
@@ -163,7 +163,14 @@ export async function runScheduledReport(client, schedule, { now = Date.now() } 
     // window and double-charge the model.
     touchSchedule(schedule.id, now);
 
-    if (!data) return { skipped: 'empty' };
+    if (!data) {
+      logger.info(
+        `Scheduled ${schedule.kind} report for #${source.name} skipped: ${
+          reason === 'empty-summary' ? 'the model found nothing to report' : 'no messages'
+        }`,
+      );
+      return { skipped: 'empty', reason };
+    }
 
     const id = saveSummary({
       guildId: schedule.guildId,

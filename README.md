@@ -152,6 +152,10 @@ Prefix form, order-independent:
 
 That is deliberate: a real PDF with Arabic text needs a bundled font plus shaping support, while the browser has both already. The export detects Arabic content and lays the page out right-to-left, escapes HTML, and has a print stylesheet (`@media print`) so the PDF has no margins or hint boxes.
 
+The 📄 button under a report does the same thing. It is handled by the bot globally, not by a five-minute listener, so it keeps working days later and after restarts — including on reports the scheduler posted at 07:00. Moderators and whoever scheduled the report can press it.
+
+A report with nothing worth saying (an empty model answer, or a window with no messages) is **not posted at all** — the scheduler just logs it and waits for the next run, instead of sending a heading with a dead button.
+
 ### Keyword alerts
 
 ```

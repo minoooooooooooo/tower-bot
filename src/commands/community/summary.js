@@ -17,7 +17,6 @@ import {
   setSummaryChannel,
 } from '../../services/report-store.js';
 import {
-  attachExportButton,
   exportPayload,
   produceSummary,
   reportPayload,
@@ -274,7 +273,9 @@ async function handleRun(ctx) {
       embeds: [
         errorEmbed(
           'Nothing to summarize',
-          `No messages in ${channel} in the last ${durationLabel(hours)}.`,
+          result.reason === 'empty-summary'
+            ? `${channel} had messages, but the model found nothing worth reporting — no topics, decisions, requests or questions. Try a longer window, or a Targeted summary with a focus.`
+            : `No messages in ${channel} in the last ${durationLabel(hours)}.`,
         ),
       ],
     });
@@ -302,25 +303,11 @@ async function handleRun(ctx) {
 
   try {
     if (showHere) {
-      const message = await ctx.editReply(payload);
-
-      attachExportButton({
-        message,
-        summary: getSummary(ctx.guildId, id),
-        timeZone,
-        ownerId: ctx.user.id,
-      });
+      await ctx.editReply(payload);
       return;
     }
 
-    const sent = await destination.send(payload);
-
-    attachExportButton({
-      message: sent,
-      summary: getSummary(ctx.guildId, id),
-      timeZone,
-      ownerId: ctx.user.id,
-    });
+    await destination.send(payload);
 
     await ctx.editReply({
       embeds: [

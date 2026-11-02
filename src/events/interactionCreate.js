@@ -1,12 +1,25 @@
 import { CommandContext } from '../lib/context.js';
 import { createLogger } from '../lib/logger.js';
 import { runCommand } from '../lib/run-command.js';
+import { EXPORT_BUTTON_PREFIX, handleExportInteraction } from '../services/report-runner.js';
 
 const logger = createLogger('interaction');
 
 export default {
   name: 'interactionCreate',
   async execute(interaction, client) {
+    if (interaction.isButton()) {
+      if (String(interaction.customId).startsWith(EXPORT_BUTTON_PREFIX)) {
+        try {
+          await handleExportInteraction(interaction);
+        } catch (error) {
+          logger.error(`Report export button failed for "${interaction.customId}"`, error);
+        }
+      }
+
+      return;
+    }
+
     if (interaction.isAutocomplete()) {
       const command = client.commands.get(interaction.commandName);
 

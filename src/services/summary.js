@@ -79,6 +79,7 @@ export const LABELS = {
     model: 'Model',
     focus: 'Focus',
     unknown: 'unknown',
+    nothing: 'Nothing worth reporting in this window.',
   },
   ar: {
     sections: {
@@ -98,6 +99,7 @@ export const LABELS = {
     model: 'النموذج',
     focus: 'التركيز',
     unknown: 'غير معروف',
+    nothing: 'لا يوجد ما يستحق التلخيص في هذه الفترة.',
   },
 };
 
@@ -473,7 +475,7 @@ export function renderSummary({ data, meta }) {
   if (current.length > 0) groups.push(current);
 
   const truncated = groups.length > MAX_EMBEDS;
-  const kept = groups.slice(0, MAX_EMBEDS);
+  const kept = groups.length > 0 ? groups.slice(0, MAX_EMBEDS) : [[]];
 
   const embeds = kept.map((group, index) =>
     embed({
@@ -481,7 +483,8 @@ export function renderSummary({ data, meta }) {
         ? title
         : `${labels.continued} (${index + 1}/${kept.length})`
       ).slice(0, 256),
-      description: index === 0 ? description : undefined,
+      description:
+        index === 0 ? (description ?? (fields.length === 0 ? labels.nothing : undefined)) : undefined,
       fields: group,
       footer: index === 0 ? footer.slice(0, 200) : undefined,
       color: COLORS.primary,
