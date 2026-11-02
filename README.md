@@ -220,8 +220,8 @@ Prefix form, order-independent:
 Give **either** `every` **or** `time` — never both, never neither. Prefix form decides by shape: a colon means a clock (`09:00`), otherwise a duration (`6h`).
 
 - Reports land in the **management channel** from `/summary channel`, so set that first; the command refuses to schedule otherwise and tells you why. A scheduled report is never posted into the channel it just read.
-- The window is the time since the last run, capped at 7 days. Nothing is summarized twice, and setting the schedule again restarts the countdown from now.
-- A window with no messages is skipped silently, so an idle channel does not produce empty reports.
+- The window is the time since the last run, capped at 7 days. Nothing is summarized twice, and setting the schedule again restarts the window from now — so a report one minute after `set` covers one minute, not the whole day. The confirmation message says this when it matters.
+- A window with no messages is skipped silently, so an idle channel does not produce empty reports. The same applies when the model finds nothing worth reporting: nothing is posted, and the console logs the reason (`no messages` or `the model found nothing to report`).
 - A minute-level tick checks the schedules; the first check runs at boot, so a report that came due while the bot was offline still fires (within the 7-day cap). Everything else is the same pipeline as a manual run — same prompt, same glossary, same export button.
 - Times follow the server time zone (`/birthday timezone default:true` sets it); interval schedules count from the last run regardless of zone.
 - Max 10 schedules per server. **Manage Server** required to change them; `/autoreport list` is open to everyone.

@@ -343,6 +343,7 @@ async function handleSet(ctx) {
   });
 
   const next = nextRunAt(schedule, timeZoneFor(ctx.guildId));
+  const soon = next !== null && next - Date.now() < 15 * 60 * 1000;
 
   await ctx.reply(
     ephemeral({
@@ -353,6 +354,13 @@ async function handleSet(ctx) {
             `**${kindLabel(kind)}** summary of ${source}, ${cadenceLabel(schedule)}.`,
             `Reports go to ${destination}.`,
             next ? `First run: ${stamp(next)}` : null,
+            // A report a minute from now only covers that minute. Expecting a
+            // full day's summary from it is the most common confusion.
+            soon
+              ? 'That first report only covers the time until then — if nothing is said in that window, nothing is posted.'
+              : existing
+                ? 'Saving an existing schedule restarts its window, so the next report covers from now on.'
+                : null,
           ]
             .filter(Boolean)
             .join('\n'),
