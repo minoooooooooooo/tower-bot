@@ -87,7 +87,7 @@ export const LABELS = {
       decisions: { field: '✅ القرارات', heading: 'القرارات' },
       tasks: { field: '📌 المهام', heading: 'المهام' },
       questions: { field: '❓ أسئلة مفتوحة', heading: 'أسئلة مفتوحة' },
-      highlights: { field: '💬 أبرز النقاط', heading: 'أبرز النقاط' },
+      highlights: { field: '💬 أبرز المقولات', heading: 'أبرز المقولات' },
     },
     topicFallback: 'موضوع',
     continued: 'تكملة',
