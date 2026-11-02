@@ -72,6 +72,7 @@ Both run `src/boot.js`, which checks the Node version before loading the bot and
 | `/watch <subcommand>` | `:-alert`, `:-keywords` | DM you when a keyword is mentioned anywhere in the server |
 | `/glossary <subcommand>` | `:-jargon` | Terms and jargon the summarizer should understand |
 | `/autoreport <subcommand>` | `:-schedule`, `:-digest` | Post a channel summary automatically, on an interval or at a fixed daily time |
+| `/alias <subcommand>` | `:-shortcut`, `:-aliases` | Run a command by typing a word, with no prefix |
 
 ## Clearing messages
 
@@ -89,6 +90,26 @@ Both run `src/boot.js`, which checks the Node version before loading the bot and
 - Amounts over 100 are split into batches of 100. The maximum is 1,000 per command.
 - Ping the **member**, not a role — a role mention is rejected (`Unknown member`) rather than treated as "everyone".
 - The command's own message is **never deleted**: `:-clear 1` removes the message above it, and with a member filter the command is skipped too. For slash commands there is no command message to skip.
+
+## Command aliases
+
+An alias turns a word into a command, so you can moderate without the prefix:
+
+```
+:-alias add مسح clear       # now: مسح 100
+:-alias add نظف clear       # a second word for the same command
+:-alias list
+:-alias remove مسح
+```
+
+- Everything after the word becomes the command's arguments: `مسح 100` runs `clear` with `100`. Quotes still group words: `مسح 100 "raid cleanup"`.
+- The prefix keeps working: `:-مسح 100` reaches the same alias, and `:-clear 100` is untouched.
+- **Only people who could already run the command trigger it.** A member without Manage Messages typing `مسح ...` is treated as ordinary chat — the bot does not answer "Missing permissions" in the channel.
+- Real commands win: an alias cannot be named after a command or a built-in alias, and if a command with that name appears later it takes over.
+- One word made of letters, numbers, `_` or `-` (up to 32 characters). Arabic is fine, with or without diacritics.
+- Common words (`من`, `في`, `هذا`…) are allowed but warned about: every message that starts with that word runs the command. Pick a distinctive word.
+- Max 50 per server. **Manage Server** is required to add or remove one; `/alias list` is open to everyone.
+- Permissions and cooldowns are the command's own, because the alias runs the real command through the normal pipeline.
 
 ## Reports, keyword alerts, glossary and automatic reports
 
@@ -398,6 +419,7 @@ src/
       ping.js
       help.js
       botinfo.js
+      alias.js          admin-defined words that run a command
     community/
       birthday.js       birthday registry + automatic role
       welcome.js        welcome cards
@@ -411,7 +433,7 @@ src/
     ready.js            presence, slash registration, scheduler start
     guildMemberAdd.js   welcome card delivery
     interactionCreate.js
-    messageCreate.js    prefix parsing + keyword alerts
+    messageCreate.js    prefix parsing, command aliases, keyword alerts
   handlers/
     command-registry.js slash command payloads + registration
   services/
@@ -428,6 +450,8 @@ src/
     report-export.js    self-contained HTML/PDF-ready export
     summary-scheduler.js interval/clock math + the minute-level tick
     watch-store.js      per-member keyword CRUD
+    alias-store.js      per-server word -> command rows
+    alias-runner.js     turns a bare word message into a command run
     watch.js            matching, Arabic normalization, DM delivery
   lib/
     ai.js               OpenAI-compatible client + error hints

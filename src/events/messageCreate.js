@@ -1,43 +1,13 @@
 import { config } from '../config.js';
 import { CommandContext } from '../lib/context.js';
 import { createLogger } from '../lib/logger.js';
+import { parseArgs } from '../lib/parse-args.js';
 import { runCommand } from '../lib/run-command.js';
+import { getAlias } from '../services/alias-store.js';
+import { runAliasCommand } from '../services/alias-runner.js';
 import { handleKeywordAlerts } from '../services/watch.js';
 
 const logger = createLogger('prefix');
-
-function parseArgs(content) {
-  const args = [];
-  let current = '';
-  let quote = null;
-
-  for (const char of content) {
-    if (quote) {
-      if (char === quote) quote = null;
-      else current += char;
-      continue;
-    }
-
-    if (char === '"' || char === "'") {
-      quote = char;
-      continue;
-    }
-
-    if (/\s/.test(char)) {
-      if (current) {
-        args.push(current);
-        current = '';
-      }
-      continue;
-    }
-
-    current += char;
-  }
-
-  if (current) args.push(current);
-
-  return args;
-}
 
 function resolvePrefix(content, client) {
   const candidates = [config.prefix, `<@${client.user.id}> `, `<@!${client.user.id}> `];
@@ -53,6 +23,15 @@ export default {
     const usedPrefix = resolvePrefix(message.content, client);
 
     if (!usedPrefix) {
+      // A word an admin mapped to a command runs it, so "مسح 100" behaves like
+      // ":-clear 100". It returns false when the message is ordinary chat
+      // (unknown word, or the member could not run that command anyway).
+      try {
+        if (await runAliasCommand(message, client)) return;
+      } catch (error) {
+        logger.error('Alias dispatch failed', error);
+      }
+
       // Every ordinary message is checked against subscribers' keywords. The
       // handler swallows its own failures so a DM problem cannot break chat.
       handleKeywordAlerts(message, client).catch((error) =>
@@ -71,7 +50,21 @@ export default {
     const commandName = client.aliases.get(name) ?? name;
     const command = client.commands.get(commandName);
 
-    if (!command) return;
+    if (!command) {
+      // `:-مسح 100` reaches the same alias the bare word does, so an explicit
+      // prefix is never a dead end for a word the admin defined.
+      const alias = getAlias(message.guildId, name);
+      const target = alias ? client.commands.get(alias.command) : null;
+
+      if (!target || target.slashOnly) return;
+
+      logger.debug(`${message.author.tag} used ${config.prefix}${name} (alias) -> ${target.name}`);
+
+      const ctx = new CommandContext({ client, command: target, message, args });
+      await runCommand(target, ctx);
+      return;
+    }
+
     if (command.slashOnly) return;
 
     logger.debug(`${message.author.tag} used ${config.prefix}${name}`);

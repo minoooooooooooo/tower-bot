@@ -1,5 +1,6 @@
 import { COLORS, embed } from '../lib/embeds.js';
 import { createLogger } from '../lib/logger.js';
+import { normalizeForMatch } from '../lib/text.js';
 import { listWatchTerms, markWatchBroken } from './watch-store.js';
 
 const logger = createLogger('watch');
@@ -15,20 +16,8 @@ const sent = new Map();
 
 // Arabic diacritics, tatweel, and the alef/ya/ta-marbuta variants that people
 // type inconsistently. Normalizing both sides makes "مُحَمّد" match "محمد".
-const DIACRITICS = /[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06ED\u0640]/g;
-
-export function normalizeForMatch(text) {
-  return String(text ?? '')
-    .toLowerCase()
-    .replace(DIACRITICS, '')
-    .replace(/[أإآ]/g, 'ا')
-    .replace(/ى/g, 'ي')
-    .replace(/ئ/g, 'ي')
-    .replace(/ؤ/g, 'و')
-    .replace(/ة/g, 'ه')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
+// Shared with command aliases; re-exported so existing callers keep working.
+export { normalizeForMatch };
 
 /**
  * Whole-word match that works outside ASCII: `\b` only understands Latin, so

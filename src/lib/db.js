@@ -151,6 +151,21 @@ const SCHEMA = `
     created_at    INTEGER NOT NULL,
     UNIQUE (guild_id, channel_id)
   );
+
+  -- Per-server shortcuts: a message whose first word is the trigger runs the
+  -- named command with the rest of the message as arguments, so typing
+  -- مسح 100 behaves like the prefixed clear command. trigger is the
+  -- normalized form; label keeps what the admin typed so the list reads
+  -- naturally.
+  CREATE TABLE IF NOT EXISTS command_aliases (
+    guild_id   TEXT    NOT NULL,
+    trigger    TEXT    NOT NULL,
+    label      TEXT    NOT NULL,
+    command    TEXT    NOT NULL,
+    created_by TEXT    NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (guild_id, trigger)
+  );
 `;
 
 // Columns added after the first release. `CREATE TABLE IF NOT EXISTS` does not

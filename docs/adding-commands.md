@@ -103,6 +103,7 @@ The prefix path strips that flag automatically, so the same code works for `:-co
 ## Notes
 
 - Files starting with `_` are ignored, so you can keep a template around as `_template.js`.
+- The `aliases` array above is a **static prefix alias**: `:-hi` works, but `hi` alone does not. For a word that runs a command with no prefix (`مسح 100`), use the runtime `/alias` command — rows live in `command_aliases` and are read by `messageCreate`.
 - Adding or removing a command requires a restart (`dev.bat` restarts automatically).
 - Slash command changes are pushed on startup. Duplicate or removed commands are reconciled automatically.
 - If two commands share a name or alias, the second one is skipped with a warning in the console.
