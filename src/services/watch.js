@@ -1,18 +1,20 @@
 import { COLORS, embed } from '../lib/embeds.js';
 import { createLogger } from '../lib/logger.js';
 import { normalizeForMatch } from '../lib/text.js';
-import { listWatchTerms, markWatchBroken } from './watch-store.js';
+import { getWatchChannelId, listWatchTerms } from './watch-store.js';
 
 const logger = createLogger('watch');
 
 const CACHE_TTL_MS = 30_000;
-const DM_QUIET_MS = 2_000;
-const DM_BURST = 12;
-const DM_WINDOW_MS = 10 * 60 * 1000;
+const QUIET_MS = 2_000;
+const BURST = 12;
+const WINDOW_MS = 10 * 60 * 1000;
+const WARN_TTL_MS = 30 * 60 * 1000;
 
 const cache = new Map();
 const matchers = new Map();
 const sent = new Map();
+const warned = new Map();
 
 // Arabic diacritics, tatweel, and the alef/ya/ta-marbuta variants that people
 // type inconsistently. Normalizing both sides makes "مُحَمّد" match "محمد".
@@ -37,103 +39,141 @@ export function buildMatcher(term) {
 
 export function invalidateWatchCache(guildId) {
   cache.delete(guildId);
+  warned.delete(`channel:${guildId}`);
 }
 
-function termsForGuild(guildId) {
+function guildState(guildId) {
   const hit = cache.get(guildId);
 
-  if (hit && hit.expires > Date.now()) return hit.byUser;
+  if (hit && hit.expires > Date.now()) return hit.state;
 
-  const byUser = new Map();
+  const state = {
+    terms: listWatchTerms(guildId).map((row) => row.term),
+    channelId: getWatchChannelId(guildId),
+  };
 
-  for (const row of listWatchTerms(guildId)) {
-    if (!byUser.has(row.userId)) byUser.set(row.userId, []);
-    byUser.get(row.userId).push(row);
-  }
-
-  cache.set(guildId, { expires: Date.now() + CACHE_TTL_MS, byUser });
-  return byUser;
+  cache.set(guildId, { expires: Date.now() + CACHE_TTL_MS, state });
+  return state;
 }
 
-function withinRateLimit(userId) {
+function warnOnce(key, text) {
   const now = Date.now();
-  const history = (sent.get(userId) ?? []).filter((time) => now - time < DM_WINDOW_MS);
+  const last = warned.get(key);
 
-  if (history.length >= DM_BURST) {
-    sent.set(userId, history);
+  if (last && now - last < WARN_TTL_MS) return;
+
+  warned.set(key, now);
+  logger.warn(text);
+}
+
+function withinRateLimit(guildId) {
+  const now = Date.now();
+  const history = (sent.get(guildId) ?? []).filter((time) => now - time < WINDOW_MS);
+
+  if (history.length >= BURST) {
+    sent.set(guildId, history);
     return false;
   }
 
-  if (history.length > 0 && now - history[history.length - 1] < DM_QUIET_MS) {
-    sent.set(userId, history);
+  if (history.length > 0 && now - history[history.length - 1] < QUIET_MS) {
+    sent.set(guildId, history);
     return false;
   }
 
   history.push(now);
-  sent.set(userId, history);
+  sent.set(guildId, history);
   return true;
 }
 
-function alertPayload(message, hits) {
+function messageLink(message, guildId, channelId) {
+  if (message.url) return message.url;
+  if (!guildId || !channelId || !message.id) return null;
+
+  return `https://discord.com/channels/${guildId}/${channelId}/${message.id}`;
+}
+
+export function alertPayload(message, hits) {
+  const guildId = message.guildId ?? message.guild?.id;
+  const channelId = message.channelId ?? message.channel?.id;
   const author = message.member?.displayName ?? message.author?.username ?? 'unknown';
-  const channel = message.channel?.name ? `#${message.channel.name}` : 'a channel';
-  const terms = hits.map((hit) => hit.term).join(', ');
+  const channel = message.channel?.name ? `#${message.channel.name}` : `<#${channelId}>`;
   const body = String(message.content ?? '').replace(/\s+/g, ' ').trim();
   const quoted = body.length > 400 ? `${body.slice(0, 400)}…` : body;
+  const link = messageLink(message, guildId, channelId);
+  const terms = hits.join(', ');
 
   return {
     allowedMentions: { parse: [] },
-    content: [
-      `🔎 **${terms.slice(0, 200)}** — ${author} in ${channel}`,
-      message.url ?? '',
-    ]
-      .filter(Boolean)
-      .join('\n'),
     embeds: [
       embed({
-        description: quoted ? `> ${quoted.split('\n').join('\n> ')}` : undefined,
-        author: { name: `${author} · ${channel}`.slice(0, 256) },
-        footer: 'Keyword alert · open the link above to jump to the message',
+        title: 'Keyword alert',
+        description: [
+          // A leading LRM keeps the sentence left-to-right; an Arabic keyword
+          // at the start would otherwise flip the whole line.
+          `\u200E**${terms.slice(0, 200)}** was mentioned by **${author}** in ${channel}.`,
+          '',
+          quoted ? `> ${quoted.split('\n').join('\n> ')}` : '_The message has no text._',
+          '',
+          link ? `[Jump to the message](${link})` : '',
+        ]
+          .filter(Boolean)
+          .join('\n')
+          .slice(0, 4000),
+        footer: `\u200E${hits.length === 1 ? 'Watched keyword' : 'Watched keywords'}: ${terms}`.slice(
+          0,
+          2048,
+        ),
         color: COLORS.warning,
       }),
     ],
   };
 }
 
-async function sendAlerts(message, client, userId, hits, wasBroken) {
-  if (!withinRateLimit(userId)) return false;
-
-  let user;
+async function sendAlert(message, client, channelId, hits) {
+  let channel;
 
   try {
-    user = await client.users.fetch(userId, { force: false });
+    channel = await client.channels.fetch(channelId, { force: false });
   } catch (error) {
-    logger.warn(`Could not resolve subscriber ${userId}: ${error.message}`);
+    warnOnce(
+      `channel:${message.guildId ?? message.guild?.id}`,
+      `Keyword alert channel ${channelId} cannot be loaded: ${error.message}. Run /watch channel to pick another.`,
+    );
+    return false;
+  }
+
+  if (!channel) {
+    warnOnce(
+      `channel:${message.guildId ?? message.guild?.id}`,
+      `Keyword alert channel ${channelId} no longer exists. Run /watch channel to pick another.`,
+    );
+    return false;
+  }
+
+  if (!channel.isTextBased?.() || channel.isDMBased?.()) {
+    warnOnce(
+      `channel:${message.guildId ?? message.guild?.id}`,
+      `Keyword alert channel ${channelId} is not a text channel. Run /watch channel to pick another.`,
+    );
     return false;
   }
 
   try {
-    await user.send(alertPayload(message, hits));
-
-    if (wasBroken) markWatchBroken(message.guildId ?? message.guild?.id, userId, false);
-
+    await channel.send(alertPayload(message, hits));
     return true;
   } catch (error) {
-    // 50007 = "Cannot send messages to this user" — they closed DMs.
-    if (error?.code === 50007) {
-      markWatchBroken(message.guildId ?? message.guild?.id, userId, true);
-      logger.warn(`Subscriber ${userId} has DMs closed; keyword alerts cannot be delivered`);
-    } else {
-      logger.warn(`Keyword DM to ${userId} failed: ${error.message}`);
-    }
-
+    warnOnce(
+      `channel:${message.guildId ?? message.guild?.id}`,
+      `Keyword alert to channel ${channelId} failed: ${error.message}`,
+    );
     return false;
   }
 }
 
 /**
- * Called for every guild message. Returns the number of DMs that went out, so
- * tests (and the log) can see the effect without sniffing Discord.
+ * Called for every guild message. Returns 1 when an alert was posted and 0
+ * otherwise, so tests (and the log) can see the effect without sniffing
+ * Discord.
  */
 export async function handleKeywordAlerts(message, client) {
   if (!message?.inGuild?.() || message.author?.bot) return 0;
@@ -143,25 +183,26 @@ export async function handleKeywordAlerts(message, client) {
 
   if (!guildId) return 0;
 
-  const byUser = termsForGuild(guildId);
+  const state = guildState(guildId);
 
-  if (byUser.size === 0) return 0;
+  if (state.terms.length === 0) return 0;
 
   const normalized = normalizeForMatch(message.content);
-  let delivered = 0;
+  const hits = state.terms.filter((term) => buildMatcher(term).test(normalized));
 
-  for (const [userId, terms] of byUser) {
-    // Nobody needs an alert for their own message.
-    if (userId === message.author.id) continue;
+  if (hits.length === 0) return 0;
 
-    const hits = terms.filter((row) => buildMatcher(row.term).test(normalized));
-
-    if (hits.length === 0) continue;
-
-    const wasBroken = Boolean(terms[0]?.broken);
-
-    if (await sendAlerts(message, client, userId, hits, wasBroken)) delivered += 1;
+  if (!state.channelId) {
+    warnOnce(
+      `channel:${guildId}`,
+      `Keyword alerts are configured but no alert channel is set in ${guildId}. Run /watch channel #channel.`,
+    );
+    return 0;
   }
 
-  return delivered;
+  // One alert per burst instead of one per matching word or per subscriber:
+  // a raid of messages containing the word cannot flood the channel.
+  if (!withinRateLimit(guildId)) return 0;
+
+  return (await sendAlert(message, client, state.channelId, hits)) ? 1 : 0;
 }

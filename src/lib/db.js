@@ -3,6 +3,7 @@ import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { config } from '../config.js';
 import { createLogger } from './logger.js';
+import { normalizeForMatch } from './text.js';
 
 const logger = createLogger('db');
 
@@ -110,19 +111,22 @@ const SCHEMA = `
   CREATE INDEX IF NOT EXISTS idx_summaries_guild
     ON summaries (guild_id, created_at DESC);
 
-  -- Personal keyword alerts: the subscriber gets a DM with a jump link.
+  -- Server-wide keyword alerts. One shared list per guild; every alert is
+  -- posted to the channel in watch_settings instead of being DMed to whoever
+  -- added the term. created_by only records who added it.
   CREATE TABLE IF NOT EXISTS watch_terms (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
     guild_id   TEXT    NOT NULL,
-    user_id    TEXT    NOT NULL,
     term       TEXT    NOT NULL,
-    broken     INTEGER NOT NULL DEFAULT 0,
+    created_by TEXT    NOT NULL,
     created_at INTEGER NOT NULL,
-    UNIQUE (guild_id, user_id, term)
+    PRIMARY KEY (guild_id, term)
   );
 
-  CREATE INDEX IF NOT EXISTS idx_watch_terms_guild
-    ON watch_terms (guild_id);
+  CREATE TABLE IF NOT EXISTS watch_settings (
+    guild_id   TEXT PRIMARY KEY,
+    channel_id TEXT,
+    updated_at INTEGER NOT NULL
+  );
 
   -- Server jargon handed to the model so summaries use the right vocabulary.
   CREATE TABLE IF NOT EXISTS glossary (
@@ -190,6 +194,70 @@ function applyMigrations(db) {
 }
 
 /**
+ * Keyword alerts moved from per-member DMs to one shared list posted in one
+ * channel. The first table keyed every term by `user_id`, so it is rebuilt
+ * once: duplicate words are merged (the earliest add wins) and nothing else is
+ * carried over, because the old `broken` flag described a DM that no longer
+ * exists.
+ */
+function migrateWatchTerms(db) {
+  const columns = db.prepare('PRAGMA table_info(watch_terms)').all();
+
+  if (columns.length === 0) return;
+  if (!columns.some((entry) => entry.name === 'user_id')) return;
+
+  const rows = db
+    .prepare('SELECT guild_id, user_id, term, created_at FROM watch_terms ORDER BY created_at ASC, id ASC')
+    .all();
+
+  db.exec('BEGIN');
+
+  try {
+    db.exec(`
+      CREATE TABLE watch_terms_v2 (
+        guild_id   TEXT    NOT NULL,
+        term       TEXT    NOT NULL,
+        created_by TEXT    NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (guild_id, term)
+      )
+    `);
+
+    const insert = db.prepare(
+      'INSERT INTO watch_terms_v2 (guild_id, term, created_by, created_at) VALUES (?, ?, ?, ?)',
+    );
+    const seen = new Set();
+    let merged = 0;
+
+    // Deduplicate the way the matcher compares terms: `Leak`, `leak` and
+    // `مُحَمّد`/`محمد` are one word. The earliest add wins, so the spelling and
+    // author that started the watch are the ones kept.
+    for (const row of rows) {
+      const key = `${row.guild_id}\u0000${normalizeForMatch(row.term)}`;
+
+      if (seen.has(key)) {
+        merged += 1;
+        continue;
+      }
+
+      seen.add(key);
+      insert.run(row.guild_id, row.term, row.user_id, row.created_at);
+    }
+
+    db.exec('DROP TABLE watch_terms');
+    db.exec('ALTER TABLE watch_terms_v2 RENAME TO watch_terms');
+    db.exec('COMMIT');
+
+    logger.info(
+      `Migrated SQLite: watch_terms is now shared per guild (${rows.length} row(s), ${merged} merged)`,
+    );
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
+/**
  * The first welcome GIF lived in `welcome_settings.gif_url` and only Classic
  * used it. Per-style GIFs moved to `welcome_gifs`, so the old value is carried
  * over once and the column blanked — otherwise "reset" would resurrect it.
@@ -235,6 +303,7 @@ export function getDb() {
   database.exec('PRAGMA busy_timeout = 5000');
   database.exec(SCHEMA);
   applyMigrations(database);
+  migrateWatchTerms(database);
   migrateLegacyWelcomeGifs(database);
 
   logger.info(`SQLite ready at ${file}`);

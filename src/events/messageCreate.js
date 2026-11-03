@@ -32,8 +32,8 @@ export default {
         logger.error('Alias dispatch failed', error);
       }
 
-      // Every ordinary message is checked against subscribers' keywords. The
-      // handler swallows its own failures so a DM problem cannot break chat.
+      // Every ordinary message is checked against the shared keyword list. The
+      // handler swallows its own failures so a channel problem cannot break chat.
       handleKeywordAlerts(message, client).catch((error) =>
         logger.error('Keyword alert failed', error),
       );

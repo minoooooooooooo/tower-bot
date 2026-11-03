@@ -69,7 +69,7 @@ Both run `src/boot.js`, which checks the Node version before loading the bot and
 | `/welcome <subcommand>` | `:-greet` | Welcome cards for new members: six styles, random or rotating, editable text |
 | `/clear <amount> [user]` | `:-purge`, `:-prune` | Delete recent messages, optionally only from one member |
 | `/summary <subcommand>` | `:-summarize`, `:-report` | AI summary of any channel, delivered to your management channel, exportable as HTML |
-| `/watch <subcommand>` | `:-alert`, `:-keywords` | DM you when a keyword is mentioned anywhere in the server |
+| `/watch <subcommand>` | `:-alert`, `:-keywords` | Post an alert in a channel when a watched word appears anywhere in the server |
 | `/glossary <subcommand>` | `:-jargon` | Terms and jargon the summarizer should understand |
 | `/autoreport <subcommand>` | `:-schedule`, `:-digest` | Post a channel summary automatically, on an interval or at a fixed daily time |
 | `/alias <subcommand>` | `:-shortcut`, `:-aliases` | Run a command by typing a word, with no prefix |
@@ -113,7 +113,7 @@ An alias turns a word into a command, so you can moderate without the prefix:
 
 ## Reports, keyword alerts, glossary and automatic reports
 
-An optional AI layer: summarize any channel into a report, get DMs when a keyword appears, and teach the summarizer your server's vocabulary.
+An optional AI layer: summarize any channel into a report, get an alert in a chosen channel when a keyword appears, and teach the summarizer your server's vocabulary.
 
 ### Setup
 
@@ -180,21 +180,25 @@ A report with nothing worth saying (an empty model answer, or a window with no m
 ### Keyword alerts
 
 ```
+/watch channel channel:#mod-log    # prefix: :-watch channel #mod-log
 /watch add keyword:nitro scam       # prefix: :-watch add nitro scam
 /watch list
 /watch remove keyword:nitro scam
 /watch clear
-/watch test                         # check that DMs actually arrive
+/watch test                         # post a sample alert in the chosen channel
 ```
 
-When anyone posts a watched word **anywhere** in the server, the bot DMs you the author, the channel, a short quote, and a **clickable jump link** to the message.
+When anyone posts a watched word **anywhere** in the server, the bot posts an alert in the channel set with `/watch channel`: the word, the author, a short quote, and a **clickable jump link** to the message.
 
-- Matching is whole-word and Unicode aware: `ass` does not fire on `classic`, and Arabic diacritics, tatweel and the alef/ya/ta-marbuta variants are normalized so `مُحَمّد` matches `محمد`.
-- Your own messages and other bots never trigger an alert.
-- At most 25 keywords per member, 2 seconds apart and 12 per 10 minutes, so a busy phrase cannot flood a DM.
-- If your DMs are closed the bot records it: `/watch list` shows ⚠️ and `/watch test` explains the privacy setting to change.
+- The list is **shared by the whole server**. Any moderator can add or remove a word, everyone sees the same list, and every alert goes to the same channel — it is no longer tied to whoever typed the command (and no DMs are involved).
+- Matching is whole-word and Unicode aware: `ass` does not fire on `classic`, and Arabic diacritics, tatweel and the alef/ya/ta-marbuta variants are normalized so `مُحَمّد` matches `محمد`. Adding `محمد` when `مُحَمّد` is already watched is refused as a duplicate.
+- Bots never trigger an alert. Messages are checked even if the author is a moderator, so typing the word is a quick live test.
+- At most 50 keywords per server, 2 seconds apart and 12 per 10 minutes, so a busy phrase cannot flood the channel. Several watched words in one message produce one alert, not one per word.
+- Choosing the channel needs **Manage Server**; adding, removing, listing and testing need **Manage Messages**.
+- `/watch test` posts a real sample in the alert channel, so a wrong channel or missing permission is visible immediately instead of silently failing.
+- If the channel is deleted or the bot loses access, the failure is logged once per half hour and alerts resume as soon as a valid channel is set.
 
-The glossary and the alerts are per server; each member's keywords are private.
+The glossary and the alert list are per server.
 
 ### Glossary
 
@@ -424,7 +428,7 @@ src/
       birthday.js       birthday registry + automatic role
       welcome.js        welcome cards
       summary.js        AI channel summaries + export
-      watch.js          personal keyword alerts
+      watch.js          shared keyword alerts posted to one channel
       glossary.js       server jargon for the summarizer
       autoreport.js     scheduled summaries (interval or daily)
     moderation/
@@ -449,10 +453,10 @@ src/
     report-runner.js    shared read → summarize → render pipeline
     report-export.js    self-contained HTML/PDF-ready export
     summary-scheduler.js interval/clock math + the minute-level tick
-    watch-store.js      per-member keyword CRUD
+    watch-store.js      shared keyword list + alert channel
     alias-store.js      per-server word -> command rows
     alias-runner.js     turns a bare word message into a command run
-    watch.js            matching, Arabic normalization, DM delivery
+    watch.js            matching, Arabic normalization, channel delivery
   lib/
     ai.js               OpenAI-compatible client + error hints
     context.js          unified slash/prefix context

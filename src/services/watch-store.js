@@ -1,68 +1,93 @@
 import { getDb } from '../lib/db.js';
+import { normalizeForMatch } from '../lib/text.js';
 
-export const MAX_TERMS_PER_USER = 25;
+export const MAX_WATCH_TERMS = 50;
 export const MIN_TERM_LENGTH = 2;
 export const MAX_TERM_LENGTH = 60;
 
+/** Every watched word in the guild, shared by all moderators. */
 export function listWatchTerms(guildId) {
   return getDb()
-    .prepare('SELECT id, user_id, term, broken FROM watch_terms WHERE guild_id = ? ORDER BY user_id, term')
+    .prepare(
+      'SELECT term, created_by, created_at FROM watch_terms WHERE guild_id = ? ORDER BY term COLLATE NOCASE',
+    )
     .all(guildId)
-    .map((row) => ({ id: row.id, userId: row.user_id, term: row.term, broken: Boolean(row.broken) }));
+    .map((row) => ({
+      term: row.term,
+      createdBy: row.created_by,
+      createdAt: row.created_at,
+    }));
 }
 
-export function listUserTerms(guildId, userId) {
-  return getDb()
-    .prepare('SELECT id, term, broken FROM watch_terms WHERE guild_id = ? AND user_id = ? ORDER BY term')
-    .all(guildId, userId)
-    .map((row) => ({ id: row.id, term: row.term, broken: Boolean(row.broken) }));
-}
-
-export function countTerms(guildId, userId) {
+export function countTerms(guildId) {
   return (
     getDb()
-      .prepare('SELECT COUNT(*) AS total FROM watch_terms WHERE guild_id = ? AND user_id = ?')
-      .get(guildId, userId)?.total ?? 0
+      .prepare('SELECT COUNT(*) AS total FROM watch_terms WHERE guild_id = ?')
+      .get(guildId)?.total ?? 0
   );
 }
 
-export function hasTerm(guildId, userId, term) {
-  return Boolean(
-    getDb()
-      .prepare('SELECT 1 AS hit FROM watch_terms WHERE guild_id = ? AND user_id = ? AND term = ? COLLATE NOCASE')
-      .get(guildId, userId, term),
+/**
+ * Duplicates are detected after normalization, so `مُحَمّد` cannot be added
+ * next to `محمد` and silently match everything twice.
+ */
+export function findTerm(guildId, term) {
+  const wanted = normalizeForMatch(term);
+
+  return (
+    listWatchTerms(guildId).find((row) => normalizeForMatch(row.term) === wanted) ?? null
   );
 }
 
-/** Returns false when the term already existed or the member hit the cap. */
+/** Returns false when the term already existed or the guild hit the cap. */
 export function addWatchTerm(guildId, userId, term) {
-  if (countTerms(guildId, userId) >= MAX_TERMS_PER_USER) return { added: false, reason: 'limit' };
-  if (hasTerm(guildId, userId, term)) return { added: false, reason: 'duplicate' };
+  const existing = findTerm(guildId, term);
+
+  if (existing) return { added: false, reason: 'duplicate', term: existing.term };
+
+  if (countTerms(guildId) >= MAX_WATCH_TERMS) return { added: false, reason: 'limit' };
 
   getDb()
     .prepare(
-      'INSERT INTO watch_terms (guild_id, user_id, term, broken, created_at) VALUES (?, ?, ?, 0, ?)',
+      'INSERT INTO watch_terms (guild_id, term, created_by, created_at) VALUES (?, ?, ?, ?)',
     )
-    .run(guildId, userId, term, Date.now());
+    .run(guildId, term, userId, Date.now());
 
-  return { added: true, reason: null };
+  return { added: true, reason: null, term };
 }
 
-export function removeWatchTerm(guildId, userId, term) {
+export function removeWatchTerm(guildId, term) {
+  const existing = findTerm(guildId, term);
+
+  if (!existing) return 0;
+
   return getDb()
-    .prepare('DELETE FROM watch_terms WHERE guild_id = ? AND user_id = ? AND term = ? COLLATE NOCASE')
-    .run(guildId, userId, term).changes;
+    .prepare('DELETE FROM watch_terms WHERE guild_id = ? AND term = ?')
+    .run(guildId, existing.term).changes;
 }
 
-export function clearWatchTerms(guildId, userId) {
-  return getDb()
-    .prepare('DELETE FROM watch_terms WHERE guild_id = ? AND user_id = ?')
-    .run(guildId, userId).changes;
+export function clearWatchTerms(guildId) {
+  return getDb().prepare('DELETE FROM watch_terms WHERE guild_id = ?').run(guildId).changes;
 }
 
-/** Marks a subscriber whose DMs bounce, so `/watch list` can explain it. */
-export function markWatchBroken(guildId, userId, broken) {
+/** The channel that receives keyword alerts, or null when none is set. */
+export function getWatchChannelId(guildId) {
+  const row = getDb()
+    .prepare('SELECT channel_id FROM watch_settings WHERE guild_id = ?')
+    .get(guildId);
+
+  return row?.channel_id ?? null;
+}
+
+export function setWatchChannelId(guildId, channelId) {
   getDb()
-    .prepare('UPDATE watch_terms SET broken = ? WHERE guild_id = ? AND user_id = ?')
-    .run(broken ? 1 : 0, guildId, userId);
+    .prepare(
+      `INSERT INTO watch_settings (guild_id, channel_id, updated_at) VALUES (?, ?, ?)
+       ON CONFLICT (guild_id) DO UPDATE SET
+         channel_id = excluded.channel_id,
+         updated_at = excluded.updated_at`,
+    )
+    .run(guildId, channelId ?? null, Date.now());
+
+  return channelId ?? null;
 }
