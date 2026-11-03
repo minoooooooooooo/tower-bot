@@ -4,11 +4,12 @@ import { createLogger } from './logger.js';
 const logger = createLogger('ai');
 
 export class AiError extends Error {
-  constructor(message, { status = 0, retryable = false } = {}) {
+  constructor(message, { status = 0, retryable = false, retryAfter = null } = {}) {
     super(message);
     this.name = 'AiError';
     this.status = status;
     this.retryable = retryable;
+    this.retryAfter = retryAfter;
   }
 }
 
@@ -43,7 +44,14 @@ export function aiProblemHint(error) {
   }
 
   if (error.status === 429) {
-    return 'The AI provider is rate limiting the key. Wait a minute and try again, or use a smaller time window.';
+    return [
+      'The AI provider is rate limiting the key.',
+      error.message ? `Provider said: ${String(error.message).slice(0, 300)}` : '',
+      error.retryAfter ? `Retry after about ${error.retryAfter} seconds.` : '',
+      'Wait for the quota to reset, use a smaller time window, or use a paid key/model.',
+    ]
+      .filter(Boolean)
+      .join('\n');
   }
 
   if (error.status === 400) {
@@ -87,9 +95,15 @@ async function post(payload, timeoutMs) {
     // Non-JSON error body; the status is all we have.
   }
 
+  const retryHeader =
+    response.headers?.get?.('retry-after') ??
+    response.headers?.get?.('x-ratelimit-reset-after');
+  const retryAfter = Number.parseInt(retryHeader ?? '', 10);
+
   throw new AiError(String(detail).slice(0, 300), {
     status: response.status,
     retryable: response.status === 429 || response.status >= 500,
+    retryAfter: Number.isFinite(retryAfter) ? retryAfter : null,
   });
 }
 
