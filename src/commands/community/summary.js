@@ -19,7 +19,7 @@ import {
 import {
   exportPayload,
   produceSummary,
-  reportPayload,
+  reportPayloads,
 } from '../../services/report-runner.js';
 import { KIND_KEYS, SUMMARY_KINDS, KIND_ALIASES } from '../../services/summary.js';
 
@@ -295,7 +295,7 @@ async function handleRun(ctx) {
     createdBy: ctx.user.id,
   });
 
-  const payload = reportPayload({ data, meta, id, collected });
+  const payloads = reportPayloads({ data, meta, id, collected });
   const destinationId = getSummaryChannel(ctx.guildId);
   const destination = destinationId ? await resolveChannel(ctx, destinationId) : ctx.channel;
 
@@ -303,11 +303,17 @@ async function handleRun(ctx) {
 
   try {
     if (showHere) {
-      await ctx.editReply(payload);
+      await ctx.editReply(payloads[0]);
+
+      for (const payload of payloads.slice(1)) {
+        await ctx.followUp(
+          params.isPrivate ? { ...payload, flags: MessageFlags.Ephemeral } : payload,
+        );
+      }
       return;
     }
 
-    await destination.send(payload);
+    for (const payload of payloads) await destination.send(payload);
 
     await ctx.editReply({
       embeds: [
@@ -321,7 +327,15 @@ async function handleRun(ctx) {
     logger.warn(`Could not deliver the summary: ${error.message}`);
     await ctx.editReply({
       embeds: [
-        errorEmbed('Could not deliver the summary', 'I may be missing **Send Messages** in that channel.'),
+        errorEmbed(
+          'Could not deliver the summary',
+          [
+            error.message ? `Discord said: **${String(error.message).slice(0, 500)}**` : '',
+            'Check that I can **View Channel**, **Send Messages** and **Embed Links** in the destination channel.',
+          ]
+            .filter(Boolean)
+            .join('\n\n'),
+        ),
       ],
     });
   }

@@ -206,8 +206,13 @@ export async function produceSummary({
   };
 }
 
-/** Message payload for a finished report, including the export button. */
-export function reportPayload({ data, meta, id, collected }) {
+/**
+ * Message payloads for a finished report. Discord's 6,000-character limit is
+ * the **sum across every embed in one message**, not per embed, so a detailed
+ * report is split into one message per embed. The export button rides on the
+ * last message.
+ */
+export function reportPayloads({ data, meta, id, collected }) {
   const { embeds, truncated } = renderSummary({ data, meta });
   const notes = [];
 
@@ -225,9 +230,9 @@ export function reportPayload({ data, meta, id, collected }) {
     embeds[embeds.length - 1].setFooter({ text: notes.join(' ').slice(0, 200) });
   }
 
-  return {
-    embeds,
-    components: [exportButton(id)],
+  return embeds.map((embed, index) => ({
+    embeds: [embed],
+    components: index === embeds.length - 1 ? [exportButton(id)] : [],
     allowedMentions: { parse: [] },
-  };
+  }));
 }

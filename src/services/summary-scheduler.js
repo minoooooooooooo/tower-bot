@@ -10,7 +10,7 @@ import {
   saveSummary,
   touchSchedule,
 } from './report-store.js';
-import { produceSummary, reportPayload } from './report-runner.js';
+import { produceSummary, reportPayloads } from './report-runner.js';
 
 const logger = createLogger('summary-scheduler');
 
@@ -184,7 +184,11 @@ export async function runScheduledReport(client, schedule, { now = Date.now() } 
       createdBy: schedule.createdBy || 'scheduler',
     });
 
-    await destination.send(reportPayload({ data, meta, id, collected }));
+    // A detailed report is several messages, one embed each: Discord limits
+    // the combined characters of all embeds in a single message to 6,000.
+    const payloads = reportPayloads({ data, meta, id, collected });
+
+    for (const payload of payloads) await destination.send(payload);
 
     logger.info(
       `Scheduled ${schedule.kind} report #${id} for #${source.name} delivered to #${destination.name}`,

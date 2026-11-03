@@ -155,7 +155,7 @@ export async function chatJson({ system, user, maxTokens = 2000, temperature = 0
 
       if (!content) throw new AiError('The model returned an empty reply.', { retryable: true });
 
-      if (body?.usage) {
+      if (body?.usage && Number.isFinite(body.usage.prompt_tokens ?? body.usage.completion_tokens)) {
         logger.info(
           `AI usage (${config.ai.model}): ${body.usage.prompt_tokens ?? '?'} input, ${body.usage.completion_tokens ?? '?'} output tokens`,
         );
