@@ -5,9 +5,11 @@ OpenCode session can resume without the original conversation.
 
 ## Status
 
-The bot is **built and running locally** from `start.bat`. Ten commands are
+The bot is **built and running locally** from `start.bat`. Seventeen commands are
 implemented: `/ping`, `/help`, `/botinfo`, `/birthday`, `/welcome`, `/clear`,
-`/summary`, `/watch`, `/glossary`, `/autoreport`.
+`/summary`, `/watch`, `/glossary`, `/autoreport`, `/alias`, and the exile package
+(`/exile-setup`, `/exile-role`, `/exile`, `/exile-release`, `/exile-list`,
+`/exile-log`).
 
 **Source is on GitHub:** <https://github.com/minoooooooooooo/tower-bot>
 (public, branch `main`). Pushed 2026-10-31 with Git 2.56.0 + `gh` browser auth; no
@@ -30,8 +32,8 @@ undeletable. The server was deleted and recreated; the new node logged in on the
 first attempt. Current state (boot 10:29 UTC): Node **26.12.1**, `Logged in as
 11/10#8627`, `SQLite ready at /home/container/data/bot.db`, scheduler running,
 slash commands registered instantly in "𝗧𝗵𝗲 𝗧𝗼𝘄𝗲𝗿 v2". The process now loads
-**11 commands / 4 events** (birthday, welcome, clear, summary, watch, glossary,
-autoreport, alias).
+**17 commands / 7 events** (birthday, welcome, clear, summary, watch, glossary,
+autoreport, alias, and the six exile commands).
 
 Two consequences worth remembering: the install/reinstall script on this panel
 does **not** run (two reinstalls produced an empty directory), so the code is
@@ -55,6 +57,12 @@ Oracle Cloud is kept as the card-verification alternative in
 | `/watch <sub>` | `alert`, `keywords` | Post an alert in a channel when a keyword appears anywhere in the server |
 | `/glossary <sub>` | `jargon` | Server terms sent to the summarizer as context |
 | `/autoreport <sub>` | `schedule`, `digest` | Scheduled summaries: interval (`6h`) or daily (`09:00`) |
+| `/exile <@member> [level] [reason]` | `jail`, `prison` | Give a member an exile role; main or severity 1–10 |
+| `/exile-release <@member> [reason]` | `unjail`, `unexile` | Remove the exile role and record the release |
+| `/exile-setup <@role> [#except ...]` | — | Deny View Channel everywhere except the listed channels |
+| `/exile-role set\|clear\|list` | — | Map main / 1–10 to the roles you created |
+| `/exile-list` | `exiles` | Every currently exiled member |
+| `/exile-log <#channel\|off>` | — | Audit channel for exile, level change and release |
 
 ### Birthday package
 
@@ -121,6 +129,62 @@ Behavior that must be preserved:
 - The invoking command message is **never deleted**. `collectMessages` receives its id as `excludeId` and skips it, so `:-clear 1` removes the message above the command. A consequence: the bot's own confirmation embed from a previous clear *is* a normal message, so a following `:-clear 1` deletes that instead.
 - **Prefix args never contain the command name** — `messageCreate` splits it off (`const [rawName, ...args]`). `clear.js` originally did `ctx.args.slice(1)` and threw away the first argument, which made `:-clear 1` report "Invalid amount" and `:-clear @someone 1` drop the mention and delete the newest messages from anyone. Never slice prefix args; a token is an amount only when it is 1–4 digits, otherwise a member reference.
 - A **role** mention (`<@&…>`) is refused with "Unknown member" rather than ignored, so a mis-pinged filter can never quietly clear the whole channel.
+
+### Exile package
+
+`/exile` (prefix `:-exile`, aliases `jail`/`prison`), `/exile-release`, `/exile-setup`,
+`/exile-role`, `/exile-list`, `/exile-log`.
+
+The operator creates eleven roles by hand: one main exile and severity levels 1–10.
+`/exile-setup role:@Exile1 except:#exile-1` denies **View Channel** for that role on
+every channel and category except the listed ones, so a member holding it sees only
+the exceptions. Each role stores its own exception list. `/exile-role set level:1
+role:@Exile1` maps a level, and `/exile user:@member level:3` assigns exactly that
+one role, removing any other exile role first.
+
+Behavior that must be preserved:
+
+- **One role at a time.** `assignExileRole` removes every other role from
+  `allExileRoleIds` (mapped levels plus set-up roles) before adding the chosen one.
+  Levels are severity only — there is no timer and no automatic expiry.
+- **Schema:** `exile_settings` (log channel), `exile_setups` (a role was configured),
+  `exile_roles` (one role per level, unique per guild), `exile_channels` (per-role
+  exceptions), `exiles` (active rows plus released rows). A partial unique index
+  (`WHERE released_at IS NULL`) allows re-exiling after release but never two active
+  rows for one member.
+- **`exile_setups` is separate from `exile_channels` on purpose.** A setup with zero
+  exceptions stores no channel rows, and "no rows" must not be read as "never set up".
+  `/exile` refuses a mapped role that was never configured, because it would hide
+  nothing.
+- **`/exile-setup` is idempotent.** `reconcileRole` skips an overwrite that already
+  matches, reports failed channels instead of claiming success, and runs with a
+  concurrency of 3. Re-running replaces that role's exception list; it never stacks.
+- **Categories containing an exception are made neutral**, not allowed. A
+  channel-level allow already beats the category deny; clearing the bot's own deny is
+  enough for the exception to be findable in the sidebar.
+- **New channels are hidden automatically.** `channelCreate` calls
+  `applyCreationRules`, which applies every set-up role. A new exception channel also
+  clears the deny on its parent category. `channelDelete` removes the deleted channel
+  from every exception list.
+- **Role validation is strict:** `@everyone`, integration-managed roles, roles with
+  **Administrator** (it bypasses channel overwrites) and roles at or above the bot's
+  highest role are refused. The bot also needs **Manage Roles**.
+- **Target validation:** the owner, anyone with **Administrator**, bots, the bot
+  itself and members whose highest role is at or above the bot are refused.
+- **Release is two-step:** the role must actually be gone before the row is marked
+  released. Otherwise `/exile-list` would say a member is free while they are still
+  restricted; the command says the role is still applied and keeps the exile active.
+- **Leaving the server auto-releases.** `guildMemberRemove` marks the row released
+  with "Member left the server"; roles disappear with the member anyway.
+- **Audit embeds never throw.** `sendExileLog` checks the channel and its
+  View/Send/Embed permissions, logs failures once an hour, and lets the exile succeed
+  even when logging is impossible. `allowedMentions` is always `{ parse: [] }`.
+- **Every exile command requires Manage Server** (runtime `permissions: ['ManageGuild']`
+  and slash `default_member_permissions`). Prefix args never include the command name,
+  so `:-exile @member 3 spam` parses member → level → reason.
+- Prefix role/channel/member tokens accept mentions, raw ids and names through
+  `lib/resolve.js`. Slash `/exile-setup` takes a `role` option plus an `except` string
+  of channel mentions/ids, because Discord has no repeatable option.
 
 ### Command aliases
 
@@ -236,6 +300,15 @@ Behavior that must be preserved:
 - **An alias stays quiet when the member could not run the command.** `canRunAlias` checks the command's own `permissions`/`ownerOnly` before dispatch. Otherwise anyone typing a sentence that starts with the trigger word would get a public "Missing permissions" from the bot, which is worse than the message being ignored. The prefixed form still reports the refusal, because there the member explicitly invoked a command.
 - **A real command always beats an alias.** `runAliasCommand` ignores the alias when the first word is a command or built-in alias, so shipping a command named like an old shortcut cannot have its messages swallowed. `add` also refuses command names, built-in aliases, `alias` itself, and multi-word triggers (everything after the trigger is arguments).
 - **Alias triggers use the same normalization as keyword alerts.** Case, Arabic diacritics and alef/ya/ta-marbuta variants are folded, so `مُسح` and `مسح` are one alias. The function moved to `lib/text.js` and `watch.js` re-exports it, keeping existing callers unchanged.
+- **Exile is roles with per-role exceptions, not timed jails.** The operator asked for one main level plus ten severities and manual release; the number therefore selects a role and nothing else. Adding durations would create a second, invisible state (a timer) that the role list could not explain.
+- **One active exile row, enforced by the database.** A partial unique index on `(guild_id, user_id) WHERE released_at IS NULL` makes "two active exiles" impossible even if two commands race; changing a level updates the same row instead of stacking history.
+- **A separate `exile_setups` marker.** A role set up with no exceptions stores zero `exile_channels` rows, so the presence of channel rows cannot mean "configured". The marker is what lets `/exile` refuse a mapped-but-unconfigured role instead of silently doing nothing.
+- **Administrator is refused on both sides.** A role with Administrator ignores channel overwrites, and a member with Administrator ignores the role too. Accepting either would produce a successful reply with no effect, which is worse than a clear refusal.
+- **Categories are neutral, exceptions are allowed.** Discord resolves a channel overwrite above its category. Denying the category while explicitly allowing the exception keeps the exception visible; clearing the bot's own category deny keeps it findable without granting the whole category.
+- **Setup is idempotent and reports partial failure.** Hundreds of overwrite edits can hit rate limits or a channel the bot cannot manage. Skipping matching overwrites makes re-running cheap, and listing failed channels lets the admin fix the cause and retry rather than believing a false success.
+- **New channels are covered by an event, not a sweep.** `channelCreate` applies every configured role immediately, which closes the obvious loophole (create a channel to talk to the exiled member) without a background job that would need its own schedule and rate-limit budget.
+- **Release checks the role, then the record.** Marking the row released while `roles.remove` failed would make `/exile-list` lie. The row is only released after the member no longer holds the role.
+- **Leaving the server releases automatically.** Roles vanish with the member, so keeping an active row would leave a permanent ghost in `/exile-list` and in the audit channel. `guildMemberRemove` closes the record with an automatic reason.
 
 ## Known issues / caveats
 
@@ -257,7 +330,7 @@ Behavior that must be preserved:
 ## Next steps
 
 - [ ] Confirm the bot was re-invited with permissions `275146697792` (includes **Manage Messages** for `/clear`).
-- [ ] Restart `start.bat` and confirm `Loaded 5 command(s)` and `Registered 5 slash command(s)`.
+- [ ] Restart `start.bat` and confirm `Loaded 17 command(s)` and `Registered 17 slash command(s)`.
 - [ ] Create a `Birthday` role, drag the bot's role above it, run `/birthday role @Birthday`.
 - [ ] Set the real fallback time zone: `/birthday timezone default:true <IANA zone>`, then have members run `/birthday timezone <IANA zone>` for their own.
 - [ ] Pick a greeting channel with `/birthday channel #birthdays` and confirm it has Send Messages + Embed Links.
@@ -266,6 +339,11 @@ Behavior that must be preserved:
 - [ ] Test end to end: `/birthday set <today's month> <today's day>` should grant the role and post one greeting within a second; running it again must not post a second greeting; `/birthday remove` should revoke the role.
 - [ ] Test admin flows: `/birthday set user:@member month:... day:...` and `/birthday timezone user:@member zone:...` as an admin, then confirm a non-admin gets "Missing permissions" when targeting someone else.
 - [ ] Test moderation: `:-clear 10` in a scratch channel, then `:-clear 5 @member`; confirm older-than-14-days messages are skipped and reported, and that a member without Manage Messages is refused.
+- [ ] **Set up exile:** create 11 roles (`Exile Main`, `Exile 1` … `Exile 10`), drag the bot's role above all of them, then run `/exile-setup role:@Exile1 except:#exile-1` for each role (different exceptions per level if wanted).
+- [ ] Map every level with `/exile-role set level:<main|1-10> role:@Role`, then `/exile-role list` to confirm all eleven and no `⚠️ not set up`.
+- [ ] Test on an alt: `/exile user:@alt` (main) and `/exile user:@alt level:3 reason:test`; the alt should see only that level's exceptions, and their other roles must be untouched. Confirm `/exile-list` and `/exile-log` show the action, and that re-running `/exile` at the same level says "Already exiled".
+- [ ] Create a channel and confirm the exiled alt cannot see it; delete an exception channel and confirm `/exile-setup` can be re-run cleanly. Then `/exile-release user:@alt` and confirm the alt sees the server again while the audit row remains.
+- [ ] Confirm a role with **Administrator** and a member with **Administrator** are both refused, and that a non-admin gets "Missing permissions" on every exile command.
 - [x] Deploy to Wispbyte per `docs/deploy-panel.md` — **done 2026-10-30**, Node 26.12.1, all 5 slash commands registered instantly.
 - [ ] First-deploy checks: restart the server and confirm `data/bot.db` survives (the panel guide's restart test). Node version is confirmed good.
 - [ ] **Check `TIMEZONE`.** The operator's clock is UTC+3 (console shows 15:48 local / 12:48 UTC). If `.env` still says `Asia/Manila` from the template, greetings fire 5 hours early. Fix with `/birthday timezone default:true zone:<IANA>` or by editing `.env`.
@@ -290,7 +368,7 @@ Behavior that must be preserved:
 ## Verification used so far
 
 - `node --check` across all `src/**/*.js`.
-- Load test with a fake token: 11 commands, 4 events, clean login failure.
+- Load test with a fake token: 17 commands, 7 events, clean login failure.
 - Date math: Feb 29 in leap/non-leap years, timezone date shift (`America/New_York`), year rollover.
 - Scheduler: role added on birthday, removed the next day, removed immediately when the birthday is deleted.
 - Command paths: set (valid/invalid), list, next, today, remove, admin guards, role set/clear, timezone invalid/valid.
@@ -306,6 +384,7 @@ Behavior that must be preserved:
 o-messages, a model that answers with nothing skipped as empty-summary without posting or storing, missing management channel skipped, and the `/autoreport` surface (prefix interval + daily, in-place switch to daily, missing cadence, targeted without focus, list shows the cadence, pause/resume/remove, Manage Server guard, refusal without a summary channel) plus the slash schema.
 - Readability checks in the same suite (35 of those 243): display-name resolution (inline member, guild cache, bounded REST fetch, global-name fallback, username last resort, fetch cap), the transcript printing the name and never the handle, the speaker roster pairing name with handle and skipping identical ones, the roster and transliteration rules reaching the prompt, and Arabic labels across the embed title/fields/footer, the markdown, and the HTML export (sections, message count, Arabic print hint), with English output unchanged. Depth checks in the same suite (16 more): exhaustive/4-8-sentences/length-target wording in the system prompt, merge-not-compress wording, 4096/2048/4096 token budgets, and multi-embed packing (a realistic report spans several embeds, each under Discord's 6,000 characters and 25 fields, continuation titles numbered, nothing dropped, an oversized report flagged at 8 embeds). Empty-report and export-button checks in the same suite (14 more): an empty summary renders a placeholder embed instead of nothing, interactionCreate routes summary:export:* and ignores other buttons, a moderator or the scheduler's owner exports while a stranger is refused, a deleted report is explained, a report saved with an empty body is refused instead of exporting a blank file, a DM press is refused, the reply stays ephemeral, and /autoreport set explains a restarted window and a first run only minutes away.
 - Watch integration test on a temp DB (95 checks): legacy-schema migration (case/diacritic duplicates merged, earliest spelling/author/timestamp kept, `user_id`/`broken` dropped, `watch_settings` created), the shared store (guild scope, creator, normalized duplicate, case-insensitive removal, 50-term cap), matcher edges, channel delivery (one alert for several keywords, jump link, quote, no pings, quiet-window throttle, cache invalidation, bots/empty skipped, missing/non-text/rejected channel swallowed), and the command surface (prefix and slash add/remove/list/clear/channel/test, empty and truncated list, Manage Messages vs Manage Server guards, unpostable channel, off switch).
+- Exile integration test on a temp DB with fake guild/channel/member objects (212 checks): the five tables and the partial unique index, level normalization (`main`/`M`/`0`/`none`, 1–10, 11 and words refused), level↔role mapping with the one-role-per-level rule, exception replace/add/remove and deleted-channel cleanup, log-channel roundtrip, setup markers (including clearing), active exile create/update/release with re-exile after release; role guards (`@everyone`, managed, Administrator, above the bot, missing Manage Roles) and member guards (owner, bot, Administrator, higher role, self); `reconcileRole` (exception allowed, channels and categories denied, exception category neutralized, threads skipped, idempotent second run, failed channels reported), `applyCreationRules` (new channel hidden, new exception allowed, parent category cleared), `channelCreate`/`channelDelete` events, and the full command surface: setup (prefix and slash, exception replacement, unknown channel, admin-role refusal, Manage Server guard), role set/clear/list (one-level-per-role, unconfigured warning, invalid level, unknown role, slash), exile (prefix level+reason parsing, slash, same-level idempotence, level change removes the old role, owner/admin/bot/higher refusals, invalid level, unmapped level, unconfigured role, failed role add, audit entries), release (role removal, record release, stale-role cleanup, stuck role keeps the record active), list (empty, truncation, active-only, guard), log (set/off, unknown, unwritable, slash), automatic release on `guildMemberRemove`, and every slash schema.
 
 ## Useful context
 

@@ -31,7 +31,7 @@ https://discord.com/oauth2/authorize?client_id=YOUR_CLIENT_ID&scope=bot%20applic
 
 That permission value grants: View Channels, Send Messages, Send Messages in Threads, Embed Links, Read Message History, Add Reactions, Use External Emojis, Manage Roles, Manage Messages.
 
-**Manage Roles is only for the birthday feature** and **Manage Messages is only for `/clear`**, and Discord's role hierarchy still prevents the bot from touching any role above its own — so it cannot escalate itself. If you'd rather not grant them up front, invite without them and add them later under Server Settings → Roles.
+**Manage Roles** powers the birthday roles **and the exile roles**; **Manage Messages** powers `/clear`. Discord's role hierarchy still prevents the bot from touching any role above its own — so it cannot escalate itself.
 
 If you already invited the bot with an older link, re-open the invite URL above and authorize again; Discord updates the bot's permissions in place. Alternatively, grant the missing permissions to the bot's role manually.
 
@@ -68,6 +68,12 @@ Both run `src/boot.js`, which checks the Node version before loading the bot and
 | `/birthday <subcommand>` | `:-bd`, `:-bday` | Birthday registry, countdowns, automatic birthday role and greetings |
 | `/welcome <subcommand>` | `:-greet` | Welcome cards for new members: six styles, random or rotating, editable text |
 | `/clear <amount> [user]` | `:-purge`, `:-prune` | Delete recent messages, optionally only from one member |
+| `/exile <@member> [level] [reason]` | `:-jail`, `:-prison` | Give a member an exile role and hide the server from them |
+| `/exile-release <@member> [reason]` | `:-unjail`, `:-unexile` | Remove a member's exile role |
+| `/exile-setup <@role> [#except ...]` | — | Hide every channel from a role, except the listed ones |
+| `/exile-role <set\|clear\|list>` | — | Map each exile level (main, 1–10) to a role |
+| `/exile-list` | `:-exiles` | Show every active exile |
+| `/exile-log <#channel\|off>` | — | Choose the channel that receives exile records |
 | `/summary <subcommand>` | `:-summarize`, `:-report` | AI summary of any channel, delivered to your management channel, exportable as HTML |
 | `/watch <subcommand>` | `:-alert`, `:-keywords` | Post an alert in a channel when a watched word appears anywhere in the server |
 | `/glossary <subcommand>` | `:-jargon` | Terms and jargon the summarizer should understand |
@@ -90,6 +96,57 @@ Both run `src/boot.js`, which checks the Node version before loading the bot and
 - Amounts over 100 are split into batches of 100. The maximum is 1,000 per command.
 - Ping the **member**, not a role — a role mention is rejected (`Unknown member`) rather than treated as "everyone".
 - The command's own message is **never deleted**: `:-clear 1` removes the message above it, and with a member filter the command is skipped too. For slash commands there is no command message to skip.
+
+## Exile (prison)
+
+Exile hides every channel from a member by giving them one of your own exile roles. You create the roles; the bot applies the channel rules and hands out the right one.
+
+### One-time setup
+
+1. Create your roles in **Server Settings → Roles** — for example `Exile Main` and `Exile 1` … `Exile 10`.
+2. Drag the bot's own role **above all of them** and give the bot **Manage Roles**.
+3. Hide the server from each role, listing the channels it may still see:
+
+```
+/exile-setup role:@Exile1 except:#exile-chat #rules
+:-exile-setup @Exile1 #exile-chat #rules
+```
+
+4. Map each role to its level:
+
+```
+/exile-role set level:1 role:@Exile1
+/exile-role set level:main role:@ExileMain
+:-exile-role set 1 @Exile1
+:-exile-role list
+```
+
+### Using it
+
+```
+/exile user:@member                    # main exile
+/exile user:@member level:3 reason:spam
+:-exile @member 3 spam
+
+/exile-release user:@member reason:appeal accepted
+:-exile-release @member appeal accepted
+
+/exile-list
+/exile-log channel:#mod-log
+```
+
+### What it does
+
+- **`/exile-setup` denies View Channel on every channel and category**, including voice, forum and announcement channels, except the ones you list. Each exception gets an explicit allow, and a category containing an exception is kept visible. A role with no exceptions hides the whole server.
+- **The exception list belongs to the role**, so level 1 can see `#exile-1` while level 10 sees only `#exile-10`. Re-running setup replaces that role's list; it never stacks duplicates.
+- **One exile role at a time.** `/exile` removes every other exile role before adding the chosen one, and changing a level updates the same record instead of stacking.
+- **New channels are hidden automatically** (`channelCreate` applies every configured role). A deleted channel is removed from every exception list.
+- **Setup is safe to re-run.** Channels that already match are skipped, and the reply reports any channel that could not be edited instead of claiming success.
+- **The bot refuses unusable roles:** `@everyone`, integration-managed roles, roles with **Administrator** (it bypasses channel overwrites) and roles above the bot's own highest role.
+- **The owner and anyone with Administrator cannot be exiled** — they bypass permissions, so the bot says so rather than pretending.
+- **Release and auditing:** `/exile-release` removes the role, `/exile-list` shows who is still exiled, and `/exile-log` posts an embed for every exile, level change and release. A member who leaves the server is released automatically.
+- **Manage Server** is required for every exile command. The bot needs **Manage Roles** and access to the channels it edits.
+- The roles are only added and removed — **no other member role is touched**.
 
 ## Command aliases
 
@@ -433,9 +490,18 @@ src/
       autoreport.js     scheduled summaries (interval or daily)
     moderation/
       clear.js          bulk message deletion with author filter
+      exile.js          assign an exile level to a member
+      exile-setup.js    hide channels from an exile role, with exceptions
+      exile-role.js     map main / 1-10 to exile roles
+      exile-release.js  remove a member's exile role
+      exile-list.js     active exiles
+      exile-log.js      audit channel for exile actions
   events/
     ready.js            presence, slash registration, scheduler start
     guildMemberAdd.js   welcome card delivery
+    guildMemberRemove.js automatic release when an exiled member leaves
+    channelCreate.js    apply exile rules to new channels
+    channelDelete.js    drop deleted channels from exception lists
     interactionCreate.js
     messageCreate.js    prefix parsing, command aliases, keyword alerts
   handlers/
@@ -454,6 +520,8 @@ src/
     report-export.js    self-contained HTML/PDF-ready export
     summary-scheduler.js interval/clock math + the minute-level tick
     watch-store.js      shared keyword list + alert channel
+    exile-store.js      exile levels, roles, exceptions and audit rows
+    exile.js            permission apply/reconcile, role assignment, audit embeds
     alias-store.js      per-server word -> command rows
     alias-runner.js     turns a bare word message into a command run
     watch.js            matching, Arabic normalization, channel delivery
@@ -467,6 +535,7 @@ src/
     logger.js           levelled logger
     media.js            image URL validation
     net-check.js        DNS → TCP → TLS → HTTPS probe for hosting issues
+    resolve.js          role/channel/member tokens for prefix commands
     run-command.js      shared execution pipeline
     runtime.js          Node capability checks
     template.js         placeholder substitution

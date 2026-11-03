@@ -170,6 +170,68 @@ const SCHEMA = `
     created_at INTEGER NOT NULL,
     PRIMARY KEY (guild_id, trigger)
   );
+
+  -- Where exile actions are reported. Kept separate from the exile roles so the
+  -- log survives re-running setup or remapping a level.
+  CREATE TABLE IF NOT EXISTS exile_settings (
+    guild_id       TEXT PRIMARY KEY,
+    log_channel_id TEXT,
+    updated_at     INTEGER NOT NULL
+  );
+
+  -- A role is "set up" once its channel rules have been applied. This is a
+  -- separate table because a setup with no exceptions stores no channel rows,
+  -- and "no rows" must not be read as "never configured".
+  CREATE TABLE IF NOT EXISTS exile_setups (
+    guild_id      TEXT    NOT NULL,
+    role_id       TEXT    NOT NULL,
+    configured_at INTEGER NOT NULL,
+    PRIMARY KEY (guild_id, role_id)
+  );
+
+  -- One role per level: 'main', '1' … '10'.
+  CREATE TABLE IF NOT EXISTS exile_roles (
+    guild_id   TEXT    NOT NULL,
+    level      TEXT    NOT NULL,
+    role_id    TEXT    NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (guild_id, level)
+  );
+
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_exile_roles_role
+    ON exile_roles (guild_id, role_id);
+
+  -- Channels that stay visible for one role. Per role, so every level can have
+  -- its own exception list.
+  CREATE TABLE IF NOT EXISTS exile_channels (
+    guild_id   TEXT NOT NULL,
+    role_id    TEXT NOT NULL,
+    channel_id TEXT NOT NULL,
+    PRIMARY KEY (guild_id, role_id, channel_id)
+  );
+
+  -- Active exiles (released_at IS NULL) plus their release record for the
+  -- audit trail. The partial unique index allows a member to be exiled again
+  -- after being released, but never twice at once.
+  CREATE TABLE IF NOT EXISTS exiles (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    guild_id       TEXT    NOT NULL,
+    user_id        TEXT    NOT NULL,
+    level          TEXT    NOT NULL,
+    role_id        TEXT    NOT NULL,
+    reason         TEXT,
+    created_by     TEXT    NOT NULL,
+    created_at     INTEGER NOT NULL,
+    released_by    TEXT,
+    released_at    INTEGER,
+    release_reason TEXT
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_exiles_guild
+    ON exiles (guild_id, released_at, created_at DESC);
+
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_exiles_one_active
+    ON exiles (guild_id, user_id) WHERE released_at IS NULL;
 `;
 
 // Columns added after the first release. `CREATE TABLE IF NOT EXISTS` does not
