@@ -87,13 +87,36 @@ async function post(payload, timeoutMs) {
   if (response.ok) return response.json();
 
   let detail = `HTTP ${response.status}`;
+  let raw = null;
+  let body = null;
 
+  // Read the body once as text: Gemini sometimes answers 429 with plain text
+  // or HTML, and `response.json()` would throw and hide the real reason.
   try {
-    const body = await response.json();
-    detail = body?.error?.message ?? body?.message ?? detail;
+    if (typeof response.text === 'function') raw = await response.text();
+
+    if (raw) {
+      try {
+        body = JSON.parse(raw);
+      } catch {
+        // Plain text; keep the excerpt below.
+      }
+    }
   } catch {
-    // Non-JSON error body; the status is all we have.
+    // Unreadable body; fall back to the status or the test stub's json().
   }
+
+  if (!body && typeof response.json === 'function') {
+    body = await response.json().catch(() => null);
+  }
+
+  const providerMessage =
+    body?.error?.message ??
+    body?.error?.status ??
+    body?.message ??
+    (raw ? raw.replace(/\s+/g, ' ').trim().slice(0, 300) : null);
+
+  if (providerMessage) detail = providerMessage;
 
   const retryHeader =
     response.headers?.get?.('retry-after') ??
