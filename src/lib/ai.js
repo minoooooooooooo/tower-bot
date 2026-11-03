@@ -31,7 +31,7 @@ export function aiProblemHint(error) {
 
   if (error.status === 404) {
     const hint = config.ai.baseUrl.includes('googleapis.com')
-      ? 'Google retires model ids for new keys: try `AI_MODEL=gemini-3.6-flash` (or `gemini-3.5-flash-lite`).'
+      ? 'On the free tier use `AI_MODEL=gemini-3.5-flash-lite`; larger models may need a billing account.'
       : config.ai.baseUrl.includes('deepseek.com')
         ? 'Check the model id on the DeepSeek platform: `AI_MODEL=deepseek-flash`.'
         : 'Check the model id and base URL for this provider.';
@@ -44,10 +44,15 @@ export function aiProblemHint(error) {
   }
 
   if (error.status === 429) {
+    const providerHint = config.ai.baseUrl.includes('googleapis.com')
+      ? 'On the Gemini free tier, use `AI_MODEL=gemini-3.5-flash-lite`; `gemini-3.6-flash` needs a billing account.'
+      : '';
+
     return [
       'The AI provider is rate limiting the key.',
       error.message ? `Provider said: ${String(error.message).slice(0, 300)}` : '',
       error.retryAfter ? `Retry after about ${error.retryAfter} seconds.` : '',
+      providerHint,
       'Wait for the quota to reset, use a smaller time window, or use a paid key/model.',
     ]
       .filter(Boolean)
@@ -110,10 +115,12 @@ async function post(payload, timeoutMs) {
     body = await response.json().catch(() => null);
   }
 
+  // Gemini sometimes wraps the error in an array; use the first entry.
+  const first = Array.isArray(body) ? body[0] : body;
   const providerMessage =
-    body?.error?.message ??
-    body?.error?.status ??
-    body?.message ??
+    first?.error?.message ??
+    first?.error?.status ??
+    first?.message ??
     (raw ? raw.replace(/\s+/g, ' ').trim().slice(0, 300) : null);
 
   if (providerMessage) detail = providerMessage;

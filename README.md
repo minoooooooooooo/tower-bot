@@ -182,7 +182,7 @@ The summarizer talks to **any OpenAI-compatible endpoint**, so the provider is a
 AI_API_KEY=your-key
 # optional, these are the defaults:
 AI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai
-AI_MODEL=gemini-3.6-flash
+AI_MODEL=gemini-3.5-flash-lite
 ```
 
 For DeepSeek (paid key, no daily free-tier quota):
@@ -198,7 +198,7 @@ AI_THINKING=off
 
 To switch back to Gemini, put the Gemini key in `AI_API_KEY` and remove `AI_BASE_URL`, `AI_MODEL` and `AI_THINKING` (or set them to the defaults above), then restart.
 
-Google retires old model ids for new keys — `gemini-2.5-flash` now answers `404 no longer available to new users`. If a model stops working, check the error: it names a replacement. Current good choices are `gemini-3.6-flash`, `gemini-3.5-flash-lite` (cheapest) and `gemini-3.8-flash` (newest, sometimes busy).
+Google now limits free API users to **Flash-Lite**; `gemini-3.6-flash` can answer `429 quota exceeded` on a free key even when the key is valid. Use `gemini-3.5-flash-lite` on the free tier, or enable billing for the larger models. If a model stops working, check the error: it names a replacement.
 
 Google AI Studio, OpenAI, OpenRouter, Groq, DeepSeek and a local llama-server all work — only `AI_API_KEY` is required. Restart after adding it. Without a key, `/summary` replies with this snippet instead of crashing.
 
