@@ -14,6 +14,13 @@ const logger = createLogger('exile');
 const OVERWRITE_CONCURRENCY = 3;
 const AUDIT_REASON_LIMIT = 500;
 
+/**
+ * A server-wide "see every room" role. Channel overwrites cannot beat a role
+ * that is allowed everywhere, so exiling a member must take this off first and
+ * `/exile-release` must give it back.
+ */
+export const EXILE_ACCESS_ROLE_ID = '1402366805153939667';
+
 const warned = new Map();
 const WARN_INTERVAL_MS = 60 * 60 * 1000;
 
@@ -31,11 +38,11 @@ function auditReason(text) {
 }
 
 /**
- * Validates the role a level is about to point at. Administrator is refused on
- * purpose: it bypasses channel overwrites, so a setup would silently do
- * nothing while `/exile` claimed success.
+ * Validates that the bot can add or remove a role. Used for the exile roles
+ * themselves and for the fixed all-access role, which must not be blocked by a
+ * managed flag or the role hierarchy.
  */
-export function roleProblem(guild, role) {
+export function manageableRoleProblem(guild, role) {
   if (!role) return 'Pick an exile role.';
 
   if (role.id === guild.id) {
@@ -44,10 +51,6 @@ export function roleProblem(guild, role) {
 
   if (role.managed) {
     return `**${role.name}** is managed by an integration and cannot be assigned by hand.`;
-  }
-
-  if (role.permissions?.has(PermissionFlagsBits.Administrator)) {
-    return `**${role.name}** has **Administrator**, which bypasses every channel permission. Remove it from the role first.`;
   }
 
   const me = guild.members?.me;
@@ -65,6 +68,31 @@ export function roleProblem(guild, role) {
   }
 
   return null;
+}
+
+/**
+ * Validates the role a level is about to point at. Administrator is refused on
+ * purpose: it bypasses channel overwrites, so a setup would silently do
+ * nothing while `/exile` claimed success.
+ */
+export function roleProblem(guild, role) {
+  const base = manageableRoleProblem(guild, role);
+
+  if (base) return base;
+
+  if (role.permissions?.has(PermissionFlagsBits.Administrator)) {
+    return `**${role.name}** has **Administrator**, which bypasses every channel permission. Remove it from the role first.`;
+  }
+
+  return null;
+}
+
+/** Loads the fixed all-access role, or null when the server does not have it. */
+export async function resolveAccessRole(guild) {
+  return (
+    guild.roles.cache.get(EXILE_ACCESS_ROLE_ID) ??
+    (await guild.roles.fetch(EXILE_ACCESS_ROLE_ID).catch(() => null))
+  );
 }
 
 /** Refuses targets the bot cannot meaningfully punish or outrank. */

@@ -7,14 +7,18 @@ import {
 import { errorEmbed, infoEmbed, successEmbed } from '../../lib/embeds.js';
 import { resolveMember } from '../../lib/resolve.js';
 import {
+  EXILE_ACCESS_ROLE_ID,
   assignExileRole,
+  manageableRoleProblem,
   memberProblem,
+  resolveAccessRole,
   roleProblem,
   sendExileLog,
 } from '../../services/exile.js';
 import {
   EXILE_LEVELS,
   MAX_REASON_LENGTH,
+  allExileRoleIds,
   createExile,
   getActiveExile,
   getRoleForLevel,
@@ -237,6 +241,53 @@ export default {
       return;
     }
 
+    // The all-access role allows View Channel everywhere, so leaving it on
+    // would defeat the exile. It is only skipped when it is itself one of the
+    // configured exile roles, in which case assignExileRole owns it.
+    const accessIsExileRole = allExileRoleIds(ctx.guildId).includes(EXILE_ACCESS_ROLE_ID);
+    const accessRole = accessIsExileRole ? null : await resolveAccessRole(ctx.guild);
+    let accessRemovedNow = false;
+
+    if (accessRole) {
+      const accessIssue = manageableRoleProblem(ctx.guild, accessRole);
+
+      if (accessIssue) {
+        await ctx.reply(
+          ephemeral({
+            embeds: [
+              errorEmbed(
+                'Cannot remove the all-access role',
+                `I must take ${accessRole} off the member before exiling them, but ${accessIssue}`,
+              ),
+            ],
+          }),
+        );
+        return;
+      }
+
+      if (member.roles.cache.has(accessRole.id)) {
+        try {
+          await member.roles.remove(
+            accessRole.id,
+            `Exile ${levelLabel(level)} by ${ctx.user.tag ?? ctx.user.username}`,
+          );
+          accessRemovedNow = true;
+        } catch (error) {
+          await ctx.reply(
+            ephemeral({
+              embeds: [
+                errorEmbed(
+                  'Could not remove the all-access role',
+                  `Discord refused to remove ${accessRole}: ${error.message}. The member was not exiled.`,
+                ),
+              ],
+            }),
+          );
+          return;
+        }
+      }
+    }
+
     const active = getActiveExile(ctx.guildId, member.id);
     const sameLevel = active?.level === level;
     const auditReason = reason || active?.reason || null;
@@ -250,6 +301,14 @@ export default {
         `Exile ${levelLabel(level)} by ${ctx.user.tag ?? ctx.user.username}`,
       );
     } catch (error) {
+      // Do not leave a member without their all-access role when the exile
+      // itself failed. Nothing was recorded, so this must be undone.
+      if (accessRemovedNow && accessRole && !member.roles.cache.has(accessRole.id)) {
+        await member.roles
+          .add(accessRole.id, 'Restore after a failed exile')
+          .catch(() => null);
+      }
+
       await ctx.reply(
         ephemeral({
           embeds: [

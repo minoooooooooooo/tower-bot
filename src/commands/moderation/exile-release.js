@@ -6,9 +6,16 @@ import {
 } from 'discord.js';
 import { errorEmbed, infoEmbed, successEmbed } from '../../lib/embeds.js';
 import { resolveMember } from '../../lib/resolve.js';
-import { removeExileRoles, sendExileLog } from '../../services/exile.js';
+import {
+  EXILE_ACCESS_ROLE_ID,
+  manageableRoleProblem,
+  removeExileRoles,
+  resolveAccessRole,
+  sendExileLog,
+} from '../../services/exile.js';
 import {
   MAX_REASON_LENGTH,
+  allExileRoleIds,
   getActiveExile,
   levelLabel,
   releaseActiveExile,
@@ -37,6 +44,33 @@ function formatHeld(ms) {
   if (minutes < 60 * 24) return `${Math.floor(minutes / 60)}h`;
 
   return `${Math.floor(minutes / (60 * 24))}d`;
+}
+
+/**
+ * Gives back the server-wide all-access role that `/exile` removed. A failure
+ * is reported but never blocks the release: the exile role is already gone.
+ */
+async function restoreAccessRole(guild, member, actor) {
+  const isExileRole = allExileRoleIds(guild.id).includes(EXILE_ACCESS_ROLE_ID);
+
+  if (isExileRole) return { restored: false, failed: null };
+
+  const role = await resolveAccessRole(guild);
+
+  if (!role || member.roles.cache.has(role.id)) {
+    return { restored: false, failed: null };
+  }
+
+  const issue = manageableRoleProblem(guild, role);
+
+  if (issue) return { restored: false, failed: issue };
+
+  try {
+    await member.roles.add(role.id, `Exile released by ${actor}`);
+    return { restored: true, failed: null };
+  } catch (error) {
+    return { restored: false, failed: error.message };
+  }
 }
 
 export default {
@@ -109,17 +143,31 @@ export default {
     if (!active) {
       const cleanup = await removeExileRoles(member, null, `Exile cleanup by ${ctx.user.tag ?? ctx.user.username}`);
 
+      if (cleanup.removed.length === 0) {
+        await ctx.reply(
+          ephemeral({
+            embeds: [infoEmbed('Not exiled', `${member} does not have an active exile.`)],
+          }),
+        );
+        return;
+      }
+
+      const access = await restoreAccessRole(
+        ctx.guild,
+        member,
+        ctx.user.tag ?? ctx.user.username,
+      );
+      const lines = [
+        `${member} had an exile role but no active record. I removed ${cleanup.removed.length} role${cleanup.removed.length === 1 ? '' : 's'}; they can see the server again.`,
+      ];
+
+      if (access.restored) lines.push(`Restored <@&${EXILE_ACCESS_ROLE_ID}>.`);
+      if (access.failed) {
+        lines.push('', `⚠️ I could not restore <@&${EXILE_ACCESS_ROLE_ID}>: ${access.failed}`);
+      }
+
       await ctx.reply(
-        ephemeral({
-          embeds: [
-            cleanup.removed.length > 0
-              ? successEmbed(
-                  'Stale exile role removed',
-                  `${member} had an exile role but no active record. I removed ${cleanup.removed.length} role${cleanup.removed.length === 1 ? '' : 's'}; they can see the server again.`,
-                )
-              : infoEmbed('Not exiled', `${member} does not have an active exile.`),
-          ],
-        }),
+        ephemeral({ embeds: [successEmbed('Stale exile role removed', lines.join('\n'))] }),
       );
       return;
     }
@@ -162,6 +210,12 @@ export default {
       return;
     }
 
+    const access = await restoreAccessRole(
+      ctx.guild,
+      member,
+      ctx.user.tag ?? ctx.user.username,
+    );
+
     releaseActiveExile({
       guildId: ctx.guildId,
       userId: member.id,
@@ -186,6 +240,11 @@ export default {
       `They were at **${levelLabel(active.level)}** for **${formatHeld(Date.now() - active.createdAt)}**.`,
       `Reason: ${reason || 'Released'}`,
     ];
+
+    if (access.restored) lines.push(`Restored <@&${EXILE_ACCESS_ROLE_ID}>.`);
+    if (access.failed) {
+      lines.push('', `⚠️ I could not restore <@&${EXILE_ACCESS_ROLE_ID}>: ${access.failed}`);
+    }
 
     if (result.failed.length > 0) {
       lines.push(
