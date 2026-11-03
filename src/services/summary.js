@@ -48,13 +48,13 @@ export const KIND_ALIASES = {
 
 const MAX_ITEMS = { topics: 12, decisions: 15, announcements: 10, tasks: 20, questions: 10, highlights: 6 };
 const MAX_LENGTH = {
-  headline: 500,
+  headline: 400,
   topicTitle: 150,
-  topicSummary: 900,
-  entry: 600,
-  item: 300,
-  quote: 400,
-  answer: 1500,
+  topicSummary: 600,
+  entry: 400,
+  item: 220,
+  quote: 320,
+  answer: 1000,
 };
 
 /**
@@ -164,17 +164,17 @@ const SYSTEM_PROMPT = [
   '- Be specific about who said or proposed what when it matters.',
   '- Name people exactly as the transcript does: their display name, never a raw Discord handle.',
   '- When writing in Arabic, write names in Arabic letters: translate a meaningful name (It\'s Emad → عماد) or transliterate it phonetically (ShinIsekai → شين ايسكاي). Do not leave Latin handles inside an Arabic sentence.',
-  '- Be exhaustive. Every distinct subject, decision, announcement, request, problem, number, date, link and name in the transcript must appear somewhere in the JSON. Do not merge unrelated subjects to save space, and do not drop minor points.',
-  '- Prefer many specific entries over few general ones. Give each topic its own entry with 4-8 sentences covering who raised it, what was said, any numbers or links, and how it ended.',
-  '- Aim for 700-1,200 words for a full day of chat. A short window can be shorter; never pad with filler or repeat yourself.',
+  '- Be exhaustive about which points appear, but concise in how you write them. Every distinct subject, decision, announcement, request, problem, number, date, link and name must appear somewhere in the JSON; do not merge unrelated subjects and do not drop minor points.',
+  '- Give each topic its own entry with 2-3 sentences covering who raised it, what was said, and how it ended. Keep each decision, announcement and question to one or two sentences.',
+  '- Aim for 300-500 words for a full day of chat. A short window can be shorter; never pad with filler, restate the same point, or repeat yourself.',
   '- Skip greetings, spam, and small talk unless it is the topic.',
-  '- Every topic has a short title and a 4-8 sentence summary. Decisions, announcements and questions are strings formatted as "short title — who/what/when".',
+  '- Every topic has a short title and a 2-3 sentence summary. Decisions, announcements and questions are strings formatted as "short title — one or two sentences".',
   '- Each transcript line ends with [id:1234567890]. Copy the id of the message that best supports a topic into its "id" field exactly; omit id when no single message supports the whole topic. Never invent an id.',
   '- "decisions" are choices the team made; "announcements" are news someone declared (a bot is ready, a feature launched); keep them separate.',
   '- Reply with a single JSON object and nothing else.',
   'JSON shape:',
   '{"headline":"one sentence overview","answer":"only for targeted summaries",',
-  ' "topics":[{"title":"short label","summary":"4-8 sentences","id":"message id or empty"}],',
+  ' "topics":[{"title":"short label","summary":"2-3 sentences","id":"message id or empty"}],',
   ' "decisions":["short title — who decided it and under what condition"],',
   ' "announcements":["short title — what was announced and by whom"],',
   ' "tasks":[{"task":"what must be done","owner":"who took it, or empty"}],',
