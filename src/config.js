@@ -67,6 +67,7 @@ export const config = {
     baseUrl:
       process.env.AI_BASE_URL?.trim() || 'https://generativelanguage.googleapis.com/v1beta/openai',
     model: process.env.AI_MODEL?.trim() || 'gemini-3.6-flash',
+    thinking: process.env.AI_THINKING?.trim().toLowerCase() || '',
     maxInputChars:
       Number.isFinite(aiMaxInput) && aiMaxInput >= 4000 ? aiMaxInput : 60_000,
   },

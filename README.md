@@ -185,6 +185,17 @@ AI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai
 AI_MODEL=gemini-3.6-flash
 ```
 
+For DeepSeek (paid key, no daily free-tier quota):
+
+```env
+AI_API_KEY=sk-...
+AI_BASE_URL=https://api.deepseek.com
+AI_MODEL=deepseek-flash
+AI_THINKING=off
+```
+
+`AI_THINKING=off` matters: DeepSeek thinks before answering by default, and the chain of thought is billed as output tokens and can consume the whole `max_tokens` budget before the JSON begins. Summaries do not need it. Leave the variable unset for Gemini.
+
 Google retires old model ids for new keys — `gemini-2.5-flash` now answers `404 no longer available to new users`. If a model stops working, check the error: it names a replacement. Current good choices are `gemini-3.6-flash`, `gemini-3.5-flash-lite` (cheapest) and `gemini-3.8-flash` (newest, sometimes busy).
 
 Google AI Studio, OpenAI, OpenRouter, Groq, DeepSeek and a local llama-server all work — only `AI_API_KEY` is required. Restart after adding it. Without a key, `/summary` replies with this snippet instead of crashing.
@@ -225,6 +236,7 @@ Prefix form, order-independent:
 - **Headings follow the report language.** An Arabic report is titled `ملخص عام` and uses `المواضيع` / `القرارات` / `المهام` / `أسئلة مفتوحة` / `أبرز المقولات`, with `233 رسالة` in the footer. English reports are unchanged, and the HTML export uses the same labels.
 - **Summaries are long on purpose.** The model is asked to be exhaustive — every distinct subject, decision, request, problem, number and link, 4–8 sentences per topic, 700–1,200 words for a full day of chat. Up to 12 topics, 15 decisions, 20 action items, 10 questions and 6 quotes survive; a longer report simply spills into a second or third embed (Discord caps one embed at 6,000 characters, not one message).
 - A free AI key is enough. Length is limited by the prompt and the output budget, not by the free tier: Gemini's free quota is a **rate limit** (requests and tokens per minute/day), not a shorter answer. A paid key matters only if you summarize many times per hour, or want a bigger model. `AI_MAX_INPUT_CHARS` (default 60,000) is the other ceiling — raise it for very long windows.
+- **A paid key costs cents, not dollars.** Providers bill per token. On `deepseek-flash` (off-peak: $0.15 per 1M input, $0.60 per 1M output; peak is double), a channel with ~30,000 characters of chat per day is ~15,000 input tokens, so a daily report is roughly **$0.003–0.007**. An hourly schedule lands around **$0.02–0.04/day**, and every 15 minutes around **$0.10–0.20/day** — output length, not transcript volume, is the main driver, which is why `AI_THINKING=off` matters.
 
 ### Exporting
 

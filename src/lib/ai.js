@@ -29,10 +29,16 @@ export function aiProblemHint(error) {
   }
 
   if (error.status === 404) {
+    const hint = config.ai.baseUrl.includes('googleapis.com')
+      ? 'Google retires model ids for new keys: try `AI_MODEL=gemini-3.6-flash` (or `gemini-3.5-flash-lite`).'
+      : config.ai.baseUrl.includes('deepseek.com')
+        ? 'Check the model id on the DeepSeek platform: `AI_MODEL=deepseek-flash`.'
+        : 'Check the model id and base URL for this provider.';
+
     return [
       `The model \`${config.ai.model}\` is not available at \`${config.ai.baseUrl}\`.`,
       `Provider said: ${error.message}`,
-      'Google retires model ids for new keys: try `AI_MODEL=gemini-3.6-flash` (or `gemini-3.5-flash-lite`).',
+      hint,
     ].join('\n');
   }
 
@@ -129,6 +135,17 @@ export async function chatJson({ system, user, maxTokens = 2000, temperature = 0
     response_format: { type: 'json_object' },
   };
 
+  // DeepSeek and other reasoning models think by default: the chain of thought
+  // is billed as output and can eat the whole max_tokens budget before the JSON
+  // starts. Summaries do not need it, so AI_THINKING=off keeps the answer
+  // inside the budget and the bill predictable. Unset sends nothing, leaving
+  // Gemini and the other providers exactly as before.
+  if (['off', 'disabled', 'false'].includes(config.ai.thinking)) {
+    payload.thinking = { type: 'disabled' };
+  } else if (['on', 'enabled', 'true'].includes(config.ai.thinking)) {
+    payload.thinking = { type: 'enabled' };
+  }
+
   let lastError = null;
 
   for (let attempt = 1; attempt <= 2; attempt += 1) {
@@ -137,6 +154,12 @@ export async function chatJson({ system, user, maxTokens = 2000, temperature = 0
       const content = body?.choices?.[0]?.message?.content;
 
       if (!content) throw new AiError('The model returned an empty reply.', { retryable: true });
+
+      if (body?.usage) {
+        logger.info(
+          `AI usage (${config.ai.model}): ${body.usage.prompt_tokens ?? '?'} input, ${body.usage.completion_tokens ?? '?'} output tokens`,
+        );
+      }
 
       return { data: extractJson(content), usage: body?.usage ?? null };
     } catch (error) {
