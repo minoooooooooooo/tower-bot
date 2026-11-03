@@ -91,3 +91,54 @@ export function setWatchChannelId(guildId, channelId) {
 
   return channelId ?? null;
 }
+
+// --- ignored channels -------------------------------------------------------
+
+/** Channels and categories whose messages never trigger an alert. */
+export function listIgnoredChannels(guildId) {
+  return getDb()
+    .prepare(
+      'SELECT channel_id, created_by, created_at FROM watch_ignored_channels WHERE guild_id = ? ORDER BY created_at ASC',
+    )
+    .all(guildId)
+    .map((row) => ({
+      channelId: row.channel_id,
+      createdBy: row.created_by,
+      createdAt: row.created_at,
+    }));
+}
+
+export function isIgnoredChannel(guildId, channelId) {
+  return Boolean(
+    getDb()
+      .prepare(
+        'SELECT 1 AS ok FROM watch_ignored_channels WHERE guild_id = ? AND channel_id = ?',
+      )
+      .get(guildId, channelId),
+  );
+}
+
+/** Returns false when the channel was already ignored. */
+export function addIgnoredChannel(guildId, channelId, userId) {
+  return (
+    getDb()
+      .prepare(
+        `INSERT INTO watch_ignored_channels (guild_id, channel_id, created_by, created_at)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT DO NOTHING`,
+      )
+      .run(guildId, channelId, userId, Date.now()).changes > 0
+  );
+}
+
+export function removeIgnoredChannel(guildId, channelId) {
+  return getDb()
+    .prepare('DELETE FROM watch_ignored_channels WHERE guild_id = ? AND channel_id = ?')
+    .run(guildId, channelId).changes;
+}
+
+export function clearIgnoredChannels(guildId) {
+  return getDb()
+    .prepare('DELETE FROM watch_ignored_channels WHERE guild_id = ?')
+    .run(guildId).changes;
+}

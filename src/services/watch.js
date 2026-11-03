@@ -2,7 +2,7 @@ import { PermissionFlagsBits } from 'discord.js';
 import { COLORS, embed } from '../lib/embeds.js';
 import { createLogger } from '../lib/logger.js';
 import { normalizeForMatch } from '../lib/text.js';
-import { getWatchChannelId, listWatchTerms } from './watch-store.js';
+import { getWatchChannelId, listIgnoredChannels, listWatchTerms } from './watch-store.js';
 
 const logger = createLogger('watch');
 
@@ -51,10 +51,28 @@ function guildState(guildId) {
   const state = {
     terms: listWatchTerms(guildId).map((row) => row.term),
     channelId: getWatchChannelId(guildId),
+    ignored: new Set(listIgnoredChannels(guildId).map((row) => row.channelId)),
   };
 
   cache.set(guildId, { expires: Date.now() + CACHE_TTL_MS, state });
   return state;
+}
+
+/**
+ * A message is ignored when its channel, its parent channel (a thread) or its
+ * category is on the list. Threads hang off a channel, which hangs off a
+ * category, so both levels are checked.
+ */
+function inIgnoredChannel(state, message) {
+  if (state.ignored.size === 0) return false;
+
+  const ids = [
+    message.channelId ?? message.channel?.id,
+    message.channel?.parentId,
+    message.channel?.parent?.parentId,
+  ];
+
+  return ids.some((id) => id && state.ignored.has(id));
 }
 
 function warnOnce(key, text) {
@@ -202,6 +220,8 @@ export async function handleKeywordAlerts(message, client) {
   const state = guildState(guildId);
 
   if (state.terms.length === 0) return 0;
+
+  if (inIgnoredChannel(state, message)) return 0;
 
   const normalized = normalizeForMatch(message.content);
   const hits = state.terms.filter((term) => buildMatcher(term).test(normalized));

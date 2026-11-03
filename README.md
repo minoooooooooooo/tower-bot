@@ -244,14 +244,18 @@ A report with nothing worth saying (an empty model answer, or a window with no m
 /watch remove keyword:nitro scam
 /watch clear
 /watch test                         # post a sample alert in the chosen channel
+/watch ignore channel:#off-topic    # never alert on words here (a category covers its channels)
+/watch ignored                      # list ignored channels
+/watch unignore channel:#off-topic  # alert there again
 ```
 
-When anyone posts a watched word **anywhere** in the server, the bot posts an alert in the channel set with `/watch channel`: the word, the author, a short quote, and a **clickable jump link** to the message.
+When anyone posts a watched word **anywhere** in the server, the bot posts an alert in the channel set with `/watch channel`: the word, the author, a short quote, and a **clickable jump link** to the message. Channels you add with `/watch ignore` are skipped entirely — no alert, no ping.
 
 - The list is **shared by the whole server**. Any moderator can add or remove a word, everyone sees the same list, and every alert goes to the same channel — it is no longer tied to whoever typed the command (and no DMs are involved).
 - Matching is whole-word and Unicode aware: `ass` does not fire on `classic`, and Arabic diacritics, tatweel and the alef/ya/ta-marbuta variants are normalized so `مُحَمّد` matches `محمد`. Adding `محمد` when `مُحَمّد` is already watched is refused as a duplicate.
 - Bots never trigger an alert. Messages are checked even if the author is a moderator, so typing the word is a quick live test.
 - **Every alert pings `@everyone`.** The mention lives in `content`, outside the embed (Discord ignores mentions inside embeds), exactly like a birthday greeting; `allowedMentions` only allows `everyone`, so a quoted message can never ping a role or an arbitrary member. If the bot lacks **Mention Everyone** in the alert channel, the ping is dropped silently and the failure is logged once per half hour.
+- **Ignored channels stay quiet.** `/watch ignore` takes a channel or a whole category (ignoring a category covers every channel under it, and threads inherit both). `/watch unignore` restores alerts, `/watch ignored` lists what is ignored and who added it. A deleted channel drops off the list automatically.
 - At most 50 keywords per server, 2 seconds apart and 12 per 10 minutes, so a busy phrase cannot flood the channel. Several watched words in one message produce one alert, not one per word.
 - Choosing the channel needs **Manage Server**; adding, removing, listing and testing need **Manage Messages**.
 - `/watch test` posts a real sample in the alert channel, so a wrong channel or missing permission is visible immediately instead of silently failing.

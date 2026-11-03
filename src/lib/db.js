@@ -128,6 +128,16 @@ const SCHEMA = `
     updated_at INTEGER NOT NULL
   );
 
+  -- Channels and categories where keyword alerts must stay quiet. A category id
+  -- also covers every channel underneath it.
+  CREATE TABLE IF NOT EXISTS watch_ignored_channels (
+    guild_id   TEXT    NOT NULL,
+    channel_id TEXT    NOT NULL,
+    created_by TEXT    NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (guild_id, channel_id)
+  );
+
   -- Server jargon handed to the model so summaries use the right vocabulary.
   CREATE TABLE IF NOT EXISTS glossary (
     guild_id   TEXT NOT NULL,

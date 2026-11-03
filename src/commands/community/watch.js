@@ -11,12 +11,15 @@ import {
   MAX_TERM_LENGTH,
   MAX_WATCH_TERMS,
   MIN_TERM_LENGTH,
+  addIgnoredChannel,
   addWatchTerm,
   clearWatchTerms,
   countTerms,
   findTerm,
   getWatchChannelId,
+  listIgnoredChannels,
   listWatchTerms,
+  removeIgnoredChannel,
   removeWatchTerm,
   setWatchChannelId,
 } from '../../services/watch-store.js';
@@ -67,7 +70,7 @@ function extractTerm(ctx) {
 
   const [action, ...rest] = ctx.args;
 
-  if (!['add', 'remove', 'delete', 'clear', 'list', 'test', 'channel'].includes(action)) {
+  if (!['add', 'remove', 'delete', 'clear', 'list', 'test', 'channel', 'ignore', 'unignore', 'ignored'].includes(action)) {
     return [action, ...rest].join(' ').trim();
   }
 
@@ -76,6 +79,33 @@ function extractTerm(ctx) {
 
 function prefixChannelArg(ctx) {
   return ctx.args.slice(1).join(' ').trim();
+}
+
+/** Case-insensitive name lookup that works on a Collection or a plain Map. */
+function findCachedChannel(guild, name, predicate = () => true) {
+  const wanted = name.toLowerCase();
+
+  for (const channel of guild.channels.cache.values()) {
+    if (channel.name?.toLowerCase() === wanted && predicate(channel)) return channel;
+  }
+
+  return null;
+}
+
+/** Like resolvePrefixChannel, but categories and voice channels are allowed. */
+async function resolvePrefixAnyChannel(ctx, raw) {
+  const cleaned = raw.replace(/^<#/, '').replace(/>$/, '').trim();
+
+  if (!cleaned) return null;
+
+  if (/^\d{15,20}$/.test(cleaned)) {
+    return (
+      ctx.guild.channels.cache.get(cleaned) ??
+      (await ctx.guild.channels.fetch(cleaned).catch(() => null))
+    );
+  }
+
+  return findCachedChannel(ctx.guild, cleaned.replace(/^#/, ''));
 }
 
 async function resolvePrefixChannel(ctx, raw) {
@@ -90,12 +120,8 @@ async function resolvePrefixChannel(ctx, raw) {
     );
   }
 
-  const name = cleaned.replace(/^#/, '');
-
-  return (
-    ctx.guild.channels.cache.find(
-      (channel) => channel.name === name && channel.isTextBased?.(),
-    ) ?? null
+  return findCachedChannel(ctx.guild, cleaned.replace(/^#/, ''), (channel) =>
+    channel.isTextBased?.(),
   );
 }
 
@@ -448,6 +474,164 @@ async function handleTest(ctx) {
   }
 }
 
+function ignoredPayload(ctx) {
+  const rows = listIgnoredChannels(ctx.guildId);
+
+  if (rows.length === 0) {
+    return embed({
+      title: 'No ignored channels',
+      description: [
+        'Watched words trigger alerts in every channel.',
+        `Ignore one with \`${ctx.isSlash ? '/watch ignore channel:#channel' : ':-watch ignore #channel'}\`.`,
+        'Ignoring a category covers every channel inside it.',
+      ].join('\n'),
+      color: COLORS.muted,
+    });
+  }
+
+  const shown = rows.slice(0, MAX_SHOWN);
+  const lines = shown.map((row) => {
+    const channel = ctx.guild.channels.cache.get(row.channelId);
+
+    return channel
+      ? `\u200E- <#${row.channelId}> — added by <@${row.createdBy}>`
+      : `\u200E- ⚠️ \`${row.channelId}\` — channel deleted`;
+  });
+
+  if (rows.length > shown.length) lines.push(`…and ${rows.length - shown.length} more`);
+
+  return embed({
+    title: `Ignored channels (${rows.length})`,
+    description: lines.join('\n'),
+    footer: 'Watched words in these channels never trigger an alert.',
+    color: COLORS.primary,
+  });
+}
+
+async function resolveIgnoreTarget(ctx) {
+  if (ctx.isSlash) {
+    return { channel: ctx.getChannel('channel'), raw: '' };
+  }
+
+  const raw = prefixChannelArg(ctx);
+
+  if (!raw) return { channel: null, raw };
+
+  return { channel: await resolvePrefixAnyChannel(ctx, raw).catch(() => null), raw };
+}
+
+async function handleIgnore(ctx) {
+  if (!(await requireModerator(ctx))) return;
+
+  const { channel, raw } = await resolveIgnoreTarget(ctx);
+
+  // Slash without the option lists the current ignores, so `/watch ignore`
+  // doubles as the read command.
+  if (!channel) {
+    if (!raw) {
+      await ctx.reply(ephemeral({ embeds: [ignoredPayload(ctx)] }));
+      return;
+    }
+
+    await ctx.reply(
+      ephemeral({
+        embeds: [
+          errorEmbed(
+            'Unknown channel',
+            `I could not find \`${raw}\`. Mention it as \`#channel\` or paste the channel id.`,
+          ),
+        ],
+      }),
+    );
+    return;
+  }
+
+  if ((channel.guildId ?? channel.guild?.id) !== ctx.guildId) {
+    await ctx.reply(
+      ephemeral({
+        embeds: [errorEmbed('Wrong server', 'Pick a channel from this server.')],
+      }),
+    );
+    return;
+  }
+
+  if (!addIgnoredChannel(ctx.guildId, channel.id, ctx.user.id)) {
+    await ctx.reply(
+      ephemeral({
+        embeds: [infoEmbed('Already ignored', `${channel} never triggers a keyword alert.`)],
+      }),
+    );
+    return;
+  }
+
+  invalidateWatchCache(ctx.guildId);
+
+  const isCategory = channel.type === ChannelType.GuildCategory;
+
+  await ctx.reply(
+    ephemeral({
+      embeds: [
+        successEmbed(
+          'Channel ignored',
+          isCategory
+            ? `Watched words in ${channel} and every channel inside it no longer trigger an alert.`
+            : `Watched words in ${channel} no longer trigger an alert.`,
+        ),
+      ],
+    }),
+  );
+}
+
+async function handleUnignore(ctx) {
+  if (!(await requireModerator(ctx))) return;
+
+  const { channel, raw } = await resolveIgnoreTarget(ctx);
+
+  if (!channel) {
+    await ctx.reply(
+      ephemeral({
+        embeds: [
+          raw
+            ? errorEmbed(
+                'Unknown channel',
+                `I could not find \`${raw}\`. Mention it as \`#channel\` or paste the channel id.`,
+              )
+            : errorEmbed(
+                'Which channel?',
+                `Use \`${ctx.isSlash ? '/watch unignore channel:#channel' : ':-watch unignore #channel'}\`.`,
+              ),
+        ],
+      }),
+    );
+    return;
+  }
+
+  if (removeIgnoredChannel(ctx.guildId, channel.id) === 0) {
+    await ctx.reply(
+      ephemeral({
+        embeds: [infoEmbed('Not ignored', `${channel} already triggers alerts.`)],
+      }),
+    );
+    return;
+  }
+
+  invalidateWatchCache(ctx.guildId);
+
+  await ctx.reply(
+    ephemeral({
+      embeds: [
+        successEmbed('Channel watched again', `${channel} will trigger keyword alerts again.`),
+      ],
+    }),
+  );
+}
+
+async function handleIgnored(ctx) {
+  if (!(await requireModerator(ctx))) return;
+
+  await ctx.reply(ephemeral({ embeds: [ignoredPayload(ctx)] }));
+}
+
 export default {
   data: new SlashCommandBuilder()
     .setName('watch')
@@ -488,21 +672,43 @@ export default {
             .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement),
         ),
     )
-    .addSubcommand((sub) => sub.setName('test').setDescription('Post a test alert in the channel')),
+    .addSubcommand((sub) => sub.setName('test').setDescription('Post a test alert in the channel'))
+    .addSubcommand((sub) =>
+      sub
+        .setName('ignore')
+        .setDescription('Never alert on words in a channel or category')
+        .addChannelOption((option) =>
+          option
+            .setName('channel')
+            .setDescription('Channel or category to ignore (leave empty to list them)'),
+        ),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName('unignore')
+        .setDescription('Alert on words in a channel again')
+        .addChannelOption((option) =>
+          option
+            .setName('channel')
+            .setDescription('Channel or category to watch again')
+            .setRequired(true),
+        ),
+    )
+    .addSubcommand((sub) => sub.setName('ignored').setDescription('Show ignored channels')),
 
   name: 'watch',
   aliases: ['alert', 'keywords'],
   description: 'Post an alert in a channel when a keyword is mentioned',
   category: 'Community',
   usage:
-    'watch add <keyword> | remove <keyword> | list | clear | channel <#channel|off> | test',
+    'watch add <keyword> | remove <keyword> | list | clear | channel <#channel|off> | test | ignore [#channel] | unignore #channel | ignored',
   cooldown: 3,
   guildOnly: true,
 
   async execute(ctx) {
     const sub = ctx.isSlash
       ? ctx.getSubcommand()
-      : ['add', 'remove', 'delete', 'list', 'clear', 'test', 'channel'].includes(ctx.args[0])
+      : ['add', 'remove', 'delete', 'list', 'clear', 'test', 'channel', 'ignore', 'unignore', 'ignored'].includes(ctx.args[0])
         ? ctx.args[0]
         : 'add';
 
@@ -511,6 +717,9 @@ export default {
     if (sub === 'clear') return handleClear(ctx);
     if (sub === 'channel') return handleChannel(ctx);
     if (sub === 'test') return handleTest(ctx);
+    if (sub === 'ignore') return handleIgnore(ctx);
+    if (sub === 'unignore') return handleUnignore(ctx);
+    if (sub === 'ignored') return handleIgnored(ctx);
 
     await ctx.reply(ephemeral({ embeds: [listPayload(ctx)] }));
   },
