@@ -1,6 +1,7 @@
 import { SlashCommandBuilder } from 'discord.js';
 import { config } from '../../config.js';
 import { COLORS, embed } from '../../lib/embeds.js';
+import { getAlias, listAliases } from '../../services/alias-store.js';
 
 const MAX_FIELD_LENGTH = 1000;
 
@@ -56,7 +57,9 @@ export default {
     const all = [...client.commands.values()];
 
     if (query) {
-      const command = client.commands.get(client.aliases.get(query) ?? query);
+      const builtIn = client.commands.get(client.aliases.get(query) ?? query);
+      const custom = builtIn || !ctx.guildId ? null : getAlias(ctx.guildId, query);
+      const command = builtIn ?? (custom ? client.commands.get(custom.command) : null);
 
       if (!command) {
         await ctx.reply({
@@ -72,8 +75,18 @@ export default {
       }
 
       const usage = command.usage ?? command.name;
-      const aliases = command.aliases?.length
-        ? command.aliases.map((alias) => `\`${config.prefix}${alias}\``).join(', ')
+      const names = [...(command.aliases ?? [])];
+
+      // Custom aliases live in SQLite, not in the command module, so they are
+      // merged here to make `help <command>` the one place that lists them.
+      for (const alias of ctx.guildId ? listAliases(ctx.guildId) : []) {
+        if (alias.command !== command.name) continue;
+        if (names.some((name) => name.toLowerCase() === alias.label.toLowerCase())) continue;
+        names.push(alias.label);
+      }
+
+      const aliases = names.length
+        ? names.map((alias) => `\`${config.prefix}${alias}\``).join(', ')
         : 'None';
 
       await ctx.reply({

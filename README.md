@@ -168,6 +168,7 @@ An alias turns a word into a command, so you can moderate without the prefix:
 - Common words (`من`, `في`, `هذا`…) are allowed but warned about: every message that starts with that word runs the command. Pick a distinctive word.
 - Max 50 per server. **Manage Server** is required to add or remove one; `/alias list` is open to everyone.
 - Permissions and cooldowns are the command's own, because the alias runs the real command through the normal pipeline.
+- `/help clear` lists the server's own words next to the built-in aliases (for example `:-purge`, `:-prune`, `:-مسح`), and `/help مسح` opens the `clear` page.
 
 ## Reports, keyword alerts, glossary and automatic reports
 
