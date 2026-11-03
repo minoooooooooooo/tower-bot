@@ -138,11 +138,14 @@ export async function chatJson({ system, user, maxTokens = 2000, temperature = 0
   // DeepSeek and other reasoning models think by default: the chain of thought
   // is billed as output and can eat the whole max_tokens budget before the JSON
   // starts. Summaries do not need it, so AI_THINKING=off keeps the answer
-  // inside the budget and the bill predictable. Unset sends nothing, leaving
-  // Gemini and the other providers exactly as before.
-  if (['off', 'disabled', 'false'].includes(config.ai.thinking)) {
+  // inside the budget and the bill predictable. Gemini's compatibility layer
+  // does not accept the field, so it is never sent there even if the variable
+  // is left over from a DeepSeek setup.
+  const thinkingSupported = !config.ai.baseUrl.includes('googleapis.com');
+
+  if (thinkingSupported && ['off', 'disabled', 'false'].includes(config.ai.thinking)) {
     payload.thinking = { type: 'disabled' };
-  } else if (['on', 'enabled', 'true'].includes(config.ai.thinking)) {
+  } else if (thinkingSupported && ['on', 'enabled', 'true'].includes(config.ai.thinking)) {
     payload.thinking = { type: 'enabled' };
   }
 

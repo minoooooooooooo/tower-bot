@@ -194,7 +194,9 @@ AI_MODEL=deepseek-flash
 AI_THINKING=off
 ```
 
-`AI_THINKING=off` matters: DeepSeek thinks before answering by default, and the chain of thought is billed as output tokens and can consume the whole `max_tokens` budget before the JSON begins. Summaries do not need it. Leave the variable unset for Gemini.
+`AI_THINKING=off` matters: DeepSeek thinks before answering by default, and the chain of thought is billed as output tokens and can consume the whole `max_tokens` budget before the JSON begins. Summaries do not need it. Leave the variable unset for Gemini — and if it is left over, the client ignores it for Google's endpoint.
+
+To switch back to Gemini, put the Gemini key in `AI_API_KEY` and remove `AI_BASE_URL`, `AI_MODEL` and `AI_THINKING` (or set them to the defaults above), then restart.
 
 Google retires old model ids for new keys — `gemini-2.5-flash` now answers `404 no longer available to new users`. If a model stops working, check the error: it names a replacement. Current good choices are `gemini-3.6-flash`, `gemini-3.5-flash-lite` (cheapest) and `gemini-3.8-flash` (newest, sometimes busy).
 

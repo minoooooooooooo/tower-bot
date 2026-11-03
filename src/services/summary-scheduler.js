@@ -201,6 +201,16 @@ export async function runScheduledReport(client, schedule, { now = Date.now() } 
     return { delivered: true, id, messageCount: meta.messageCount };
   } catch (error) {
     logger.warn(`Scheduled report for ${schedule.channelId} failed: ${error.message}`);
+
+    // Advance the clock even on failure. Otherwise a 429 (free Gemini quota,
+    // provider outage) is retried every minute, burning quota and money on the
+    // same window instead of waiting for the next real run.
+    try {
+      touchSchedule(schedule.id, now);
+    } catch {
+      // A failed bookkeeping write must not turn into a thrown tick.
+    }
+
     return { skipped: 'error', error };
   } finally {
     running.delete(schedule.id);
