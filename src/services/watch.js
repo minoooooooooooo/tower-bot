@@ -1,3 +1,4 @@
+import { PermissionFlagsBits } from 'discord.js';
 import { COLORS, embed } from '../lib/embeds.js';
 import { createLogger } from '../lib/logger.js';
 import { normalizeForMatch } from '../lib/text.js';
@@ -103,7 +104,10 @@ export function alertPayload(message, hits) {
   const terms = hits.join(', ');
 
   return {
-    allowedMentions: { parse: [] },
+    // The ping must live in `content`, outside the embed: Discord ignores
+    // mentions inside embeds. Same shape as the birthday greeting.
+    content: '@everyone',
+    allowedMentions: { parse: ['everyone'] },
     embeds: [
       embed({
         title: 'Keyword alert',
@@ -156,6 +160,18 @@ async function sendAlert(message, client, channelId, hits) {
       `Keyword alert channel ${channelId} is not a text channel. Run /watch channel to pick another.`,
     );
     return false;
+  }
+
+  // Discord silently drops the @everyone ping when the bot lacks the
+  // permission, so the log explains why nobody was notified.
+  const me = message.guild?.members?.me;
+  const permissions = me ? channel.permissionsFor?.(me) : null;
+
+  if (permissions && !permissions.has(PermissionFlagsBits.MentionEveryone)) {
+    warnOnce(
+      `ping:${message.guildId ?? message.guild?.id}`,
+      `Keyword alerts in ${channelId} cannot ping @everyone: the bot needs the Mention Everyone permission there.`,
+    );
   }
 
   try {

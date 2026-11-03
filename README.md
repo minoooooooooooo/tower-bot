@@ -251,6 +251,7 @@ When anyone posts a watched word **anywhere** in the server, the bot posts an al
 - The list is **shared by the whole server**. Any moderator can add or remove a word, everyone sees the same list, and every alert goes to the same channel — it is no longer tied to whoever typed the command (and no DMs are involved).
 - Matching is whole-word and Unicode aware: `ass` does not fire on `classic`, and Arabic diacritics, tatweel and the alef/ya/ta-marbuta variants are normalized so `مُحَمّد` matches `محمد`. Adding `محمد` when `مُحَمّد` is already watched is refused as a duplicate.
 - Bots never trigger an alert. Messages are checked even if the author is a moderator, so typing the word is a quick live test.
+- **Every alert pings `@everyone`.** The mention lives in `content`, outside the embed (Discord ignores mentions inside embeds), exactly like a birthday greeting; `allowedMentions` only allows `everyone`, so a quoted message can never ping a role or an arbitrary member. If the bot lacks **Mention Everyone** in the alert channel, the ping is dropped silently and the failure is logged once per half hour.
 - At most 50 keywords per server, 2 seconds apart and 12 per 10 minutes, so a busy phrase cannot flood the channel. Several watched words in one message produce one alert, not one per word.
 - Choosing the channel needs **Manage Server**; adding, removing, listing and testing need **Manage Messages**.
 - `/watch test` posts a real sample in the alert channel, so a wrong channel or missing permission is visible immediately instead of silently failing.
