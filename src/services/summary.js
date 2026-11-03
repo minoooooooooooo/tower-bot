@@ -10,7 +10,7 @@ export const SUMMARY_KINDS = {
     emoji: '🧭',
     brief: 'topics, news and decisions',
     emphasis:
-      'Cover the topics discussed, news or links shared, decisions that were made, and anything that changed.',
+      'Cover the topics discussed, news or announcements shared, decisions that were made, and anything that changed.',
   },
   tasks: {
     label: 'Action items',
@@ -46,11 +46,12 @@ export const KIND_ALIASES = {
   focus: 'targeted',
 };
 
-const MAX_ITEMS = { topics: 12, decisions: 15, tasks: 20, questions: 10, highlights: 6 };
+const MAX_ITEMS = { topics: 12, decisions: 15, announcements: 10, tasks: 20, questions: 10, highlights: 6 };
 const MAX_LENGTH = {
   headline: 500,
   topicTitle: 150,
   topicSummary: 900,
+  entry: 600,
   item: 300,
   quote: 400,
   answer: 1500,
@@ -62,19 +63,29 @@ const MAX_LENGTH = {
  */
 export const LABELS = {
   en: {
+    overview: 'Overview',
     sections: {
       answer: { field: '🎯 Answer', heading: 'Answer' },
-      topics: { field: '🧵 Topics', heading: 'Topics' },
-      decisions: { field: '✅ Decisions', heading: 'Decisions' },
+      topics: { field: '📋 Key discussions', heading: 'Key discussions' },
+      decisions: { field: '✅ Decisions made', heading: 'Decisions made' },
+      announcements: { field: '📢 Announcements', heading: 'Announcements' },
       tasks: { field: '📌 Action items', heading: 'Action items' },
-      questions: { field: '❓ Open questions', heading: 'Open questions' },
+      questions: { field: '❓ Questions raised', heading: 'Questions raised' },
       highlights: { field: '💬 Highlights', heading: 'Highlights' },
     },
     topicFallback: 'Topic',
-    continued: 'Continued',
+    continued: 'Part',
     messages: (count) => `${count} message${count === 1 ? '' : 's'}`,
+    analyzed: (count) => `${count} message${count === 1 ? '' : 's'} analyzed`,
+    window: (hours) => {
+      if (hours <= 1) return 'Last hour';
+      if (hours >= 48 && hours % 24 === 0) {
+        return `Last ${hours / 24} days`;
+      }
+      return `Last ${hours} hours`;
+    },
     channel: 'Channel',
-    window: 'Window',
+    windowLabel: 'Window',
     requestedBy: 'Requested by',
     model: 'Model',
     focus: 'Focus',
@@ -82,19 +93,30 @@ export const LABELS = {
     nothing: 'Nothing worth reporting in this window.',
   },
   ar: {
+    overview: 'نظرة عامة',
     sections: {
       answer: { field: '🎯 الإجابة', heading: 'الإجابة' },
-      topics: { field: '🧵 المواضيع', heading: 'المواضيع' },
-      decisions: { field: '✅ القرارات', heading: 'القرارات' },
-      tasks: { field: '📌 المهام', heading: 'المهام' },
-      questions: { field: '❓ أسئلة مفتوحة', heading: 'أسئلة مفتوحة' },
+      topics: { field: '📋 مناقشات رئيسية', heading: 'مناقشات رئيسية' },
+      decisions: { field: '✅ قرارات متخذه', heading: 'قرارات متخذه' },
+      announcements: { field: '📢 إعلانات', heading: 'إعلانات' },
+      tasks: { field: '📌 مهام', heading: 'مهام' },
+      questions: { field: '❓ أسئلة مطروحة', heading: 'أسئلة مطروحة' },
       highlights: { field: '💬 أبرز المقولات', heading: 'أبرز المقولات' },
     },
     topicFallback: 'موضوع',
-    continued: 'تكملة',
+    continued: 'الجزء',
     messages: (count) => `${count} رسالة`,
+    analyzed: (count) => `تم تحليل ${count} رسالة`,
+    window: (hours) => {
+      if (hours <= 1) return 'آخر ساعة';
+      if (hours >= 48 && hours % 24 === 0) {
+        const days = hours / 24;
+        return `آخر ${days} ${days >= 3 && days <= 10 ? 'أيام' : 'يوم'}`;
+      }
+      return `آخر ${hours} ساعة`;
+    },
     channel: 'القناة',
-    window: 'الفترة',
+    windowLabel: 'الفترة',
     requestedBy: 'طلبها',
     model: 'النموذج',
     focus: 'التركيز',
@@ -142,17 +164,21 @@ const SYSTEM_PROMPT = [
   '- Be specific about who said or proposed what when it matters.',
   '- Name people exactly as the transcript does: their display name, never a raw Discord handle.',
   '- When writing in Arabic, write names in Arabic letters: translate a meaningful name (It\'s Emad → عماد) or transliterate it phonetically (ShinIsekai → شين ايسكاي). Do not leave Latin handles inside an Arabic sentence.',
-  '- Be exhaustive. Every distinct subject, decision, request, problem, number, date, link and name in the transcript must appear somewhere in the JSON. Do not merge unrelated subjects to save space, and do not drop minor points.',
+  '- Be exhaustive. Every distinct subject, decision, announcement, request, problem, number, date, link and name in the transcript must appear somewhere in the JSON. Do not merge unrelated subjects to save space, and do not drop minor points.',
   '- Prefer many specific entries over few general ones. Give each topic its own entry with 4-8 sentences covering who raised it, what was said, any numbers or links, and how it ended.',
   '- Aim for 700-1,200 words for a full day of chat. A short window can be shorter; never pad with filler or repeat yourself.',
   '- Skip greetings, spam, and small talk unless it is the topic.',
+  '- Every topic has a short title and a 4-8 sentence summary. Decisions, announcements and questions are strings formatted as "short title — who/what/when".',
+  '- Each transcript line ends with [id:1234567890]. Copy the id of the message that best supports a topic into its "id" field exactly; omit id when no single message supports the whole topic. Never invent an id.',
+  '- "decisions" are choices the team made; "announcements" are news someone declared (a bot is ready, a feature launched); keep them separate.',
   '- Reply with a single JSON object and nothing else.',
   'JSON shape:',
   '{"headline":"one sentence overview","answer":"only for targeted summaries",',
-  ' "topics":[{"title":"short label","summary":"4-8 sentences"}],',
-  ' "decisions":["what was decided, by whom, and under what condition"],',
+  ' "topics":[{"title":"short label","summary":"4-8 sentences","id":"message id or empty"}],',
+  ' "decisions":["short title — who decided it and under what condition"],',
+  ' "announcements":["short title — what was announced and by whom"],',
   ' "tasks":[{"task":"what must be done","owner":"who took it, or empty"}],',
-  ' "questions":["unresolved question"],',
+  ' "questions":["short question — context or why it matters"],',
   ' "highlights":[{"quote":"short verbatim quote","author":"display name"}]}',
   'Use empty arrays for anything that does not apply.',
 ].join('\n');
@@ -163,10 +189,11 @@ const REDUCE_PROMPT = [
   '- Deduplicate only true duplicates; keep every distinct point from every partial summary. Merging is not compressing.',
   '- The final summary must be at least as detailed as the partials. Never shorten for brevity.',
   '- Never invent facts that are not in the partial summaries.',
+  '- Keep each topic\'s "id" when merging; never invent an id. If two topics merge, keep the id of the message that best supports the merged topic.',
   '- Write in the dominant language of the partial summaries.',
   '- Keep names in the script of that language: one person must not appear as "عماد" in one section and "e_a_0" elsewhere.',
   '- Reply with a single JSON object using exactly this shape:',
-  '{"headline":"","answer":"","topics":[{"title":"","summary":""}],"decisions":[],"tasks":[{"task":"","owner":""}],"questions":[],"highlights":[{"quote":"","author":""}]}',
+  '{"headline":"","answer":"","topics":[{"title":"","summary":"","id":""}],"decisions":[],"announcements":[],"tasks":[{"task":"","owner":""}],"questions":[],"highlights":[{"quote":"","author":""}]}',
 ].join('\n');
 
 function clean(value, max) {
@@ -184,6 +211,23 @@ function list(value) {
  * Models drift: they add keys, return a string where an array belongs, or wrap
  * everything in an extra object. Everything downstream can rely on this shape.
  */
+function cleanId(value) {
+  const id = String(value ?? '').replace(/\D/g, '');
+  return /^\d{17,20}$/.test(id) ? id : null;
+}
+
+/** `title — detail` keeps decisions/questions/announcements as strings while
+ * still giving the renderer a heading and a paragraph to work with. */
+function itemText(item) {
+  if (item == null) return '';
+  if (typeof item === 'string') return clean(item, MAX_LENGTH.entry);
+
+  const title = item.title ?? item.decision ?? item.question ?? item.announcement ?? item.text;
+  const summary = item.summary ?? item.detail ?? item.description ?? item.context;
+
+  return clean([title, summary].filter(Boolean).join(' — '), MAX_LENGTH.entry);
+}
+
 export function normalizeSummary(raw) {
   const data = raw && typeof raw === 'object' ? raw : {};
 
@@ -191,14 +235,20 @@ export function normalizeSummary(raw) {
     .map((topic) => ({
       title: clean(topic?.title ?? topic, MAX_LENGTH.topicTitle),
       summary: clean(topic?.summary ?? topic?.detail ?? '', MAX_LENGTH.topicSummary),
+      id: cleanId(topic?.id ?? topic?.messageId ?? topic?.message_id),
     }))
     .filter((topic) => topic.title || topic.summary)
     .slice(0, MAX_ITEMS.topics);
 
   const decisions = list(data.decisions)
-    .map((item) => clean(typeof item === 'object' ? (item?.decision ?? item?.text) : item, MAX_LENGTH.item))
+    .map(itemText)
     .filter(Boolean)
     .slice(0, MAX_ITEMS.decisions);
+
+  const announcements = list(data.announcements)
+    .map(itemText)
+    .filter(Boolean)
+    .slice(0, MAX_ITEMS.announcements);
 
   const tasks = list(data.tasks)
     .map((item) => ({
@@ -209,7 +259,7 @@ export function normalizeSummary(raw) {
     .slice(0, MAX_ITEMS.tasks);
 
   const questions = list(data.questions)
-    .map((item) => clean(typeof item === 'object' ? (item?.question ?? item?.text) : item, MAX_LENGTH.item))
+    .map(itemText)
     .filter(Boolean)
     .slice(0, MAX_ITEMS.questions);
 
@@ -226,6 +276,7 @@ export function normalizeSummary(raw) {
     answer: clean(data.answer, MAX_LENGTH.answer),
     topics,
     decisions,
+    announcements,
     tasks,
     questions,
     highlights,
@@ -238,6 +289,7 @@ export function isEmptySummary(data) {
     !data?.answer &&
     (data?.topics?.length ?? 0) === 0 &&
     (data?.decisions?.length ?? 0) === 0 &&
+    (data?.announcements?.length ?? 0) === 0 &&
     (data?.tasks?.length ?? 0) === 0 &&
     (data?.questions?.length ?? 0) === 0 &&
     (data?.highlights?.length ?? 0) === 0
@@ -360,9 +412,9 @@ const EMBED_CHAR_BUDGET = 5_600;
 const MAX_EMBEDS = 8;
 const MAX_TOTAL_FIELDS = MAX_FIELDS * MAX_EMBEDS;
 
-/** Splits a section across as many fields as needed, keeping whole lines. */
-function pushSection(fields, name, lines) {
-  const text = lines.filter(Boolean).join('\n');
+/** Splits a section across as many fields as needed, keeping whole blocks. */
+function pushSection(fields, name, blocks) {
+  const text = blocks.filter((block) => String(block ?? '').trim()).join('\n\n');
 
   if (!text.trim()) return;
 
@@ -391,6 +443,16 @@ function pushSection(fields, name, lines) {
   });
 }
 
+/** "short title — details" becomes a heading plus a paragraph. */
+export function splitItem(text) {
+  const value = String(text ?? '').trim();
+  const index = value.indexOf(' — ');
+
+  if (index <= 0) return { title: value, summary: '' };
+
+  return { title: value.slice(0, index), summary: value.slice(index + 3) };
+}
+
 export function summaryFields(data, labels = LABELS.en) {
   const fields = [];
 
@@ -399,30 +461,30 @@ export function summaryFields(data, labels = LABELS.en) {
   pushSection(
     fields,
     labels.sections.topics.field,
-    data.topics.map((topic) =>
-      topic.summary
-        ? `**${topic.title || labels.topicFallback}** — ${topic.summary}`
-        : `**${topic.title}**`,
-    ),
+    data.topics.map((topic) => {
+      const heading = `**${topic.title || labels.topicFallback}**${
+        topic.url ? ` [Jump](${topic.url})` : ''
+      }`;
+      return topic.summary ? `${heading}\n${topic.summary}` : heading;
+    }),
   );
 
-  pushSection(
-    fields,
-    labels.sections.decisions.field,
-    data.decisions.map((decision) => `- ${decision}`),
-  );
+  const itemBlocks = (items) =>
+    items.map((item) => {
+      const { title, summary } = splitItem(item);
+      return summary ? `**${title}**\n${summary}` : `**${title}**`;
+    });
+
+  pushSection(fields, labels.sections.decisions.field, itemBlocks(data.decisions));
+  pushSection(fields, labels.sections.announcements.field, itemBlocks(data.announcements ?? []));
 
   pushSection(
     fields,
     labels.sections.tasks.field,
-    data.tasks.map((task) => `- ${task.task}${task.owner ? ` — **${task.owner}**` : ''}`),
+    data.tasks.map((task) => `**${task.task}**${task.owner ? ` — ${task.owner}` : ''}`),
   );
 
-  pushSection(
-    fields,
-    labels.sections.questions.field,
-    data.questions.map((question) => `- ${question}`),
-  );
+  pushSection(fields, labels.sections.questions.field, itemBlocks(data.questions));
 
   pushSection(
     fields,
@@ -440,17 +502,18 @@ export function summaryFields(data, labels = LABELS.en) {
 export function renderSummary({ data, meta }) {
   const labels = labelsFor(data);
   const fields = summaryFields(data, labels);
-  const spec = SUMMARY_KINDS[meta.kind] ?? SUMMARY_KINDS.general;
-  const heading = labels === LABELS.ar ? spec.arLabel : `${spec.label} summary`;
-  const footer = [
-    meta.channelName ? `#${meta.channelName}` : null,
-    labels.messages(meta.messageCount),
-    meta.model,
-  ]
-    .filter(Boolean)
-    .join(' · ');
+  const computedHours =
+    Number.isFinite(meta.rangeStart) && Number.isFinite(meta.rangeEnd)
+      ? Math.max(1, Math.round((meta.rangeEnd - meta.rangeStart) / 3_600_000))
+      : 24;
+  const hours = meta.hours ?? computedHours;
+  const windowText = meta.scheduleText ?? labels.window(hours);
+  const analyzedText = meta.scheduleText
+    ? `${meta.messageCount} message${meta.messageCount === 1 ? '' : 's'} analyzed`
+    : labels.analyzed(meta.messageCount);
+  const footer = [windowText, analyzedText].filter(Boolean).join(' | ');
 
-  const title = `${spec.emoji} ${heading}${meta.channelName ? ` — #${meta.channelName}` : ''}`;
+  const title = `${labels.overview}: #${meta.channelName ?? meta.channelId}`;
   const description = data.headline || undefined;
 
   // Pack fields into embeds: 25 fields and ~5,600 characters each. A long report
@@ -481,7 +544,7 @@ export function renderSummary({ data, meta }) {
     embed({
       title: (index === 0
         ? title
-        : `${labels.continued} (${index + 1}/${kept.length})`
+        : `${labels.continued} ${index + 1}/${kept.length}`
       ).slice(0, 256),
       description:
         index === 0 ? (description ?? (fields.length === 0 ? labels.nothing : undefined)) : undefined,
@@ -498,9 +561,12 @@ export function renderSummary({ data, meta }) {
 /** Plain markdown, reused by the HTML/PDF export. */
 export function summaryMarkdown({ data, meta }) {
   const labels = labelsFor(data);
-  const spec = SUMMARY_KINDS[meta.kind] ?? SUMMARY_KINDS.general;
-  const heading = labels === LABELS.ar ? spec.arLabel : `${spec.label} summary`;
-  const lines = [`# ${heading} — #${meta.channelName ?? meta.channelId}`, ''];
+  const computedHours =
+    Number.isFinite(meta.rangeStart) && Number.isFinite(meta.rangeEnd)
+      ? Math.max(1, Math.round((meta.rangeEnd - meta.rangeStart) / 3_600_000))
+      : 24;
+  const hours = meta.hours ?? computedHours;
+  const lines = [`# ${labels.overview}: #${meta.channelName ?? meta.channelId}`, ''];
 
   if (data.headline) lines.push(`_${data.headline}_`, '');
   if (data.answer) lines.push(`## ${labels.sections.answer.heading}`, '', data.answer, '');
@@ -509,18 +575,30 @@ export function summaryMarkdown({ data, meta }) {
     lines.push(`## ${labels.sections.topics.heading}`, '');
 
     for (const topic of data.topics) {
-      lines.push(`### ${topic.title}`, '', topic.summary, '');
+      lines.push(
+        `### ${topic.title}${topic.url ? ` [Jump](${topic.url})` : ''}`,
+        '',
+        topic.summary,
+        '',
+      );
     }
   }
 
-  if (data.decisions.length > 0) {
-    lines.push(
-      `## ${labels.sections.decisions.heading}`,
-      '',
-      ...data.decisions.map((item) => `- ${item}`),
-      '',
-    );
-  }
+  const itemSection = (title, items) => {
+    if (items.length === 0) return;
+
+    lines.push(`## ${title}`, '');
+
+    for (const item of items) {
+      const { title: itemTitle, summary } = splitItem(item);
+      lines.push(summary ? `### ${itemTitle}\n\n${summary}` : `- ${itemTitle}`);
+    }
+
+    lines.push('');
+  };
+
+  itemSection(labels.sections.decisions.heading, data.decisions);
+  itemSection(labels.sections.announcements.heading, data.announcements ?? []);
 
   if (data.tasks.length > 0) {
     lines.push(`## ${labels.sections.tasks.heading}`, '');
@@ -532,14 +610,7 @@ export function summaryMarkdown({ data, meta }) {
     lines.push('');
   }
 
-  if (data.questions.length > 0) {
-    lines.push(
-      `## ${labels.sections.questions.heading}`,
-      '',
-      ...data.questions.map((item) => `- ${item}`),
-      '',
-    );
-  }
+  itemSection(labels.sections.questions.heading, data.questions);
 
   if (data.highlights.length > 0) {
     lines.push(`## ${labels.sections.highlights.heading}`, '');
@@ -557,7 +628,7 @@ export function summaryMarkdown({ data, meta }) {
     '---',
     '',
     `${labels.channel}: #${meta.channelName ?? meta.channelId} · ${labels.messages(meta.messageCount)}`,
-    `${labels.window}: ${new Date(meta.rangeStart).toISOString()} → ${new Date(meta.rangeEnd).toISOString()}`,
+    meta.scheduleText ?? labels.window(hours),
     `${labels.requestedBy}: ${meta.requestedBy ?? labels.unknown} · ${labels.model}: ${meta.model ?? labels.unknown}`,
   );
 

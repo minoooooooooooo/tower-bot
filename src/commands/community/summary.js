@@ -252,6 +252,7 @@ async function handleRun(ctx) {
       since,
       until: now,
       timeZone,
+      hours,
       requestedBy: ctx.user.username,
       onProgress,
     });

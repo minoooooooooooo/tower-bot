@@ -156,6 +156,10 @@ export async function runScheduledReport(client, schedule, { now = Date.now() } 
       since: windowStart,
       until: now,
       timeZone,
+      scheduleText:
+        schedule.mode === 'daily'
+          ? `Scheduled - Daily ${formatClock(schedule.minuteOfDay)} ${timeZone}`
+          : `Scheduled - Every ${formatInterval(schedule.intervalMs ?? MAX_INTERVAL_MS)}`,
       requestedBy: 'an automatic schedule',
     });
 

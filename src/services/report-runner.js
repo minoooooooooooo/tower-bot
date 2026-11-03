@@ -159,6 +159,8 @@ export async function produceSummary({
   since,
   until = Date.now(),
   timeZone = 'UTC',
+  hours = null,
+  scheduleText = null,
   requestedBy = null,
   onProgress = null,
 }) {
@@ -188,6 +190,25 @@ export async function produceSummary({
     return { data: null, collected, meta: null, reason: 'empty-summary' };
   }
 
+  // Turn a model-copied message id into a real jump link. An id that is not in
+  // this window is dropped rather than linked to a wrong message.
+  const byId = new Map(collected.messages.map((message) => [message.id, message]));
+
+  for (const topic of data.topics) {
+    if (!topic.id) continue;
+
+    const message = byId.get(topic.id);
+
+    if (!message) {
+      delete topic.id;
+      continue;
+    }
+
+    topic.url =
+      message.url ??
+      `https://discord.com/channels/${guildId ?? channel.guildId}/${channel.id}/${topic.id}`;
+  }
+
   return {
     data,
     collected,
@@ -198,6 +219,8 @@ export async function produceSummary({
       messageCount: collected.messages.length,
       rangeStart: since,
       rangeEnd: until,
+      hours,
+      scheduleText,
       model: config.ai.model,
       requestedBy,
       prompt: prompt || null,

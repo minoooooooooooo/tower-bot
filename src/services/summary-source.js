@@ -206,7 +206,7 @@ export function buildTranscript(messages, { timeZone = 'UTC', names = null } = {
 
     return `[${format.format(new Date(message.createdTimestamp))}] ${name}${bot}: ${
       text || extras
-    }${extras && text ? ` ${extras}` : ''}`.trim();
+    }${extras && text ? ` ${extras}` : ''} [id:${message.id}]`.trim();
   });
 }
 

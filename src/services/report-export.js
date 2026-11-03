@@ -1,4 +1,4 @@
-import { LABELS, SUMMARY_KINDS } from './summary.js';
+import { LABELS, SUMMARY_KINDS, splitItem } from './summary.js';
 
 const RTL = /[\u0591-\u07FF\uFB1D-\uFDFD\uFE70-\uFEFC]/;
 
@@ -51,17 +51,27 @@ export function buildSummaryHtml({ data, meta }) {
   const labels = dir === 'rtl' ? LABELS.ar : LABELS.en;
   const timeZone = meta.timeZone ?? 'UTC';
   const kindLabel = dir === 'rtl' ? spec.arLabel : spec.label;
-  const title = `${kindLabel} — #${meta.channelName ?? meta.channelId}`;
+  const title = `${labels.overview}: #${meta.channelName ?? meta.channelId}`;
 
   const topics = data.topics
     .map(
       (topic) =>
-        `<article class="topic"><h3 dir="auto">${strong(topic.title)}</h3>${paragraph(topic.summary)}</article>`,
+        `<article class="topic"><h3 dir="auto">${strong(topic.title)}${
+          topic.url ? ` <a href="${escapeHtml(topic.url)}">Jump</a>` : ''
+        }</h3>${paragraph(topic.summary)}</article>`,
     )
     .join('');
 
-  const list = (items) =>
-    items.length > 0 ? `<ul>${items.map((item) => `<li dir="auto">${strong(item)}</li>`).join('')}</ul>` : '';
+  const articles = (items) =>
+    items
+      .map((item) => {
+        const { title: itemTitle, summary } = splitItem(item);
+
+        return `<article class="topic"><h3 dir="auto">${strong(itemTitle)}</h3>${
+          summary ? paragraph(summary) : ''
+        }</article>`;
+      })
+      .join('');
 
   const tasks =
     data.tasks.length > 0
@@ -151,9 +161,10 @@ export function buildSummaryHtml({ data, meta }) {
 ${data.headline ? `<p class="headline" dir="auto">${escapeHtml(data.headline)}</p>` : ''}
 ${section(labels.sections.answer.heading, data.answer ? paragraph(data.answer) : '')}
 ${section(labels.sections.topics.heading, topics)}
-${section(labels.sections.decisions.heading, list(data.decisions))}
+${section(labels.sections.decisions.heading, articles(data.decisions))}
+${section(labels.sections.announcements.heading, articles(data.announcements ?? []))}
 ${section(labels.sections.tasks.heading, tasks)}
-${section(labels.sections.questions.heading, list(data.questions))}
+${section(labels.sections.questions.heading, articles(data.questions))}
 ${section(labels.sections.highlights.heading, highlights)}
 <footer dir="auto">
   ${escapeHtml(labels.requestedBy)} ${escapeHtml(meta.requestedBy ?? labels.unknown)} · ${escapeHtml(kindLabel)}
