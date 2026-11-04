@@ -65,6 +65,7 @@ Both run `src/boot.js`, which checks the Node version before loading the bot and
 | `/ping` | `:-pong` | WebSocket + roundtrip latency |
 | `/help [command]` | `:-commands`, `:-h` | Command list or details for one command |
 | `/botinfo` | `:-info`, `:-stats` | Uptime, servers, memory, versions |
+| `/color <primary> <secondary>` | `:-colour`, `:-colors` | Recolor the highest role that only you have as a two-color gradient |
 | `/birthday <subcommand>` | `:-bd`, `:-bday` | Birthday registry, countdowns, automatic birthday role and greetings |
 | `/welcome <subcommand>` | `:-greet` | Welcome cards for new members: six styles, random or rotating, editable text |
 | `/clear <amount> [user]` | `:-purge`, `:-prune` | Delete recent messages, optionally only from one member |
@@ -169,6 +170,17 @@ An alias turns a word into a command, so you can moderate without the prefix:
 - Max 50 per server. **Manage Server** is required to add or remove one; `/alias list` is open to everyone.
 - Permissions and cooldowns are the command's own, because the alias runs the real command through the normal pipeline.
 - `/help clear` lists the server's own words next to the built-in aliases (for example `:-purge`, `:-prune`, `:-مسح`), and `/help مسح` opens the `clear` page.
+
+## Personal role colors
+
+`/color primary:#ff0000 secondary:#00ff00` (prefix: `:-color #ff0000 #00ff00`) recolours the **highest role in your profile that nobody else has**, as a two-color gradient.
+
+- Colors accept `#RRGGBB`, `#RGB`, `0xRRGGBB`, bare hex, or a name such as `red`, `blue`, `purple` or `blurple`.
+- The bot picks the role; you cannot target someone else's. Shared roles, `@everyone` and integration-managed roles are ignored.
+- The role must sit **below the bot's highest role**, and the bot needs **Manage Roles**. If your personal role is above the bot, the command refuses and says so instead of recoloring a lower role.
+- Gradient colors need a server boost level that supports them. Discord rejects the update otherwise.
+- Passing the same color twice makes a solid color. A holographic role is converted back to a normal two-color gradient.
+- A 30-second cooldown per member protects Discord's role-update rate limit.
 
 ## Reports, keyword alerts, glossary and automatic reports
 
