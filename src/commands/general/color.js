@@ -432,7 +432,7 @@ export default {
     .addBooleanOption((option) =>
       option
         .setName('clear')
-        .setDescription('Remove the color and gradient, back to the default color')
+        .setDescription('Remove the color and gradient, back to default (clear / مسح)')
         .setRequired(false),
     ),
 
