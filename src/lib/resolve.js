@@ -77,3 +77,60 @@ export async function resolveMember(guild, token, message = null) {
     (await guild.members.fetch(ref.id).catch(() => null))
   );
 }
+
+/**
+ * Resolves a user who may no longer be in the server (ban/unban, profile
+ * commands). Accepts a mention, a raw id, or a cached username.
+ */
+export async function resolveUser(client, token, message = null) {
+  const ref = parseReference(token);
+
+  if (ref) {
+    if (ref.kind === 'role' || ref.kind === 'channel') return null;
+
+    const mentioned = message?.mentions?.users?.get?.(ref.id);
+
+    return (
+      mentioned ??
+      client.users.cache.get(ref.id) ??
+      (await client.users.fetch(ref.id).catch(() => null))
+    );
+  }
+
+  const name = String(token ?? '').trim().replace(/^@/, '').toLowerCase();
+  if (!name) return null;
+
+  return (
+    client.users.cache.find(
+      (user) =>
+        user.username.toLowerCase() === name ||
+        user.tag?.toLowerCase() === name ||
+        (user.globalName ?? '').toLowerCase() === name,
+    ) ?? null
+  );
+}
+
+/**
+ * Resolves a server by id or by name among the servers the bot is already in.
+ * `fetch` only works for servers the bot has joined, which is the best that is
+ * possible: Discord hides private servers from bots outside them.
+ */
+export async function resolveGuild(client, token) {
+  const raw = String(token ?? '').trim();
+  if (!raw) return null;
+
+  const ref = parseReference(raw);
+
+  if (ref && ref.kind === 'id') {
+    return (
+      client.guilds.cache.get(ref.id) ??
+      (await client.guilds.fetch(ref.id).catch(() => null))
+    );
+  }
+
+  if (ref) return null;
+
+  const name = raw.toLowerCase();
+
+  return client.guilds.cache.find((guild) => guild.name.toLowerCase() === name) ?? null;
+}

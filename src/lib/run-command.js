@@ -2,6 +2,7 @@ import { MessageFlags, PermissionsBitField } from 'discord.js';
 import { config } from '../config.js';
 import { errorEmbed } from './embeds.js';
 import { logger } from './logger.js';
+import { hasGrantForMember } from '../services/permission-store.js';
 
 const cooldowns = new Map();
 
@@ -70,7 +71,14 @@ export async function runCommand(command, ctx) {
       ? required.filter((permission) => !member.permissions.has(permission))
       : required;
 
-    if (missing.length > 0) {
+    // A bot-side grant (/perm grant) lets a role run the command without the
+    // Discord permission. Hierarchy checks inside the command still apply.
+    const granted =
+      missing.length > 0 && member
+        ? hasGrantForMember(guild.id, command.name, member)
+        : false;
+
+    if (missing.length > 0 && !granted) {
       await replyError(
         ctx,
         'Missing permissions',

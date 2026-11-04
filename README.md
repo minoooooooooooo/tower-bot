@@ -66,9 +66,21 @@ Both run `src/boot.js`, which checks the Node version before loading the bot and
 | `/help [command]` | `:-commands`, `:-h` | Command list or details for one command |
 | `/botinfo` | `:-info`, `:-stats` | Uptime, servers, memory, versions |
 | `/color [primary] [secondary]` | `:-colour`, `:-colors` | Recolor or clear the highest role that only you have |
+| `/avatar [user]` | `:-av`, `:-pfp` | Show a member's global and per-server avatar |
+| `/banner [user]` | `:-userbanner` | Show a member's profile banner |
+| `/server-avatar [server]` | `:-serverav`, `:-servericon`, `:-sicon` | Show a server icon, including another server the bot is in |
+| `/server-banner [server]` | `:-serverbanner`, `:-sbanner` | Show a server banner, including another server the bot is in |
 | `/birthday <subcommand>` | `:-bd`, `:-bday` | Birthday registry, countdowns, automatic birthday role and greetings |
 | `/welcome <subcommand>` | `:-greet` | Welcome cards for new members: six styles, random or rotating, editable text |
 | `/clear <amount> [user]` | `:-purge`, `:-prune` | Delete recent messages, optionally only from one member |
+| `/mute <@member> [duration] [reason]` | `:-mute-member` | Add the Muted role, optionally for a limited time |
+| `/unmute <@member> [reason]` | — | Remove the Muted role |
+| `/timeout <@member> [duration] [reason]` | `:-to` | Discord timeout, default 10m, max 28 days |
+| `/untimeout <@member> [reason]` | `:-untimedout` | End a timeout early |
+| `/kick <@member> [reason]` | — | Kick a member |
+| `/ban <@user\|id> [duration] [reason]` | — | Ban permanently or until the timer ends; an id works when the user is not in the server |
+| `/unban <@user\|id> [reason]` | — | Remove a ban |
+| `/perm grant\|revoke <@role> <command>` | `:-perms`, `:-commandperm` | Let a role run a command without its Discord permission |
 | `/exile <@member> [level] [reason]` | `:-jail`, `:-prison` | Give a member an exile role and hide the server from them |
 | `/exile-release <@member> [reason]` | `:-unjail`, `:-unexile` | Remove a member's exile role |
 | `/exile-setup <@role> [#except ...]` | — | Hide every channel from a role, except the listed ones |
@@ -80,6 +92,30 @@ Both run `src/boot.js`, which checks the Node version before loading the bot and
 | `/glossary <subcommand>` | `:-jargon` | Terms and jargon the summarizer should understand |
 | `/autoreport <subcommand>` | `:-schedule`, `:-digest` | Post a channel summary automatically, on an interval or at a fixed daily time |
 | `/alias <subcommand>` | `:-shortcut`, `:-aliases` | Run a command by typing a word, with no prefix |
+
+## Profile lookups
+
+`/avatar`, `/banner`, `/server-avatar` and `/server-banner` all work on someone else:
+
+- `/avatar user:@member` shows their global picture, and the per-server picture when they have one set (the per-server one is shown first).
+- `/banner user:@member` fetches the user so the banner is current; if they have none the reply says so.
+- `/server-avatar server:<id or exact name>` and `/server-banner ...` default to the current server. Another server can only be shown if **the bot is already in it** — Discord does not expose private servers to outsiders.
+- Prefix forms accept a mention, an id, or a server name: `:-avatar @member`, `:-server-banner 123456789012345678`.
+
+## Moderation
+
+All moderation commands are ephemeral for the moderator and use the audit-log reason `… by <moderator>: <reason>`.
+
+- **Timed actions** accept `40s`, `10m`, `2h`, `7d`, `1w`, or a combination like `1d12h`:
+  - `/mute @member 10m spam` adds the **Muted** role for ten minutes.
+  - `/timeout @member 2h spam` uses Discord's native timeout (default 10m, capped at 28 days).
+  - `/ban @user 7d raiding` bans and lifts automatically when the timer ends. Use the `id` option (or paste the id in prefix) to ban or unban someone who is not in the server.
+- **Mute** is role-based: the first use creates a role named **Muted** and denies Send Messages, Add Reactions, Speak and thread creation in every channel (new channels inherit the rule). The role is reused afterwards, and `/unmute` removes it. Bots cannot be muted or timed out; a member with **Administrator** cannot be muted because Administrator bypasses channel overwrites.
+- **Hierarchy is enforced.** You must outrank the target unless you own the server or have Administrator, and the bot's highest role must sit above the target's. `/perm` grants never bypass this — they only bypass the command's Discord permission.
+- **Temporary mutes and bans live in SQLite** (`moderation_expiries`) and a scheduler checks every minute, so a restart cannot leave someone muted or banned forever. A very short timer can fire up to a minute late.
+- **`/perm grant role:@Mods command:kick`** lets that role run `kick` without **Kick Members**, without changing the role's real Discord permissions. `/perm revoke` removes it, `/perm list` shows every grant, and `perm` itself cannot be granted.
+
+Required Discord permissions: `/mute` and `/unmute` need **Manage Roles**; `/timeout` and `/untimeout` need **Moderate Members**; `/kick` needs **Kick Members**; `/ban` and `/unban` need **Ban Members**; `/perm` needs **Manage Server**.
 
 ## Clearing messages
 

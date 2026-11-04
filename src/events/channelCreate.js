@@ -1,9 +1,10 @@
 import { applyCreationRules } from '../services/exile.js';
+import { applyMuteRules } from '../services/moderation.js';
 
 /**
- * A channel created after setup must not become a loophole. The service applies
- * every configured role and swallows its own failures, so chat is never blocked
- * by a permission problem.
+ * A channel created after setup must not become a loophole. Both services apply
+ * their own rules and swallow failures, so chat is never blocked by a
+ * permission problem.
  */
 export default {
   name: 'channelCreate',
@@ -11,5 +12,6 @@ export default {
     if (!channel?.guild) return;
 
     await applyCreationRules(channel);
+    await applyMuteRules(channel);
   },
 };

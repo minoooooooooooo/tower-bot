@@ -242,6 +242,49 @@ const SCHEMA = `
 
   CREATE UNIQUE INDEX IF NOT EXISTS idx_exiles_one_active
     ON exiles (guild_id, user_id) WHERE released_at IS NULL;
+
+  -- Roles allowed to run one command despite missing the Discord permission the
+  -- command normally requires. Grants never bypass hierarchy checks inside the
+  -- command itself.
+  CREATE TABLE IF NOT EXISTS command_permissions (
+    guild_id   TEXT    NOT NULL,
+    command    TEXT    NOT NULL,
+    role_id    TEXT    NOT NULL,
+    created_by TEXT    NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (guild_id, command, role_id)
+  );
+
+  -- The role used for /mute. Stored so renaming it does not break unmute.
+  -- The "configured" flag records whether the channel overwrites have been
+  -- written, so adopting a hand-made Muted role still gets muted once, without
+  -- re-editing every channel on every mute.
+  CREATE TABLE IF NOT EXISTS mute_settings (
+    guild_id    TEXT PRIMARY KEY,
+    role_id     TEXT,
+    configured  INTEGER NOT NULL DEFAULT 0,
+    updated_at  INTEGER NOT NULL
+  );
+
+  -- Temporary mutes and bans. The scheduler removes the role/ban when
+  -- expires_at passes, so a restart cannot lose the expiry.
+  CREATE TABLE IF NOT EXISTS moderation_expiries (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    guild_id   TEXT    NOT NULL,
+    user_id    TEXT    NOT NULL,
+    kind       TEXT    NOT NULL,
+    role_id    TEXT,
+    reason     TEXT,
+    created_by TEXT    NOT NULL,
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL
+  );
+
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_moderation_expiries_once
+    ON moderation_expiries (guild_id, user_id, kind);
+
+  CREATE INDEX IF NOT EXISTS idx_moderation_expiries_due
+    ON moderation_expiries (expires_at);
 `;
 
 // Columns added after the first release. `CREATE TABLE IF NOT EXISTS` does not
