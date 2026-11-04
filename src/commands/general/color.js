@@ -7,6 +7,7 @@ import {
 } from 'discord.js';
 import { embed, errorEmbed } from '../../lib/embeds.js';
 import { createLogger } from '../../lib/logger.js';
+import { normalizeForMatch } from '../../lib/text.js';
 
 const logger = createLogger('color');
 
@@ -51,24 +52,89 @@ const NAMED_COLORS = {
 const USAGE = {
   slash: [
     '/color primary:#ff0000 secondary:#00ff00',
+    '/color primary:أحمر secondary:أخضر',
     '/color primary:#ff0000',
     '/color secondary:#00ff00',
     '/color clear:true',
   ],
   prefix: [
     ':-color #ff0000 #00ff00',
+    ':-color أحمر أخضر',
     ':-color #ff0000',
     ':-color - #00ff00',
     ':-color clear',
   ],
 };
 
+// Arabic colour names, stored in the normalized form `normalizeForMatch` produces
+// (أ→ا, ة→ه, diacritics and tatweel removed), so "أَحْمَر", "احمر" and "أحمر"
+// all match. Keys are what the user actually meant, values are RGB.
+const ARABIC_COLORS = {
+  احمر: 0xff0000,
+  حمراء: 0xff0000,
+  قرمزي: 0xdc143c,
+  برتقالي: 0xffa500,
+  عنبري: 0xffbf00,
+  كهرماني: 0xffbf00,
+  ذهبي: 0xffd700,
+  اصفر: 0xffff00,
+  صفراء: 0xffff00,
+  ليموني: 0x00ff00,
+  اخضر: 0x008000,
+  خضراء: 0x008000,
+  زمردي: 0x50c878,
+  نعناعي: 0x98ff98,
+  تركوازي: 0x008080,
+  فيروزي: 0x008080,
+  سماوي: 0x87ceeb,
+  ازرق: 0x0000ff,
+  زرقاء: 0x0000ff,
+  كحلي: 0x000080,
+  نيلي: 0x4b0082,
+  بنفسجي: 0x800080,
+  ارجواني: 0x800080,
+  فوشيا: 0xff00ff,
+  وردي: 0xffc0cb,
+  زهري: 0xff007f,
+  بني: 0xa52a2a,
+  عنابي: 0x800000,
+  خمري: 0x800000,
+  زيتوني: 0x808000,
+  ابيض: 0xffffff,
+  بيضاء: 0xffffff,
+  فضي: 0xc0c0c0,
+  رمادي: 0x808080,
+  اسود: 0x000000,
+  سوداء: 0x000000,
+  ديسكورد: 0x5865f2,
+  بليربل: 0x5865f2,
+};
+
+// Arabic-Indic (٠-٩) and Persian (۰-۹) digits, so "#FF٠٠٠٠" works too.
+const NON_LATIN_DIGITS = /[\u0660-\u0669\u06F0-\u06F9]/g;
+
+function normalizeDigits(value) {
+  return value.replace(NON_LATIN_DIGITS, (digit) => {
+    const code = digit.charCodeAt(0);
+    return String(code <= 0x0669 ? code - 0x0660 : code - 0x06f0);
+  });
+}
+
 // Words that ask for the default (no) color instead of a value. Both fields
 // accept them so `/color primary:clear` works without remembering the option.
-const CLEAR_WORDS = new Set(['clear', 'reset', 'none', 'default', 'مسح']);
+const CLEAR_WORDS = new Set([
+  'clear',
+  'reset',
+  'none',
+  'default',
+  'مسح',
+  'افتراضي',
+  'الغاء',
+  'ازاله',
+]);
 
 // Prefix has no optional options, so "-" means "keep this color as it is".
-const KEEP_WORDS = new Set(['-', '_', 'keep', 'same']);
+const KEEP_WORDS = new Set(['-', '_', 'keep', 'same', 'ابق']);
 
 const FOOTER = 'Only your highest editable personal role can be changed.';
 
@@ -87,10 +153,12 @@ function toColor(value) {
 export function parseColor(input) {
   if (typeof input !== 'string') return null;
 
-  const raw = input.trim().toLowerCase();
+  const raw = normalizeDigits(input).trim().toLowerCase();
   if (!raw) return null;
 
-  const named = NAMED_COLORS[raw];
+  const key = normalizeForMatch(raw);
+  const named =
+    NAMED_COLORS[key] ?? ARABIC_COLORS[key] ?? ARABIC_COLORS[key.replace(/^ال/, '')];
   if (Number.isInteger(named)) return toColor(named);
 
   let hex = raw.replace(/^#+/, '');
@@ -238,11 +306,11 @@ function usageLines(ctx) {
 }
 
 function isClearInput(value) {
-  return typeof value === 'string' && CLEAR_WORDS.has(value.trim().toLowerCase());
+  return typeof value === 'string' && CLEAR_WORDS.has(normalizeForMatch(value));
 }
 
 function isKeepInput(value) {
-  return typeof value === 'string' && KEEP_WORDS.has(value.trim().toLowerCase());
+  return typeof value === 'string' && KEEP_WORDS.has(normalizeForMatch(value));
 }
 
 function colorSummary(primaryHex, secondaryHex) {
@@ -348,7 +416,7 @@ export default {
     .addStringOption((option) =>
       option
         .setName('primary')
-        .setDescription('First color, or clear: #ff0000, 0xff0000, f00, red, clear')
+        .setDescription('First color: #ff0000, f00, red, أحمر — or clear to remove it')
         .setMinLength(3)
         .setMaxLength(24)
         .setRequired(false),
@@ -356,7 +424,7 @@ export default {
     .addStringOption((option) =>
       option
         .setName('secondary')
-        .setDescription('Second color for a gradient: #00ff00, 0f0, green (optional)')
+        .setDescription('Second color for a gradient: #00ff00, green, أخضر (optional)')
         .setMinLength(3)
         .setMaxLength(24)
         .setRequired(false),
@@ -369,7 +437,7 @@ export default {
     ),
 
   name: 'color',
-  aliases: ['colour', 'colors'],
+  aliases: ['colour', 'colors', 'لون', 'الوان'],
   description: 'Change or clear the colors of the highest role that only you have',
   category: 'General',
   usage: 'color [primary] [secondary] | color clear',
@@ -437,7 +505,7 @@ export default {
         ctx,
         'Unknown color',
         `\`${String(bad).slice(0, 40)}\` is not a valid ${which} color.\n\n` +
-          'Use a hex code like `#FF0000` or `#F00`, or a name like `red`, `blue`, `purple`.\n\n' +
+          'Use a hex code like `#FF0000` or `#F00`, or a name like `red`, `blue`, `purple`, `أحمر`, `أخضر`.\n\n' +
           usageLines(ctx),
       );
       return;
