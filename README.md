@@ -65,7 +65,7 @@ Both run `src/boot.js`, which checks the Node version before loading the bot and
 | `/ping` | `:-pong` | WebSocket + roundtrip latency |
 | `/help [command]` | `:-commands`, `:-h` | Command list or details for one command |
 | `/botinfo` | `:-info`, `:-stats` | Uptime, servers, memory, versions |
-| `/color <primary> <secondary>` | `:-colour`, `:-colors` | Recolor the highest role that only you have as a two-color gradient |
+| `/color [primary] [secondary]` | `:-colour`, `:-colors` | Recolor or clear the highest role that only you have |
 | `/birthday <subcommand>` | `:-bd`, `:-bday` | Birthday registry, countdowns, automatic birthday role and greetings |
 | `/welcome <subcommand>` | `:-greet` | Welcome cards for new members: six styles, random or rotating, editable text |
 | `/clear <amount> [user]` | `:-purge`, `:-prune` | Delete recent messages, optionally only from one member |
@@ -175,6 +175,8 @@ An alias turns a word into a command, so you can moderate without the prefix:
 
 `/color primary:#ff0000 secondary:#00ff00` (prefix: `:-color #ff0000 #00ff00`) recolours the **highest role in your profile that nobody else has**, as a two-color gradient.
 
+- Change just one color: `/color primary:#ff0000` keeps the current second color. For only the second color use `/color secondary:#00ff00`, or in prefix `:-color - #00ff00` (the `-` means "keep the first color").
+- Clear the color entirely: `/color clear:true`, `/color primary:clear`, or `:-color clear` (`reset`, `none`, `default` and `مسح` also work). The role goes back to Discord's default color; it cannot be combined with new colors in the same command.
 - Colors accept `#RRGGBB`, `#RGB`, `0xRRGGBB`, bare hex, or a name such as `red`, `blue`, `purple` or `blurple`.
 - The bot picks the role; you cannot target someone else's. Shared roles, `@everyone` and integration-managed roles are ignored.
 - The role must sit **below the bot's highest role**, and the bot needs **Manage Roles**. If your top personal role is above the bot, the command uses the highest personal role it can still edit and says which one it skipped; it only refuses when every personal role you have is above the bot.

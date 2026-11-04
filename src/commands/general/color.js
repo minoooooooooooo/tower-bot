@@ -49,9 +49,28 @@ const NAMED_COLORS = {
 };
 
 const USAGE = {
-  slash: '/color primary:#ff0000 secondary:#00ff00',
-  prefix: ':-color #ff0000 #00ff00',
+  slash: [
+    '/color primary:#ff0000 secondary:#00ff00',
+    '/color primary:#ff0000',
+    '/color secondary:#00ff00',
+    '/color clear:true',
+  ],
+  prefix: [
+    ':-color #ff0000 #00ff00',
+    ':-color #ff0000',
+    ':-color - #00ff00',
+    ':-color clear',
+  ],
 };
+
+// Words that ask for the default (no) color instead of a value. Both fields
+// accept them so `/color primary:clear` works without remembering the option.
+const CLEAR_WORDS = new Set(['clear', 'reset', 'none', 'default', 'مسح']);
+
+// Prefix has no optional options, so "-" means "keep this color as it is".
+const KEEP_WORDS = new Set(['-', '_', 'keep', 'same']);
+
+const FOOTER = 'Only your highest editable personal role can be changed.';
 
 function toColor(value) {
   return {
@@ -213,9 +232,35 @@ function fail(ctx, title, description) {
 }
 
 function usageLines(ctx) {
-  return ctx.isSlash
-    ? `**Usage:** \`${USAGE.slash}\``
-    : `**Usage:** \`${USAGE.prefix}\``;
+  const examples = ctx.isSlash ? USAGE.slash : USAGE.prefix;
+
+  return ['**Usage:**', ...examples.map((line) => `\`${line}\``)].join('\n');
+}
+
+function isClearInput(value) {
+  return typeof value === 'string' && CLEAR_WORDS.has(value.trim().toLowerCase());
+}
+
+function isKeepInput(value) {
+  return typeof value === 'string' && KEEP_WORDS.has(value.trim().toLowerCase());
+}
+
+function colorSummary(primaryHex, secondaryHex) {
+  return secondaryHex
+    ? `\`${primaryHex}\` → \`${secondaryHex}\``
+    : `\`${primaryHex}\` (solid)`;
+}
+
+function skippedNote(blocked, role) {
+  return `${blocked} sits above my highest role, so it cannot be changed — I used ${role} instead.`;
+}
+
+function reasonFor(ctx) {
+  return `Color command: ${ctx.user.tag ?? ctx.user.username}`.slice(0, 500);
+}
+
+function hexOf(value) {
+  return toColor(Number(value ?? 0)).hex;
 }
 
 function apiProblem(error) {
@@ -240,55 +285,151 @@ function apiProblem(error) {
     : 'Something went wrong while changing the role colors.';
 }
 
+/**
+ * Resets the role to the default color. Discord treats primary color 0 as "no
+ * color", and nulls clear the gradient and holographic third color.
+ */
+async function clearColors(ctx, role, blocked, current) {
+  const already = !current.primaryColor && !current.secondaryColor && !current.tertiaryColor;
+
+  if (already) {
+    // Nothing changed, so do not hold the cooldown against the user.
+    ctx.releaseCooldown();
+
+    await respond(ctx, {
+      embeds: [
+        embed({
+          title: 'Already clear',
+          description: `${role} already uses the default color — there is nothing to clear.`,
+          footer: FOOTER,
+        }),
+      ],
+    });
+    return;
+  }
+
+  try {
+    await role.setColors(
+      { primaryColor: 0, secondaryColor: null, tertiaryColor: null },
+      reasonFor(ctx),
+    );
+
+    logger.info(
+      `${ctx.user.tag ?? ctx.user.username} (${ctx.user.id}) cleared ${role.name} (${role.id})`,
+    );
+
+    const lines = [`${role} now uses the default color — no gradient.`];
+
+    if (blocked) {
+      lines.push('', skippedNote(blocked, role));
+    }
+
+    await respond(ctx, {
+      embeds: [
+        embed({
+          title: 'Color cleared',
+          description: lines.join('\n'),
+          footer: FOOTER,
+        }),
+      ],
+    });
+  } catch (error) {
+    logger.warn(`Color clear failed for ${ctx.user.id} on ${role.id}: ${error.message}`);
+
+    await fail(ctx, 'Could not clear the colors', apiProblem(error));
+  }
+}
+
 export default {
   data: new SlashCommandBuilder()
     .setName('color')
-    .setDescription('Change the two colors of your own personal role')
+    .setDescription('Change or clear the colors of your own personal role')
     .setContexts(InteractionContextType.Guild)
     .addStringOption((option) =>
       option
         .setName('primary')
-        .setDescription('First color: #ff0000, 0xff0000, f00, or a name like red')
+        .setDescription('First color, or clear: #ff0000, 0xff0000, f00, red, clear')
         .setMinLength(3)
         .setMaxLength(24)
-        .setRequired(true),
+        .setRequired(false),
     )
     .addStringOption((option) =>
       option
         .setName('secondary')
-        .setDescription('Second color: #00ff00, 0x00ff00, 0f0, or a name like green')
+        .setDescription('Second color for a gradient: #00ff00, 0f0, green (optional)')
         .setMinLength(3)
         .setMaxLength(24)
-        .setRequired(true),
+        .setRequired(false),
+    )
+    .addBooleanOption((option) =>
+      option
+        .setName('clear')
+        .setDescription('Remove the color and gradient, back to the default color')
+        .setRequired(false),
     ),
 
   name: 'color',
   aliases: ['colour', 'colors'],
-  description: 'Change the two colors of the highest role that only you have',
+  description: 'Change or clear the colors of the highest role that only you have',
   category: 'General',
-  usage: 'color <primary> <secondary>',
+  usage: 'color [primary] [secondary] | color clear',
   cooldown: 30,
   guildOnly: true,
 
   async execute(ctx) {
-    const primaryInput = ctx.isSlash ? ctx.getString('primary') : ctx.args[0];
-    const secondaryInput = ctx.isSlash ? ctx.getString('secondary') : ctx.args[1];
+    const args = ctx.isSlash ? [] : ctx.args;
+    let primaryInput = ctx.isSlash ? ctx.getString('primary') : args[0];
+    let secondaryInput = ctx.isSlash ? ctx.getString('secondary') : args[1];
+    const clearFlag = ctx.isSlash ? ctx.getBoolean('clear') === true : false;
 
-    if (!primaryInput || !secondaryInput) {
+    // "-" (or "keep") leaves a color untouched, so prefix can change only the
+    // second color: `:-color - #00ff00`.
+    if (isKeepInput(primaryInput)) primaryInput = undefined;
+    if (isKeepInput(secondaryInput)) secondaryInput = undefined;
+
+    if (!ctx.isSlash && args.length > 2) {
       await fail(
         ctx,
-        'Two colors needed',
-        `Give me a first and a second color.\n\n${usageLines(ctx)}`,
+        'Too many values',
+        `Give one color, two colors, or \`clear\`.\n\n${usageLines(ctx)}`,
       );
       return;
     }
 
-    const primary = parseColor(primaryInput);
-    const secondary = parseColor(secondaryInput);
+    const firstIsClear = isClearInput(primaryInput);
+    const secondIsClear = isClearInput(secondaryInput);
 
-    if (!primary || !secondary) {
-      const which = !primary ? 'first' : 'second';
-      const bad = String(!primary ? primaryInput : secondaryInput)
+    if (
+      (clearFlag && (primaryInput || secondaryInput)) ||
+      (firstIsClear && secondaryInput) ||
+      (secondIsClear && primaryInput)
+    ) {
+      await fail(
+        ctx,
+        'Pick one',
+        `Use colors or \`clear\`, not both.\n\n${usageLines(ctx)}`,
+      );
+      return;
+    }
+
+    const wantsClear = clearFlag || firstIsClear || secondIsClear;
+
+    if (!wantsClear && !primaryInput && !secondaryInput) {
+      await fail(
+        ctx,
+        'Colors needed',
+        `Give one color, two colors, or \`clear\`.\n\n${usageLines(ctx)}`,
+      );
+      return;
+    }
+
+    const primary = wantsClear ? null : parseColor(primaryInput);
+    const secondary = wantsClear ? null : parseColor(secondaryInput);
+
+    if (!wantsClear && (!primary && primaryInput || !secondary && secondaryInput)) {
+      const badFirst = !primary && primaryInput;
+      const which = badFirst ? 'first' : 'second';
+      const bad = String(badFirst ? primaryInput : secondaryInput)
         .slice(0, 40)
         .replace(/[`\r\n]/g, ' ');
 
@@ -312,15 +453,34 @@ export default {
       return;
     }
 
-    const current = role.colors ?? {
-      primaryColor: role.color ?? 0,
-      secondaryColor: null,
-      tertiaryColor: null,
+    const current = {
+      primaryColor: role.colors?.primaryColor ?? role.color ?? 0,
+      secondaryColor: role.colors?.secondaryColor ?? null,
+      tertiaryColor: role.colors?.tertiaryColor ?? null,
     };
 
+    if (wantsClear) {
+      await clearColors(ctx, role, blocked, current);
+      return;
+    }
+
+    const nextPrimary = primary ? primary.value : current.primaryColor;
+    const nextSecondary = secondary ? secondary.value : current.secondaryColor;
+
+    // A gradient needs a first color. If the role has none yet, a lone second
+    // color would be rejected by Discord, so ask for the first one.
+    if (secondary && !nextPrimary) {
+      await fail(
+        ctx,
+        'First color needed',
+        `**${role.name}** has no first color yet, so give one along with the second.\n\n${usageLines(ctx)}`,
+      );
+      return;
+    }
+
     if (
-      current.primaryColor === primary.value &&
-      current.secondaryColor === secondary.value &&
+      nextPrimary === current.primaryColor &&
+      (nextSecondary ?? null) === (current.secondaryColor ?? null) &&
       !current.tertiaryColor
     ) {
       // Nothing changed, so do not hold the cooldown against the user.
@@ -331,58 +491,68 @@ export default {
           embed({
             title: 'Already set',
             description:
-              `${role} already uses \`${primary.hex}\` → \`${secondary.hex}\`.\n` +
-              'Try two different colors if you want a visible change.',
-            color: primary.value,
-            footer: 'Only your highest editable personal role can be changed.',
+              `${role} already uses ${colorSummary(hexOf(nextPrimary), nextSecondary === null ? null : hexOf(nextSecondary))}.\n` +
+              'Try different colors if you want a visible change.',
+            color: nextPrimary,
+            footer: FOOTER,
           }),
         ],
       });
       return;
     }
 
+    const title = !secondary
+      ? 'Primary updated'
+      : !primary
+        ? 'Secondary updated'
+        : 'Color updated';
+
     try {
       const updated = await role.setColors(
         {
-          primaryColor: primary.value,
-          secondaryColor: secondary.value,
+          primaryColor: nextPrimary,
+          secondaryColor: nextSecondary,
           // A holographic role has a third color; clear it so this really is a
           // two-color gradient.
           tertiaryColor: null,
         },
-        `Color command: ${ctx.user.tag ?? ctx.user.username}`.slice(0, 500),
+        reasonFor(ctx),
       );
 
       logger.info(
-        `${ctx.user.tag ?? ctx.user.username} (${ctx.user.id}) set ${role.name} (${role.id}) to ${primary.hex} -> ${secondary.hex}`,
+        `${ctx.user.tag ?? ctx.user.username} (${ctx.user.id}) set ${role.name} (${role.id}) to ${hexOf(nextPrimary)} -> ${nextSecondary === null ? 'none' : hexOf(nextSecondary)}`,
       );
 
-      const same = primary.value === secondary.value;
+      const solid = nextSecondary === null || nextSecondary === nextPrimary;
       const lines = [
-        `${role} now uses ${same ? 'a solid color' : 'a gradient'}.`,
+        `${role} now uses ${solid ? 'a solid color' : 'a gradient'}.`,
         '',
-        `**Primary:** \`${primary.hex}\``,
-        `**Secondary:** \`${secondary.hex}\``,
+        `**Primary:** \`${hexOf(nextPrimary)}\`${primary ? '' : ' _(kept)_'}`,
       ];
 
-      if (same) {
+      if (nextSecondary === null) {
+        lines.push('**Secondary:** _none_');
+      } else {
+        lines.push(
+          `**Secondary:** \`${hexOf(nextSecondary)}\`${secondary ? '' : ' _(kept)_'}`,
+        );
+      }
+
+      if (nextSecondary !== null && nextSecondary === nextPrimary) {
         lines.push('', 'Both values are the same, so the role will look solid.');
       }
 
       if (blocked) {
-        lines.push(
-          '',
-          `${blocked} sits above my highest role, so it cannot be changed — I used ${role} instead.`,
-        );
+        lines.push('', skippedNote(blocked, role));
       }
 
       await respond(ctx, {
         embeds: [
           embed({
-            title: 'Color updated',
+            title,
             description: lines.join('\n'),
-            color: updated?.colors?.primaryColor ?? primary.value,
-            footer: 'Only your highest editable personal role can be changed.',
+            color: updated?.colors?.primaryColor ?? nextPrimary,
+            footer: FOOTER,
           }),
         ],
       });
