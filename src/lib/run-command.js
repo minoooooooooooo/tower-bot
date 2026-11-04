@@ -80,11 +80,15 @@ export async function runCommand(command, ctx) {
     }
   }
 
+  // Reserve the slot before executing so two runs cannot start at once, but
+  // give it back if the command reports that it did nothing useful. A typo in
+  // an argument should not lock the user out for the whole cooldown.
+  let cooldownKey = null;
   const cooldownMs = (command.cooldown ?? 3) * 1000;
 
   if (cooldownMs > 0) {
-    const key = `${command.name}:${user.id}`;
-    const expiresAt = cooldowns.get(key) ?? 0;
+    cooldownKey = `${command.name}:${user.id}`;
+    const expiresAt = cooldowns.get(cooldownKey) ?? 0;
 
     if (Date.now() < expiresAt) {
       await replyError(
@@ -95,13 +99,21 @@ export async function runCommand(command, ctx) {
       return;
     }
 
-    cooldowns.set(key, Date.now() + cooldownMs);
+    cooldowns.set(cooldownKey, Date.now() + cooldownMs);
     pruneCooldowns();
   }
 
+  const releaseCooldown = () => {
+    if (cooldownKey) cooldowns.delete(cooldownKey);
+  };
+
   try {
     await command.execute(ctx, ctx.client);
+
+    if (ctx.failed) releaseCooldown();
   } catch (error) {
+    releaseCooldown();
+
     logger.error(
       `Command "${command.name}" failed for ${user.tag ?? user.username} (${user.id})`,
       error,

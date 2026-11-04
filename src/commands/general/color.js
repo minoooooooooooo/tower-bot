@@ -87,31 +87,45 @@ export function parseColor(input) {
 }
 
 /**
- * The highest role the member has that nobody else has. Integration roles are
+ * Every role the member alone holds, highest first. Integration roles are
  * skipped: they belong to the app that created them and cannot be edited.
  * `counts` comes from Discord's role member-count endpoint and makes the check
  * exact even when the member cache is cold.
  */
-export function findPersonalRole(member, counts = null) {
-  const roles = [...member.roles.cache.values()]
+export function findPersonalRoles(member, counts = null) {
+  return [...member.roles.cache.values()]
     .filter((role) => role.id !== member.guild.id && !role.managed)
-    .sort((a, b) => b.position - a.position);
-
-  return (
-    roles.find((role) => {
+    .sort((a, b) => b.position - a.position)
+    .filter((role) => {
       const count = counts?.get?.(role.id);
 
       if (count !== undefined) return count === 1;
 
       return role.members.size === 1 && role.members.has(member.id);
-    }) ?? null
-  );
+    });
+}
+
+/**
+ * The highest role the member has that nobody else has.
+ */
+export function findPersonalRole(member, counts = null) {
+  return findPersonalRoles(member, counts)[0] ?? null;
+}
+
+/**
+ * The highest personal role whose position is below `botTop`, so the bot is
+ * allowed to edit it. A member can hold several personal roles and only their
+ * top one may sit above the bot.
+ */
+export function findEditablePersonalRole(member, counts = null, botTop = Infinity) {
+  return findPersonalRoles(member, counts).find((role) => role.position < botTop) ?? null;
 }
 
 /**
  * Resolves the role a member is allowed to recolour, or explains why none can
- * be used. Refusing when the role sits above the bot is deliberate: silently
- * editing a lower role would not change the colour people actually see.
+ * be used. The highest personal role is preferred, but if it sits above the
+ * bot the next one it can edit is used instead; refusing outright would leave
+ * members with an admin-ish role unable to change any colour at all.
  */
 export async function pickColorRole(guild, member) {
   if (!member) {
@@ -148,28 +162,33 @@ export async function pickColorRole(guild, member) {
     }
   }
 
-  const role = findPersonalRole(member, counts);
+  const role = findEditablePersonalRole(member, counts, me.roles?.highest?.position ?? 0);
 
   if (!role) {
-    return {
-      problem:
-        'You do not have an editable **personal role** — every role you have is either shared with someone else or managed by an integration.\n' +
-        'Ask an admin to give you a role that nobody else has, then run the command again.',
-    };
-  }
+    const personal = findPersonalRoles(member, counts);
 
-  const botTop = me.roles?.highest?.position ?? 0;
+    if (personal.length === 0) {
+      return {
+        problem:
+          'You do not have an editable **personal role** — every role you have is either shared with someone else or managed by an integration.\n' +
+          'Ask an admin to give you a role that nobody else has, then run the command again.',
+      };
+    }
 
-  if (role.position >= botTop) {
     return {
-      role,
+      role: personal[0],
+      blocked: personal[0],
       problem:
-        `**${role.name}** sits at or above my highest role, so I cannot change its colors.\n` +
+        `**${personal[0].name}** sits at or above my highest role, so I cannot change its colors.\n` +
         'Ask an admin to drag my role above it in **Server Settings → Roles**, then try again.',
     };
   }
 
-  return { role };
+  // If a higher personal role exists but is out of reach, say which one was
+  // skipped so the member knows why a different role changed.
+  const blocked = findPersonalRoles(member, counts).find((candidate) => candidate.id !== role.id) ?? null;
+
+  return { role, blocked };
 }
 
 function privatePayload(payload) {
@@ -185,6 +204,12 @@ async function respond(ctx, payload) {
 
   if (ctx.isSlash) return ctx.editReply(body);
   return ctx.reply(body);
+}
+
+// Errors release the cooldown: a bad hex code or a blocked role should not
+// stop the user from trying again straight away.
+function fail(ctx, title, description) {
+  return ctx.fail(privatePayload({ embeds: [errorEmbed(title, description)] }));
 }
 
 function usageLines(ctx) {
@@ -250,15 +275,10 @@ export default {
     const secondaryInput = ctx.isSlash ? ctx.getString('secondary') : ctx.args[1];
 
     if (!primaryInput || !secondaryInput) {
-      await ctx.reply(
-        privatePayload({
-          embeds: [
-            errorEmbed(
-              'Two colors needed',
-              `Give me a first and a second color.\n\n${usageLines(ctx)}`,
-            ),
-          ],
-        }),
+      await fail(
+        ctx,
+        'Two colors needed',
+        `Give me a first and a second color.\n\n${usageLines(ctx)}`,
       );
       return;
     }
@@ -272,17 +292,12 @@ export default {
         .slice(0, 40)
         .replace(/[`\r\n]/g, ' ');
 
-      await ctx.reply(
-        privatePayload({
-          embeds: [
-            errorEmbed(
-              'Unknown color',
-              `\`${String(bad).slice(0, 40)}\` is not a valid ${which} color.\n\n` +
-                'Use a hex code like `#FF0000` or `#F00`, or a name like `red`, `blue`, `purple`.\n\n' +
-                usageLines(ctx),
-            ),
-          ],
-        }),
+      await fail(
+        ctx,
+        'Unknown color',
+        `\`${String(bad).slice(0, 40)}\` is not a valid ${which} color.\n\n` +
+          'Use a hex code like `#FF0000` or `#F00`, or a name like `red`, `blue`, `purple`.\n\n' +
+          usageLines(ctx),
       );
       return;
     }
@@ -290,12 +305,10 @@ export default {
     // The member-count lookup can take a moment on a large server.
     await ctx.defer({ ephemeral: true });
 
-    const { role, problem } = await pickColorRole(ctx.guild, ctx.member);
+    const { role, blocked, problem } = await pickColorRole(ctx.guild, ctx.member);
 
     if (problem) {
-      await respond(ctx, {
-        embeds: [errorEmbed('Cannot change your color', problem)],
-      });
+      await fail(ctx, 'Cannot change your color', problem);
       return;
     }
 
@@ -310,6 +323,9 @@ export default {
       current.secondaryColor === secondary.value &&
       !current.tertiaryColor
     ) {
+      // Nothing changed, so do not hold the cooldown against the user.
+      ctx.releaseCooldown();
+
       await respond(ctx, {
         embeds: [
           embed({
@@ -318,7 +334,7 @@ export default {
               `${role} already uses \`${primary.hex}\` → \`${secondary.hex}\`.\n` +
               'Try two different colors if you want a visible change.',
             color: primary.value,
-            footer: 'Only your highest personal role can be changed.',
+            footer: 'Only your highest editable personal role can be changed.',
           }),
         ],
       });
@@ -353,22 +369,27 @@ export default {
         lines.push('', 'Both values are the same, so the role will look solid.');
       }
 
+      if (blocked) {
+        lines.push(
+          '',
+          `${blocked} sits above my highest role, so it cannot be changed — I used ${role} instead.`,
+        );
+      }
+
       await respond(ctx, {
         embeds: [
           embed({
             title: 'Color updated',
             description: lines.join('\n'),
             color: updated?.colors?.primaryColor ?? primary.value,
-            footer: 'Only your highest personal role can be changed.',
+            footer: 'Only your highest editable personal role can be changed.',
           }),
         ],
       });
     } catch (error) {
       logger.warn(`Color change failed for ${ctx.user.id} on ${role.id}: ${error.message}`);
 
-      await respond(ctx, {
-        embeds: [errorEmbed('Could not change the colors', apiProblem(error))],
-      });
+      await fail(ctx, 'Could not change the colors', apiProblem(error));
     }
   },
 };

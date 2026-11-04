@@ -177,10 +177,10 @@ An alias turns a word into a command, so you can moderate without the prefix:
 
 - Colors accept `#RRGGBB`, `#RGB`, `0xRRGGBB`, bare hex, or a name such as `red`, `blue`, `purple` or `blurple`.
 - The bot picks the role; you cannot target someone else's. Shared roles, `@everyone` and integration-managed roles are ignored.
-- The role must sit **below the bot's highest role**, and the bot needs **Manage Roles**. If your personal role is above the bot, the command refuses and says so instead of recoloring a lower role.
+- The role must sit **below the bot's highest role**, and the bot needs **Manage Roles**. If your top personal role is above the bot, the command uses the highest personal role it can still edit and says which one it skipped; it only refuses when every personal role you have is above the bot.
 - Gradient colors need a server boost level that supports them. Discord rejects the update otherwise.
 - Passing the same color twice makes a solid color. A holographic role is converted back to a normal two-color gradient.
-- A 30-second cooldown per member protects Discord's role-update rate limit.
+- A 30-second cooldown per member protects Discord's role-update rate limit. A failed attempt (bad color, role out of reach, Discord error, or colors that were already set) does not start the cooldown, so you can fix the input and try again right away.
 
 ## Reports, keyword alerts, glossary and automatic reports
 

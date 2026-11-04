@@ -126,6 +126,29 @@ export class CommandContext {
     return this.interaction.deferReply(ephemeral ? { flags: MessageFlags.Ephemeral } : {});
   }
 
+  /**
+   * Marks this execution as not having done its job, so the shared pipeline
+   * releases the cooldown it reserved for the run. Use it for validation
+   * errors and for failures that changed nothing.
+   */
+  releaseCooldown() {
+    this.failed = true;
+  }
+
+  /**
+   * Reply with an error and release the cooldown. Works before and after a
+   * deferral, so the same call serves both slash and prefix.
+   */
+  async fail(payload) {
+    this.releaseCooldown();
+
+    if (this.interaction?.deferred || this.interaction?.replied) {
+      return this.editReply(payload);
+    }
+
+    return this.reply(payload);
+  }
+
   async reply(payload) {
     const body = toPayload(payload);
 
