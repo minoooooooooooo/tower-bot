@@ -65,7 +65,7 @@ Both run `src/boot.js`, which checks the Node version before loading the bot and
 | `/ping` | `:-pong` | WebSocket + roundtrip latency |
 | `/help [command]` | `:-commands`, `:-h` | Command list or details for one command |
 | `/botinfo` | `:-info`, `:-stats` | Uptime, servers, memory, versions |
-| `/color [primary] [secondary]` | `:-colour`, `:-colors`, `:-لون`, `:-الوان` | Recolor or clear the highest role that only you have |
+| `/color [primary] [secondary]` | `:-colour`, `:-colors` | Recolor or clear the highest role that only you have |
 | `/birthday <subcommand>` | `:-bd`, `:-bday` | Birthday registry, countdowns, automatic birthday role and greetings |
 | `/welcome <subcommand>` | `:-greet` | Welcome cards for new members: six styles, random or rotating, editable text |
 | `/clear <amount> [user]` | `:-purge`, `:-prune` | Delete recent messages, optionally only from one member |
@@ -179,7 +179,6 @@ An alias turns a word into a command, so you can moderate without the prefix:
 - Clear the color entirely: `/color clear:true`, `/color primary:clear`, or `:-color clear` (`reset`, `none`, `default`, `مسح`, `افتراضي` also work). The role goes back to Discord's default color; it cannot be combined with new colors in the same command.
 - Colors accept `#RRGGBB`, `#RGB`, `0xRRGGBB`, bare hex, English names such as `red`, `blue`, `purple` or `blurple`, **or Arabic names** such as `أحمر`, `أخضر`, `أزرق`, `بنفسجي`, `ذهبي`, `سماوي`, `وردي`, `أبيض`, `أسود`, `رمادي`. Hamza, diacritics, tatweel and the definite article are ignored: `أَحْمَر`, `احمر` and `الأحمر` are the same color.
 - Arabic-Indic and Persian digits work in hex too: `#FF٠٠٠٠` and `#۰۰ff۰۰` are understood, so a phone keyboard set to Arabic is not a dead end.
-- The command also answers to `:-لون` and `:-الوان` (prefix) next to `:-color`, `:-colour`, `:-colors`.
 - The bot picks the role; you cannot target someone else's. Shared roles, `@everyone` and integration-managed roles are ignored.
 - The role must sit **below the bot's highest role**, and the bot needs **Manage Roles**. If your top personal role is above the bot, the command uses the highest personal role it can still edit and says which one it skipped; it only refuses when every personal role you have is above the bot.
 - Gradient colors need a server boost level that supports them. Discord rejects the update otherwise.

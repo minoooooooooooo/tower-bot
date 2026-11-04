@@ -437,7 +437,7 @@ export default {
     ),
 
   name: 'color',
-  aliases: ['colour', 'colors', 'لون', 'الوان'],
+  aliases: ['colour', 'colors'],
   description: 'Change or clear the colors of the highest role that only you have',
   category: 'General',
   usage: 'color [primary] [secondary] | color clear',
