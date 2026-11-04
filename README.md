@@ -65,7 +65,8 @@ Both run `src/boot.js`, which checks the Node version before loading the bot and
 | `/ping` | `:-pong` | WebSocket + roundtrip latency |
 | `/help [command]` | `:-commands`, `:-h` | Command list or details for one command |
 | `/botinfo` | `:-info`, `:-stats` | Uptime, servers, memory, versions |
-| `/color [primary] [secondary]` | `:-colour`, `:-colors` | Recolor or clear the highest role that only you have |
+| `/color [primary] [secondary]` | `:-colour` | Recolor or clear the highest role that only you have |
+| `/colors` | `:-colours`, `:-palette` | List every color name in Arabic and English |
 | `/avatar [user]` | `:-av`, `:-pfp` | Show a member's global and per-server avatar |
 | `/banner [user]` | `:-userbanner` | Show a member's profile banner |
 | `/server-avatar [server]` | `:-serverav`, `:-servericon`, `:-sicon` | Show a server icon, including another server the bot is in |
@@ -209,7 +210,7 @@ An alias turns a word into a command, so you can moderate without the prefix:
 
 ## Personal role colors
 
-`/color primary:#ff0000 secondary:#00ff00` (prefix: `:-color #ff0000 #00ff00`) recolours the **highest role in your profile that nobody else has**, as a two-color gradient.
+`/color primary:#ff0000 secondary:#00ff00` (prefix: `:-color #ff0000 #00ff00`, alias `:-colour`) recolours the **highest role in your profile that nobody else has**, as a two-color gradient. `/colors` (or `:-color list`) shows the whole palette.
 
 - Change just one color: `/color primary:#ff0000` keeps the current second color. For only the second color use `/color secondary:#00ff00`, or in prefix `:-color - #00ff00` (the `-` means "keep the first color").
 - Clear the color entirely: `/color clear:true`, `/color primary:clear`, or `:-color clear` (`reset`, `none`, `default`, `مسح`, `افتراضي` also work). The role goes back to Discord's default color; it cannot be combined with new colors in the same command.
@@ -219,7 +220,9 @@ An alias turns a word into a command, so you can moderate without the prefix:
 - The role must sit **below the bot's highest role**, and the bot needs **Manage Roles**. If your top personal role is above the bot, the command uses the highest personal role it can still edit and says which one it skipped; it only refuses when every personal role you have is above the bot.
 - Gradient colors need a server boost level that supports them. Discord rejects the update otherwise.
 - Passing the same color twice makes a solid color. A holographic role is converted back to a normal two-color gradient.
-- A 30-second cooldown per member protects Discord's role-update rate limit. A failed attempt (bad color, role out of reach, Discord error, or colors that were already set) does not start the cooldown, so you can fix the input and try again right away.
+- A 10-second cooldown per member protects Discord's role-update rate limit. A failed attempt (bad color, role out of reach, Discord error, or colors that were already set) does not start the cooldown, so you can fix the input and try again right away.
+- `/colors` (prefix `:-colours`, `:-palette`) shows every name with its hex code in Arabic and English; it is a normal command, so a server alias can point at it. `:-color list` and a bare `:-color` show the same list.
+- Black is stored as `#000001`: Discord reserves `#000000` for "no color", so a literal black would clear the role. Use `clear`/`مسح` when you actually want the default color.
 
 ## Reports, keyword alerts, glossary and automatic reports
 

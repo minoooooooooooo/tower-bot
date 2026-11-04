@@ -5,6 +5,7 @@ import {
   PermissionFlagsBits,
   SlashCommandBuilder,
 } from 'discord.js';
+import { colorListEmbed } from '../../lib/color-palette.js';
 import { embed, errorEmbed } from '../../lib/embeds.js';
 import { createLogger } from '../../lib/logger.js';
 import { normalizeForMatch } from '../../lib/text.js';
@@ -55,6 +56,7 @@ const USAGE = {
     '/color primary:أحمر secondary:أخضر',
     '/color primary:#ff0000',
     '/color secondary:#00ff00',
+    '/color list',
     '/color clear:true',
   ],
   prefix: [
@@ -62,6 +64,7 @@ const USAGE = {
     ':-color أحمر أخضر',
     ':-color #ff0000',
     ':-color - #00ff00',
+    ':-color list',
     ':-color clear',
   ],
 };
@@ -138,11 +141,29 @@ const KEEP_WORDS = new Set(['-', '_', 'keep', 'same', 'ابق']);
 
 const FOOTER = 'Only your highest editable personal role can be changed.';
 
+
+// `:-color list` / `primary:list` / bare `/color`.
+const LIST_WORDS = new Set([
+  'list',
+  'colors',
+  'palette',
+  'الوان',
+  'الالوان',
+  'قائمه',
+  'القائمه',
+]);
+
 function toColor(value) {
   return {
     value,
     hex: `#${value.toString(16).padStart(6, '0').toUpperCase()}`,
   };
+}
+
+// Discord reserves 0 for "no color", so a literal #000000 would silently clear
+// the role instead of coloring it. #000001 is the closest visible black.
+function representable(value) {
+  return value === 0 ? 1 : value;
 }
 
 /**
@@ -159,7 +180,7 @@ export function parseColor(input) {
   const key = normalizeForMatch(raw);
   const named =
     NAMED_COLORS[key] ?? ARABIC_COLORS[key] ?? ARABIC_COLORS[key.replace(/^ال/, '')];
-  if (Number.isInteger(named)) return toColor(named);
+  if (Number.isInteger(named)) return toColor(representable(named));
 
   let hex = raw.replace(/^#+/, '');
   if (hex.startsWith('0x')) hex = hex.slice(2);
@@ -170,7 +191,7 @@ export function parseColor(input) {
 
   if (!/^[\da-f]{6}$/.test(hex)) return null;
 
-  return toColor(Number.parseInt(hex, 16));
+  return toColor(representable(Number.parseInt(hex, 16)));
 }
 
 /**
@@ -313,6 +334,15 @@ function isKeepInput(value) {
   return typeof value === 'string' && KEEP_WORDS.has(normalizeForMatch(value));
 }
 
+function isListInput(value) {
+  return typeof value === 'string' && LIST_WORDS.has(normalizeForMatch(value));
+}
+
+async function showColorList(ctx) {
+  ctx.releaseCooldown();
+  return ctx.reply(privatePayload({ embeds: [colorListEmbed()] }));
+}
+
 function colorSummary(primaryHex, secondaryHex) {
   return secondaryHex
     ? `\`${primaryHex}\` → \`${secondaryHex}\``
@@ -437,11 +467,11 @@ export default {
     ),
 
   name: 'color',
-  aliases: ['colour', 'colors'],
+  aliases: ['colour'],
   description: 'Change or clear the colors of the highest role that only you have',
   category: 'General',
   usage: 'color [primary] [secondary] | color clear',
-  cooldown: 30,
+  cooldown: 10,
   guildOnly: true,
 
   async execute(ctx) {
@@ -467,6 +497,20 @@ export default {
     const firstIsClear = isClearInput(primaryInput);
     const secondIsClear = isClearInput(secondaryInput);
 
+    // `list` anywhere on its own shows the palette instead of changing a role.
+    const firstIsList = isListInput(primaryInput);
+    const secondIsList = isListInput(secondaryInput);
+
+    if (firstIsList || secondIsList) {
+      if (clearFlag || (firstIsList && secondaryInput) || (secondIsList && primaryInput)) {
+        await fail(ctx, 'Pick one', `Use \`list\` on its own.\n\n${usageLines(ctx)}`);
+        return;
+      }
+
+      await showColorList(ctx);
+      return;
+    }
+
     if (
       (clearFlag && (primaryInput || secondaryInput)) ||
       (firstIsClear && secondaryInput) ||
@@ -483,11 +527,8 @@ export default {
     const wantsClear = clearFlag || firstIsClear || secondIsClear;
 
     if (!wantsClear && !primaryInput && !secondaryInput) {
-      await fail(
-        ctx,
-        'Colors needed',
-        `Give one color, two colors, or \`clear\`.\n\n${usageLines(ctx)}`,
-      );
+      // A bare `/color` or `:-color` is the natural way to ask "what can I use?".
+      await showColorList(ctx);
       return;
     }
 
@@ -505,7 +546,7 @@ export default {
         ctx,
         'Unknown color',
         `\`${String(bad).slice(0, 40)}\` is not a valid ${which} color.\n\n` +
-          'Use a hex code like `#FF0000` or `#F00`, or a name like `red`, `blue`, `purple`, `أحمر`, `أخضر`.\n\n' +
+          'Use a hex code like `#FF0000` or `#F00`, a name like `red`, `blue`, `أحمر`, `أخضر`, or `list` to see every color.\n\n' +
           usageLines(ctx),
       );
       return;
