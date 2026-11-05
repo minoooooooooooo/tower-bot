@@ -4,6 +4,7 @@ import { closeDb } from './lib/db.js';
 import { loadCommands, loadEvents } from './lib/loaders.js';
 import { createLogger } from './lib/logger.js';
 import { reportDiscordReachability } from './lib/net-check.js';
+import { stopActivityTracking } from './services/activity.js';
 
 const logger = createLogger('bot');
 
@@ -12,6 +13,7 @@ const client = new Client({
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildVoiceStates,
     GatewayIntentBits.MessageContent,
   ],
   partials: [Partials.Channel],
@@ -60,6 +62,12 @@ async function shutdown(signal) {
     await client.destroy();
   } catch {
     // Already disconnected.
+  }
+
+  try {
+    stopActivityTracking();
+  } catch {
+    // Stats are already unwritable.
   }
 
   try {

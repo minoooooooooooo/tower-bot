@@ -285,6 +285,81 @@ const SCHEMA = `
 
   CREATE INDEX IF NOT EXISTS idx_moderation_expiries_due
     ON moderation_expiries (expires_at);
+
+  -- Activity totals per member. Messages and voice time are counted from the
+  -- moment the bot first sees the server; there is no backfill.
+  CREATE TABLE IF NOT EXISTS activity_members (
+    guild_id         TEXT    NOT NULL,
+    user_id          TEXT    NOT NULL,
+    messages         INTEGER NOT NULL DEFAULT 0,
+    voice_seconds    INTEGER NOT NULL DEFAULT 0,
+    first_message_at INTEGER,
+    last_message_at  INTEGER,
+    last_active_at   INTEGER,
+    PRIMARY KEY (guild_id, user_id)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_activity_members_messages
+    ON activity_members (guild_id, messages DESC);
+
+  CREATE INDEX IF NOT EXISTS idx_activity_members_voice
+    ON activity_members (guild_id, voice_seconds DESC);
+
+  -- Per-channel totals. Thread messages are counted under their parent
+  -- channel, so "most active channels" stays readable.
+  CREATE TABLE IF NOT EXISTS activity_channels (
+    guild_id        TEXT    NOT NULL,
+    channel_id      TEXT    NOT NULL,
+    messages        INTEGER NOT NULL DEFAULT 0,
+    voice_seconds   INTEGER NOT NULL DEFAULT 0,
+    last_message_at INTEGER,
+    PRIMARY KEY (guild_id, channel_id)
+  );
+
+  -- Daily buckets power the 7d/30d leaderboards without losing all-time
+  -- totals. day is YYYY-MM-DD in the bot's TIMEZONE.
+  CREATE TABLE IF NOT EXISTS activity_member_days (
+    guild_id      TEXT    NOT NULL,
+    user_id       TEXT    NOT NULL,
+    day           TEXT    NOT NULL,
+    messages      INTEGER NOT NULL DEFAULT 0,
+    voice_seconds INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (guild_id, user_id, day)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_activity_member_days_lookup
+    ON activity_member_days (guild_id, day);
+
+  CREATE TABLE IF NOT EXISTS activity_channel_days (
+    guild_id      TEXT    NOT NULL,
+    channel_id    TEXT    NOT NULL,
+    day           TEXT    NOT NULL,
+    messages      INTEGER NOT NULL DEFAULT 0,
+    voice_seconds INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (guild_id, channel_id, day)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_activity_channel_days_lookup
+    ON activity_channel_days (guild_id, day);
+
+  -- One open voice session per member. joined_at survives restarts; a
+  -- last_seen_at heartbeat bounds how much time a crash can overcount.
+  CREATE TABLE IF NOT EXISTS activity_voice_sessions (
+    guild_id     TEXT    NOT NULL,
+    user_id      TEXT    NOT NULL,
+    channel_id   TEXT    NOT NULL,
+    joined_at    INTEGER NOT NULL,
+    last_seen_at INTEGER NOT NULL,
+    PRIMARY KEY (guild_id, user_id)
+  );
+
+  -- When tracking started, so the commands can say how complete the numbers
+  -- are instead of implying they cover the server's whole history.
+  CREATE TABLE IF NOT EXISTS activity_meta (
+    guild_id      TEXT PRIMARY KEY,
+    tracking_since INTEGER NOT NULL,
+    updated_at    INTEGER NOT NULL
+  );
 `;
 
 // Columns added after the first release. `CREATE TABLE IF NOT EXISTS` does not

@@ -5,6 +5,10 @@ import { createLogger } from '../lib/logger.js';
 import { startBirthdayScheduler } from '../services/birthday-scheduler.js';
 import { startSummaryScheduler } from '../services/summary-scheduler.js';
 import { startModerationScheduler } from '../services/moderation-scheduler.js';
+import {
+  reconcileVoiceSessions,
+  startActivityHeartbeat,
+} from '../services/activity.js';
 
 const logger = createLogger('ready');
 
@@ -23,6 +27,14 @@ export default {
     startBirthdayScheduler(client);
     startSummaryScheduler(client);
     startModerationScheduler(client);
+
+    try {
+      await reconcileVoiceSessions(client);
+      startActivityHeartbeat();
+    } catch (error) {
+      // Stats are useful but never worth blocking startup.
+      logger.error('Could not start activity tracking', error);
+    }
 
     if (!config.clientId) {
       logger.warn('CLIENT_ID is not set - skipping slash command registration');

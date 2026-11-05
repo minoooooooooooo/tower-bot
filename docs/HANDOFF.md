@@ -1,15 +1,16 @@
 # Handoff — Discord bot
 
-Last updated: 2026-11-04. Read this before continuing work. It exists so a fresh
+Last updated: 2026-11-05. Read this before continuing work. It exists so a fresh
 OpenCode session can resume without the original conversation.
 
 ## Status
 
-The bot is **built and running locally** from `start.bat`. Eighteen commands are
-implemented: `/ping`, `/help`, `/botinfo`, `/color`, `/birthday`, `/welcome`, `/clear`,
-`/summary`, `/watch`, `/glossary`, `/autoreport`, `/alias`, and the exile package
-(`/exile-setup`, `/exile-role`, `/exile`, `/exile-release`, `/exile-list`,
-`/exile-log`).
+The bot is **built and running locally** from `start.bat`. Thirty-five commands are
+implemented: `/ping`, `/help`, `/botinfo`, `/color`, `/colors`, `/birthday`, `/welcome`,
+`/clear`, `/top`, `/topchannels`, `/compare`, `/serverstats`, `/summary`, `/watch`,
+`/glossary`, `/autoreport`, `/alias`, the profile lookup and moderation packages, and
+the exile package (`/exile-setup`, `/exile-role`, `/exile`, `/exile-release`,
+`/exile-list`, `/exile-log`).
 
 **Source is on GitHub:** <https://github.com/minoooooooooooo/tower-bot>
 (public, branch `main`). Pushed 2026-10-31 with Git 2.56.0 + `gh` browser auth; no
@@ -32,8 +33,9 @@ undeletable. The server was deleted and recreated; the new node logged in on the
 first attempt. Current state (boot 10:29 UTC): Node **26.12.1**, `Logged in as
 11/10#8627`, `SQLite ready at /home/container/data/bot.db`, scheduler running,
 slash commands registered instantly in "𝗧𝗵𝗲 𝗧𝗼𝘄𝗲𝗿 v2". The process now loads
-**31 commands / 7 events** (birthday, welcome, clear, colors, color, profile lookups, moderation,
-summary, watch, glossary, autoreport, alias, and the six exile commands).
+**35 commands / 8 events** (birthday, welcome, clear, colors, color, activity,
+profile lookups, moderation, summary, watch, glossary, autoreport, alias, and the six
+exile commands).
 
 Two consequences worth remembering: the install/reinstall script on this panel
 does **not** run (two reinstalls produced an empty directory), so the code is
@@ -52,6 +54,10 @@ Oracle Cloud is kept as the card-verification alternative in
 | `/botinfo` | `info`, `stats` | Uptime, servers, memory, versions |
 | `/color [primary] [secondary]` | `colour` | Recolor or clear the highest role that only you have |
 | `/colors` | `colours`, `palette` | Every color name in Arabic and English |
+| `/top [messages\|voice] [all\|7d\|30d] [limit]` | `leaderboard`, `ranking`, `rank` | Member activity ranking |
+| `/topchannels [all\|7d\|30d] [limit]` | `channels`, `top-channels` | Text-channel ranking by messages |
+| `/compare <@member> <@member> [period]` | `versus`, `vs` | Messages and voice time side by side |
+| `/serverstats` | `activity`, `serveractivity`, `sstats` | Server totals, top member and top channel |
 | `/birthday <sub>` | `bd`, `bday`, `birthdays` | 10 subcommands, see below |
 | `/welcome <sub>` | `greet` | 8 subcommands, six card styles with editable text |
 | `/clear <amount> [user]` | `purge`, `prune` | Bulk-delete recent messages, optionally from one member |
@@ -178,6 +184,40 @@ Behavior that must be preserved:
 
 - `avatar` prefers the member's per-server avatar and links both pictures; `banner` forces a user fetch because banners are absent from cached payloads.
 - `server-avatar` shows `guild.iconURL()` and `server-banner` shows `guild.bannerURL()`. Both accept a server id or exact name, and can only resolve servers the bot has joined (`client.guilds.fetch`), which is a Discord limitation rather than a choice.
+
+### Activity stats
+
+`/top` (prefix `:-top`, aliases `leaderboard`/`ranking`/`rank`), `/topchannels`
+(`channels`, `top-channels`), `/compare` (`versus`, `vs`) and `/serverstats`
+(`activity`, `serveractivity`, `sstats`).
+
+- **Tracking is live-only.** The first message or voice join creates the guild's
+  `activity_meta` row; there is no backfill and the commands show the start date.
+- **Messages:** every human message, commands included. `messageCreate` skips bots
+  and system messages and folds thread messages onto the parent text channel.
+  Each message updates the all-time member row, the member's day bucket, the
+  all-time channel row and the channel's day bucket, inside one transaction.
+- **Voice:** a new `voiceStateUpdate` event needs the non-privileged
+  `GuildVoiceStates` intent (added in `index.js`). Joins open a row in
+  `activity_voice_sessions`; leaves and moves close it and add rounded seconds to
+  the member, the old channel and their day buckets. The guild's AFK channel and
+  bots are ignored.
+- **Restarts:** a five-minute heartbeat advances `last_seen_at`. `ready.js` calls
+  `reconcileVoiceSessions` to close stale rows at their last heartbeat (downtime
+  is not charged) and reopen sessions for members already in voice. A graceful
+  `SIGINT`/`SIGTERM` closes every session before SQLite closes; `index.js` calls
+  `stopActivityTracking()`.
+- **Periods:** `all` reads the totals tables; `7d`/`30d` sum the daily tables from
+  `periodStart`, with days keyed by the bot's `TIMEZONE` via `dateKey`. Prefix
+  parsing accepts `messages`/`msg`/`رسائل`, `voice`/`vc`/`صوت`, `all`/`كل`,
+  `7d`/`week`/`اسبوع`, `30d`/`month`/`شهر`, and a numeric limit (clamped 1–25).
+- **Safety:** all four commands are guild-only, read-only, cost 5 seconds of
+  cooldown, send `allowedMentions: { parse: [] }` so a leaderboard cannot ping
+  anyone, and release the cooldown only on invalid prefix input (`ctx.fail`).
+- **Storage:** `activity_members`, `activity_channels`, `activity_member_days`,
+  `activity_channel_days`, `activity_voice_sessions`, `activity_meta`. The
+  per-member profile card is intentionally **not** built yet; the stored
+  `first_message_at`/`last_message_at`/`last_active_at` are ready for it.
 
 ### Exile package
 
@@ -428,6 +468,8 @@ Behavior that must be preserved:
 - [ ] Test alerts end to end: `/watch channel channel:#mod-log` (or any channel), then `/watch add keyword:<a word you can post>`, post it from an alt or ask a member, and confirm one alert in that channel with a working jump link. Run `/watch test` and confirm the sample appears. Then remove the channel or the bot's Send Messages permission and confirm chat still works and `/watch list` warns.
 - [ ] Add a few real terms with `/glossary add` so summaries stop guessing at server vocabulary.
 - [ ] Test automatic reports: `/autoreport set channel:#general every:6h`, then `list` to confirm the next run, then force one by waiting or by lowering the interval to `15m` temporarily. Also confirm `/autoreport set channel:#general time:09:00` fires once per day at 09:00 in the server time zone, that a silent channel produces no empty report, and that `pause`/`resume`/`remove` behave.
+- [ ] After the next restart, test activity stats: send a few messages, join and leave a voice channel, then run `/serverstats`, `/top`, `/topchannels` and `/compare`. Voice tracking uses the non-privileged `GuildVoiceStates` intent, so no portal toggle is needed.
+- [ ] Build the per-member **profile card** later (postponed by the user): messages sent, voice duration, first message, last activity and membership duration. The totals and timestamps are already stored, so it is a read-only command on top of `activity_members`.
 - [ ] Ask the user for the next batch of commands (games were mentioned).
 - [ ] **Enable the Server Members intent in the Discord Developer Portal** before the next restart. The bot now requests `GatewayIntentBits.GuildMembers` for welcome cards; without the portal toggle Discord refuses the login (`Used disallowed intents`) and the bot stays offline until it is enabled.
 - [ ] After that restart: `/welcome channel #welcome`, then `/welcome test` to see each of the six styles, then join with an alt (or ask a member to rejoin) to confirm `guildMemberAdd` fires.
@@ -436,7 +478,7 @@ Behavior that must be preserved:
 ## Verification used so far
 
 - `node --check` across all `src/**/*.js`.
-- Load test with a fake token: 31 commands, 7 events, clean login failure.
+- Load test with a fake token: 35 commands, 8 events, clean login failure.
 - Date math: Feb 29 in leap/non-leap years, timezone date shift (`America/New_York`), year rollover.
 - Scheduler: role added on birthday, removed the next day, removed immediately when the birthday is deleted.
 - Command paths: set (valid/invalid), list, next, today, remove, admin guards, role set/clear, timezone invalid/valid.
@@ -445,13 +487,14 @@ Behavior that must be preserved:
 - `package.bat` produces `dist/bot.zip` with no `node_modules`, `.tools`, `.env`, or `data`, and no entry containing a backslash (the script verifies this and fails loudly).
 - Runtime guard test (20 checks): `hasSqliteModule` across Node 18/20/22.4/22.5/24/26 and a malformed version, `needsSqliteFlag` across the 22.5–23.3 boundary, and the three message branches (unsupported version, flag required, unexpected failure).
 - Alias integration test on a temp DB (90 checks): store roundtrip, guild scoping, normalization (diacritics, alef variants, case, upsert in place), remove/clear, table creation; dispatch (`مسح 100` → `clear` with `["100"]`, quotes, no arguments, ordinary chat not hijacked, unknown word, missing permission stays silent, owner-only refused for others and allowed for the owner, broken target explained, slash-only target explained, a real command name outranks an alias and the alias returns when that command is removed); `messageCreate` for the bare and `:-`-prefixed forms with real commands unaffected; the command surface (add/update/remove/list, slash options and autocomplete, one-word/punctuation/emoji/length validation, command-name and built-in-alias refusal, unknown command, slash-only and `alias` targets, Manage Server guard on add/remove but not list, prefixed and slashed command input cleaned, common-word warning, the 50-alias limit with updates still allowed, empty list, usage text, broken-row marker, footer count), `help <command>` merging custom aliases with built-ins (no aliases, merged field, resolving a custom alias, other commands excluded, built-in duplicate printed once), and the slash schema.
-- `node src/boot.js` with a fake token logs the runtime version, loads 18 commands / 7 events, then fails login cleanly with `TokenInvalid`.
+- `node src/boot.js` with a fake token logs the runtime version, loads 35 commands / 8 events, then fails login cleanly with `TokenInvalid`.
 - Welcome integration test on a temp DB (207 checks): style metadata (six keys, modal inputs ≤5, unique keys, label/default limits, known placeholders), settings/text/gif store roundtrips (JSON `enabled`, last style, per-style GIF, per-piece override, clear one/all), style selection (random never repeats, stays inside the enabled set, rotate cycles and wraps, single pins, disabled style falls back, empty list means all), all six payloads (ledger rows/date/count/timestamp, classic thumbnail/fields/shared labels/GIF, poster banner→splash→icon fallback and GIF precedence, story floor, whisper two lines without timestamp, concierge link buttons and the welcome-channel fallback), a GIF on every style, overrides and blank-override fallback, unknown style fallback, ping rules (`allowedMentions` = new member only, title mentions still ping from content), ordinal helper, `guildMemberAdd` (posts once, records the style, skips bots, skips without a channel, failed send keeps `last_style`), and the command surface (channel set/clear + admin guard, mode validation, toggle + last-style guard, list with GIF markers, ephemeral preview, per-style gif set/show/invalid/clear, modal open and prefill, prefix edit redirect, reset one/all, links, overview) including modal submit (save, default-detection, empty clears, unknown placeholder warning, title/footer mention warning, GIF saved per style from any card's modal, invalid GIF rejecting the whole submit, admin guard) and the slash schema. A separate migration script moves a legacy `welcome_settings.gif_url` into `welcome_gifs` on boot.
 - Report integration test on a temp DB with a stubbed `fetch` (260 checks): windowed history reads (only the requested range, oldest-first, cap + truncation flag), transcript format and chunking, `normalizeSummary` against drifted model output (strings for objects, unknown keys, overlong text, item caps), single-call vs map-reduce paths (progress callback, merge call content, glossary and focus reaching the prompt), provider failures (retry on 5xx, non-JSON reply, 429 with the provider message and retry-after in `aiProblemHint`, fenced/prose JSON extraction), summary-channel store roundtrip and clear, saved-report roundtrip and guild scoping, glossary upsert/remove/clear and prompt formatting, keyword normalization (diacritics, alef variants, case), whole-word matching for Latin and Arabic, term CRUD and duplicates, channel alert payload (jump link, keywords, an @everyone ping in content outside the embed, quote), skips for bots/empty/unrelated text, quiet-window throttling, missing/deleted-channel handling, HTML export (RTL detection, action items, print stylesheet, safe filename, HTML escaping), and the command surfaces (missing key hint, targeted-without-focus, hours bounds, prefix run posting + storage + export button, management-channel routing, private run, slash run, channel config + Manage Server guard, export file, history list, watch add/list/remove/validation, glossary add/list/guard) plus the five new tables.
 - Schedule integration test in the same suite (60 of those 260): `parseInterval` for `6h`/`90m`/`2d`/bare hours and rejection of 5m, 10d and nonsense, `parseClock` for `09:00`/`9:05` and rejection of `24:00`/`09:60`, `formatClock`/`formatInterval` round trips, schedule upsert (cadence stored, countdown starts at creation, one row per channel, second save updates in place and restarts the clock), `isScheduleDue` for interval/paused/daily including "not early" and "not twice in a day" across `Asia/Riyadh`, `nextRunAt` for intervals and daily rollover, a full `runScheduledReport` (delivered to the management channel, export button present, no pings, stored with the scheduler as author, whole window summarized), empty window skipped without sending and reporting no-messages, a model that answers with nothing skipped as empty-summary without posting or storing, missing management channel skipped, and the `/autoreport` surface (prefix interval + daily, in-place switch to daily, missing cadence, targeted without focus, list shows the cadence, pause/resume/remove, Manage Server guard, refusal without a summary channel) plus the slash schema.
 - Readability checks in the same suite (35 of those 260): display-name resolution (inline member, guild cache, bounded REST fetch, global-name fallback, username last resort, fetch cap), the transcript printing the name and never the handle, the speaker roster pairing name with handle and skipping identical ones, the roster and transliteration rules reaching the prompt, and Arabic labels across the embed title/fields/footer, the markdown, and the HTML export (sections, message count, Arabic print hint), with English output unchanged. Depth checks in the same suite (16 more): exhaustive/2-3-sentences/length-target wording in the system prompt, merge-not-compress wording, 4096/2048/4096 token budgets, and message packing (a realistic report spans several embeds, each under Discord's 6,000 characters and 25 fields, continuation titles numbered, nothing dropped, one message per embed with the export button only on the last, an oversized report flagged at 8 embeds, every topic keeps its heading, the SummaryBot section names and `title — details` splitting, a Jump link on a topic, and the `Last 24 hours | N messages analyzed` footer). Empty-report and export-button checks in the same suite (14 more): an empty summary renders a placeholder embed instead of nothing, interactionCreate routes summary:export:* and ignores other buttons, a moderator or the scheduler's owner exports while a stranger is refused, a deleted report is explained, a report saved with an empty body is refused instead of exporting a blank file, a DM press is refused, the reply stays ephemeral, and /autoreport set explains a restarted window and a first run only minutes away.
 - Watch integration test on a temp DB (142 checks): legacy-schema migration (case/diacritic duplicates merged, earliest spelling/author/timestamp kept, `user_id`/`broken` dropped, `watch_settings` created, `watch_ignored_channels` created), the shared store (guild scope, creator, normalized duplicate, case-insensitive removal, 50-term cap, ignore add/duplicate/list/remove scoping), matcher edges, channel delivery (one alert for several keywords, jump link, quote, an `@everyone` ping in `content` outside the embed with only the everyone mention allowed, ignored channel/category/thread silence with alerts still firing elsewhere, unignore restoring delivery, quiet-window throttle, cache invalidation, bots/empty skipped, missing/non-text/rejected channel swallowed), and the command surface (prefix and slash add/remove/list/clear/channel/test/ignore/unignore/ignored, ignored list with count/creators/deleted marker, category and by-name resolution, foreign-guild refusal, Manage Messages guard, deleted-channel cleanup via the event, empty and truncated list, Manage Messages vs Manage Server guards, unpostable channel, off switch).
 - Color integration test with fake guild/member/role objects (224 checks): hex/name parsing (`#rgb`, `#rrggbb`, `0x`, bare, names, invalid, prototype keys), Arabic input (names, hamza/diacritic/tatweel variants, `ال` prefix, feminine forms, Arabic-Indic and Persian digits, unknown words), black being stored as `#000001` instead of clearing, no built-in Arabic command alias (so a guild `لون` alias keeps working), the `/colors` palette (every listed Arabic and English name parses to its listed hex, Arabic title, four groups, slash/prefix/`:-color list`/bare `/color` entry points, cooldown release), highest-exclusive-role selection (shared roles skipped, integration roles skipped, stale-cache counts, no personal role), hierarchy/Manage Roles refusals with the fallback to the highest *editable* personal role (and the skipped role reported), the cache fallback when member counts fail, slash and prefix success payloads, audit reason, `tertiaryColor: null`, unchanged-color short circuit, holographic conversion, API failure reporting, missing/invalid argument replies, partial updates (primary only, secondary only, prefix `-` placeholder, a lone second color refused), clear (`clear` and `مسح` in prefix, in the primary field and in the `clear:true` boolean, with diacritics ignored, no-op "Already clear", colors+clear conflict, too many prefix values), the 10-second cooldown, cooldown release (`ctx.failed`) on every failure path, and `runCommand` regression checks proving a failed or throwing run is retryable immediately while a successful run still answers "Slow down".
+- Activity integration test on a temp DB (125 checks): message totals/daily buckets/channel totals, first/last timestamps, all-time and 7d/30d windows, member and channel rankings, per-channel voice seconds, server totals and tracking start, unknown-member/empty-guild zeroes, voice join/leave/move, AFK exclusion, bot exclusion, five-minute heartbeat, crash reconciliation (stale session closed at last heartbeat, still-in-voice session reopened, new voice members picked up, AFK/bots skipped), graceful `finishAllVoiceSessions`, formatting helpers, `/top` (slash/prefix, medals, limits, empty state, window-empty hint, invalid option), `/topchannels` (limit, deleted-channel label, invalid option), `/compare` (slash/prefix, window, same-member/unknown/missing refusals, quiet window), `/serverstats` (totals, top member/channel, tracking date, empty state), no-ping payloads, command metadata, and the 35-command/8-event loader surface.
 - Moderation integration test with a temp DB and fake guild/member/role/channel objects (131 checks): duration parsing and formatting, mute-role creation (created once, stored, overwrite on every channel, reused, existing role adopted and configured once, new-channel rule), mute (timed, indefinite, prefix parsing, bad duration, self/Administrator/hierarchy refusals, already-muted timer replacement), unmute (role + timer removal, free member), timeout (explicit, default, over 28d, invalid), untimeout, kick (success, missing bot permission, higher target), ban (permanent, timed expiry, owner refusal, non-member by raw id), unban (ban + expiry removal, not banned, raw id), the expiry scheduler (expired mute, expired ban, member who left), permission grants (add/duplicate/list/match/remove, `run-command` bypass and revoke), `/perm grant|revoke|list` guards (self-grant, no-permission command), profile commands (server avatar preference, missing banner, other server by name, unknown server), and the three new tables.
 - Exile integration test on a temp DB with fake guild/channel/member objects (224 checks): the five tables and the partial unique index, level normalization (`main`/`M`/`0`/`none`, 1–10, 11 and words refused), level↔role mapping with the one-role-per-level rule, exception replace/add/remove and deleted-channel cleanup, log-channel roundtrip, setup markers (including clearing), active exile create/update/release with re-exile after release; role guards (`@everyone`, managed, Administrator, above the bot, missing Manage Roles) and member guards (owner, bot, Administrator, higher role, self); `reconcileRole` (exception allowed, channels and categories denied, exception category neutralized, threads skipped, idempotent second run, failed channels reported), `applyCreationRules` (new channel hidden, new exception allowed, parent category cleared), `channelCreate`/`channelDelete` events, and the full command surface: setup (prefix and slash, exception replacement, unknown channel, admin-role refusal, Manage Server guard), role set/clear/list (one-level-per-role, unconfigured warning, invalid level, unknown role, slash), exile (prefix level+reason parsing, slash, same-level idempotence, level change removes the old role, the fixed all-access role removed and re-removed, restored after a failed assignment, unmanageable access role refuses the exile, owner/admin/bot/higher refusals, invalid level, unmapped level, unconfigured role, failed role add, audit entries), release (role removal, all-access role restored, record release, stale-role cleanup with access restore, a non-exiled member is left alone, stuck role keeps the record active), list (empty, truncation, active-only, guard), log (set/off, unknown, unwritable, slash), automatic release on `guildMemberRemove`, and every slash schema.
 

@@ -5,6 +5,7 @@ import { parseArgs } from '../lib/parse-args.js';
 import { runCommand } from '../lib/run-command.js';
 import { getAlias } from '../services/alias-store.js';
 import { runAliasCommand } from '../services/alias-runner.js';
+import { recordMessage } from '../services/activity-store.js';
 import { handleKeywordAlerts } from '../services/watch.js';
 
 const logger = createLogger('prefix');
@@ -19,6 +20,23 @@ export default {
   async execute(message, client) {
     if (!message.inGuild()) return;
     if (message.author.bot) return;
+
+    // Activity stats count every human message, including commands. Threads are
+    // folded into their parent channel so the channel leaderboard stays useful.
+    if (!message.system) {
+      try {
+        const parentId = message.channel?.isThread?.() ? message.channel.parentId : null;
+
+        recordMessage({
+          guildId: message.guildId,
+          userId: message.author.id,
+          channelId: parentId ?? message.channelId,
+          at: message.createdTimestamp,
+        });
+      } catch (error) {
+        logger.error('Activity tracking failed', error);
+      }
+    }
 
     const usedPrefix = resolvePrefix(message.content, client);
 

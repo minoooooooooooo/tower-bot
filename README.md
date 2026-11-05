@@ -67,6 +67,10 @@ Both run `src/boot.js`, which checks the Node version before loading the bot and
 | `/botinfo` | `:-info`, `:-stats` | Uptime, servers, memory, versions |
 | `/color [primary] [secondary]` | `:-colour` | Recolor or clear the highest role that only you have |
 | `/colors` | `:-colours`, `:-palette` | List every color name in Arabic and English |
+| `/top [messages\|voice] [all\|7d\|30d] [limit]` | `:-leaderboard`, `:-ranking`, `:-rank` | Rank members by messages or voice time |
+| `/topchannels [all\|7d\|30d] [limit]` | `:-channels`, `:-top-channels` | Rank text channels by messages sent |
+| `/compare <@member> <@member> [all\|7d\|30d]` | `:-versus`, `:-vs` | Compare two members’ messages and voice time |
+| `/serverstats` | `:-activity`, `:-serveractivity`, `:-sstats` | Server activity totals, top member and top channel |
 | `/avatar [user]` | `:-av`, `:-pfp` | Show a member's global and per-server avatar |
 | `/banner [user]` | `:-userbanner` | Show a member's profile banner |
 | `/server-avatar [server]` | `:-serverav`, `:-servericon`, `:-sicon` | Show a server icon, including another server the bot is in |
@@ -102,6 +106,18 @@ Both run `src/boot.js`, which checks the Node version before loading the bot and
 - `/banner user:@member` fetches the user so the banner is current; if they have none the reply says so.
 - `/server-avatar server:<id or exact name>` and `/server-banner ...` default to the current server. Another server can only be shown if **the bot is already in it** — Discord does not expose private servers to outsiders.
 - Prefix forms accept a mention, an id, or a server name: `:-avatar @member`, `:-server-banner 123456789012345678`.
+
+## Activity stats
+
+The bot counts **messages** and **voice time** per member and per channel, then answers `/top`, `/topchannels`, `/compare` and `/serverstats`.
+
+- **Tracking starts when the bot first sees activity.** There is no backfill, so the first days are incomplete; `/serverstats` shows the exact start date.
+- **Counted:** every human message (commands included) and time spent in a voice channel. Bots are ignored, and the server's **AFK channel** never counts.
+- **Threads** count toward their parent text channel, so a busy thread does not hide the channel that spawned it.
+- **Windows** are `all` (default), `7d` and `30d`. Days are bucketed in the bot's `TIMEZONE`. `:-top` also accepts the shorter words `week` and `month`, and Arabic `رسائل`/`صوت`/`اسبوع`/`شهر`.
+- **Voice sessions survive restarts.** A graceful shutdown closes them; after a crash they are closed at the last five-minute heartbeat, so at most five minutes can be overcounted. Downtime while the bot is offline is not counted.
+- The numbers live only in the server's own SQLite file (`data/bot.db`). There is no external service and no per-member profile card yet.
+- `/top` and `/topchannels` show the top 10 by default (max 25); `/compare` shows messages, voice time and last activity side by side.
 
 ## Moderation
 
