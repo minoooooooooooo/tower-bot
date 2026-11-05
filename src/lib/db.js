@@ -286,8 +286,8 @@ const SCHEMA = `
   CREATE INDEX IF NOT EXISTS idx_moderation_expiries_due
     ON moderation_expiries (expires_at);
 
-  -- Activity totals per member. Messages and voice time are counted from the
-  -- moment the bot first sees the server; there is no backfill.
+  -- Activity totals per member. Live tracking starts when the bot first sees
+  -- the server; older messages can be imported once with /backfill.
   CREATE TABLE IF NOT EXISTS activity_members (
     guild_id         TEXT    NOT NULL,
     user_id          TEXT    NOT NULL,
@@ -354,11 +354,30 @@ const SCHEMA = `
   );
 
   -- When tracking started, so the commands can say how complete the numbers
-  -- are instead of implying they cover the server's whole history.
+  -- are instead of implying they cover the server's whole history. messages_since
+  -- moves back when older history is imported; voice_since stays at the live
+  -- start because Discord cannot replay voice sessions.
   CREATE TABLE IF NOT EXISTS activity_meta (
-    guild_id      TEXT PRIMARY KEY,
+    guild_id       TEXT PRIMARY KEY,
     tracking_since INTEGER NOT NULL,
-    updated_at    INTEGER NOT NULL
+    messages_since INTEGER,
+    voice_since    INTEGER,
+    updated_at     INTEGER NOT NULL
+  );
+
+  -- Resumable message backfill. One row per channel, with the oldest message id
+  -- fetched so far. A restart resumes from the cursor instead of re-reading the
+  -- whole channel, and the counters let /backfill status say how far it got.
+  CREATE TABLE IF NOT EXISTS activity_backfill (
+    guild_id   TEXT    NOT NULL,
+    channel_id TEXT    NOT NULL,
+    cursor_id  TEXT,
+    oldest_at  INTEGER,
+    done       INTEGER NOT NULL DEFAULT 0,
+    fetched    INTEGER NOT NULL DEFAULT 0,
+    error      TEXT,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (guild_id, channel_id)
   );
 `;
 
@@ -370,6 +389,8 @@ const COLUMN_MIGRATIONS = [
   ['guild_settings', 'birthday_gif_url', 'TEXT'],
   ['birthdays', 'timezone', 'TEXT'],
   ['welcome_settings', 'gif_url', 'TEXT'],
+  ['activity_meta', 'messages_since', 'INTEGER'],
+  ['activity_meta', 'voice_since', 'INTEGER'],
 ];
 
 function applyMigrations(db) {
@@ -478,6 +499,26 @@ function migrateLegacyWelcomeGifs(db) {
 }
 
 /**
+ * Older builds only stored `tracking_since`. Seed the two coverage dates so
+ * commands can read them unconditionally; a completed backfill moves
+ * `messages_since` further back later.
+ */
+function migrateActivitySince(db) {
+  const result = db
+    .prepare(
+      `UPDATE activity_meta
+       SET messages_since = COALESCE(messages_since, tracking_since),
+           voice_since = COALESCE(voice_since, tracking_since)
+       WHERE messages_since IS NULL OR voice_since IS NULL`,
+    )
+    .run();
+
+  if (result.changes > 0) {
+    logger.info(`Migrated SQLite: seeded activity coverage dates (${result.changes} guild(s))`);
+  }
+}
+
+/**
  * Lazily opens the SQLite database and applies the schema.
  * Uses Node's built-in SQLite so there is no native build step.
  */
@@ -493,6 +534,7 @@ export function getDb() {
   database.exec('PRAGMA busy_timeout = 5000');
   database.exec(SCHEMA);
   applyMigrations(database);
+  migrateActivitySince(database);
   migrateWatchTerms(database);
   migrateLegacyWelcomeGifs(database);
 

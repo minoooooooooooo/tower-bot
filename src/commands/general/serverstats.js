@@ -7,11 +7,12 @@ import {
 import { embed, warningEmbed } from '../../lib/embeds.js';
 import {
   activityDay,
+  messagesSince,
   periodStart,
   serverTotals,
   topChannels,
   topMembers,
-  trackingSince,
+  voiceSince,
 } from '../../services/activity-store.js';
 
 function channelLabel(guild, id) {
@@ -47,7 +48,7 @@ export default {
           warningEmbed(
             'No activity yet',
             'I start counting the moment I see a message or someone joins voice. ' +
-              'There is no backfill, so give it a little time and try again.',
+              'Run `/backfill start` to import older messages.',
           ),
         ],
       });
@@ -61,7 +62,6 @@ export default {
       topMembers(ctx.guildId, { metric: 'voice', limit: 1 })[0] ??
       null;
     const topChannel = topChannels(ctx.guildId, { limit: 1 })[0] ?? null;
-    const since = trackingSince(ctx.guildId);
     const memberCount = ctx.guild.memberCount ?? ctx.guild.members?.cache?.size ?? 0;
 
     await ctx.reply({
@@ -81,8 +81,13 @@ export default {
               inline: true,
             },
             {
-              name: 'Tracking since',
-              value: formatDate(since),
+              name: 'Messages since',
+              value: formatDate(messagesSince(ctx.guildId)),
+              inline: true,
+            },
+            {
+              name: 'Voice since',
+              value: formatDate(voiceSince(ctx.guildId)),
               inline: true,
             },
             {
@@ -116,7 +121,7 @@ export default {
               inline: false,
             },
           ],
-          footer: 'Counted while the bot is online',
+          footer: 'Messages include imported history · voice counted live',
         }),
       ],
       allowedMentions: { parse: [] },

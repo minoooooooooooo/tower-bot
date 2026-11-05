@@ -10,9 +10,10 @@ import {
 import { embed, warningEmbed } from '../../lib/embeds.js';
 import { normalizeForMatch } from '../../lib/text.js';
 import {
+  messagesSince,
   periodStart,
   topMembers,
-  trackingSince,
+  voiceSince,
 } from '../../services/activity-store.js';
 
 const METRICS = new Map([
@@ -152,7 +153,7 @@ export default {
             'No activity yet',
             since && anyTime.length > 0
               ? `Nothing in the ${formatPeriod(period).toLowerCase()}. Try \`${ctx.isSlash ? '/top period:All time' : ':-top all'}\` for the all-time ranking.`
-              : 'I count messages and voice time while I am online. Once people chat or join voice, the ranking appears here.',
+              : 'I count messages and voice time while I am online. Once people chat or join voice, the ranking appears here, and `/backfill start` imports older messages.',
           ),
         ],
         allowedMentions: { parse: [] },
@@ -167,13 +168,17 @@ export default {
       (row, index) =>
         `\u200E${rankBadge(index)} <@${row.userId}>\u200E — ${rowValue(row, metric)}`,
     );
+    const coverage =
+      metric === 'voice'
+        ? `voice since ${formatDate(voiceSince(ctx.guildId))}`
+        : `messages since ${formatDate(messagesSince(ctx.guildId))}`;
 
     await ctx.reply({
       embeds: [
         embed({
           title: `Most active members · ${metric === 'voice' ? 'voice time' : 'messages'}`,
           description: lines.join('\n'),
-          footer: `${formatPeriod(period)} · ${metric === 'voice' ? 'voice' : 'messages'} since ${formatDate(trackingSince(ctx.guildId))}`,
+          footer: `${formatPeriod(period)} · ${coverage}`,
           timestamp: false,
         }),
       ],

@@ -35,10 +35,10 @@ function transaction(fn) {
 
 function ensureMeta(db, guildId, at) {
   db.prepare(
-    `INSERT INTO activity_meta (guild_id, tracking_since, updated_at)
-     VALUES (?, ?, ?)
+    `INSERT INTO activity_meta (guild_id, tracking_since, messages_since, voice_since, updated_at)
+     VALUES (?, ?, ?, ?, ?)
      ON CONFLICT (guild_id) DO UPDATE SET updated_at = excluded.updated_at`,
-  ).run(guildId, at, at);
+  ).run(guildId, at, at, at, at);
 }
 
 /**
@@ -344,6 +344,27 @@ export function trackingSince(guildId) {
   );
 }
 
+function coverageDate(guildId, column) {
+  return (
+    getDb()
+      .prepare(
+        `SELECT COALESCE(${column}, tracking_since) AS value
+         FROM activity_meta WHERE guild_id = ?`,
+      )
+      .get(guildId)?.value ?? null
+  );
+}
+
+/** Earliest counted message, including imported history. */
+export function messagesSince(guildId) {
+  return coverageDate(guildId, 'messages_since');
+}
+
+/** Voice tracking cannot be replayed, so this stays at the live start. */
+export function voiceSince(guildId) {
+  return coverageDate(guildId, 'voice_since');
+}
+
 /** Totals for one channel, including voice time that the message leaderboard ignores. */
 export function channelStats(guildId, channelId) {
   const row = getDb()
@@ -406,5 +427,208 @@ export function serverTotals(guildId, since = null) {
     messages: members?.messages ?? 0,
     voiceSeconds: members?.voiceSeconds ?? 0,
     channels: channels?.channels ?? 0,
+  };
+}
+
+/**
+ * Folds one fetched page of older messages into the same totals, day buckets and
+ * channel rows the live tracker writes. Everything happens in one transaction
+ * together with the cursor advance, so a crash either keeps the page and the
+ * cursor together or repeats neither.
+ *
+ * `messages` is a plain array of `{ userId, at }`, already filtered to human,
+ * non-system messages older than the live tracking start.
+ */
+export function recordBackfillPage({
+  guildId,
+  channelId,
+  cursorId = null,
+  done = false,
+  messages = [],
+  at = Date.now(),
+}) {
+  if (!guildId || !channelId) return { messages: 0, oldestAt: null };
+
+  const byUser = new Map();
+  const byMemberDay = new Map();
+  const byChannelDay = new Map();
+  let channelMessages = 0;
+  let channelLast = 0;
+  let oldestAt = null;
+
+  for (const message of messages) {
+    if (!message?.userId || !message?.at) continue;
+
+    const time = message.at;
+    const day = activityDay(time);
+    const user = byUser.get(message.userId) ?? {
+      count: 0,
+      first: time,
+      last: time,
+    };
+
+    user.count += 1;
+    if (time < user.first) user.first = time;
+    if (time > user.last) user.last = time;
+    byUser.set(message.userId, user);
+
+    const memberDayKey = `${message.userId}\u0000${day}`;
+    byMemberDay.set(memberDayKey, (byMemberDay.get(memberDayKey) ?? 0) + 1);
+    byChannelDay.set(day, (byChannelDay.get(day) ?? 0) + 1);
+
+    channelMessages += 1;
+    if (time > channelLast) channelLast = time;
+    if (oldestAt === null || time < oldestAt) oldestAt = time;
+  }
+
+  transaction((db) => {
+    ensureMeta(db, guildId, at);
+
+    const memberStatement = db.prepare(
+      `INSERT INTO activity_members
+         (guild_id, user_id, messages, voice_seconds, first_message_at, last_message_at, last_active_at)
+       VALUES (?, ?, ?, 0, ?, ?, ?)
+       ON CONFLICT (guild_id, user_id) DO UPDATE SET
+         messages = messages + excluded.messages,
+         first_message_at = MIN(COALESCE(first_message_at, excluded.first_message_at), excluded.first_message_at),
+         last_message_at = MAX(COALESCE(last_message_at, 0), excluded.last_message_at),
+         last_active_at = MAX(COALESCE(last_active_at, 0), excluded.last_active_at)`,
+    );
+
+    for (const [userId, user] of byUser) {
+      memberStatement.run(guildId, userId, user.count, user.first, user.last, user.last);
+    }
+
+    const memberDayStatement = db.prepare(
+      `INSERT INTO activity_member_days (guild_id, user_id, day, messages, voice_seconds)
+       VALUES (?, ?, ?, ?, 0)
+       ON CONFLICT (guild_id, user_id, day) DO UPDATE SET
+         messages = messages + excluded.messages`,
+    );
+
+    for (const [key, count] of byMemberDay) {
+      const [userId, day] = key.split('\u0000');
+      memberDayStatement.run(guildId, userId, day, count);
+    }
+
+    if (channelMessages > 0) {
+      db.prepare(
+        `INSERT INTO activity_channels
+           (guild_id, channel_id, messages, voice_seconds, last_message_at)
+         VALUES (?, ?, ?, 0, ?)
+         ON CONFLICT (guild_id, channel_id) DO UPDATE SET
+           messages = messages + excluded.messages,
+           last_message_at = MAX(COALESCE(last_message_at, 0), excluded.last_message_at)`,
+      ).run(guildId, channelId, channelMessages, channelLast);
+
+      const channelDayStatement = db.prepare(
+        `INSERT INTO activity_channel_days (guild_id, channel_id, day, messages, voice_seconds)
+         VALUES (?, ?, ?, ?, 0)
+         ON CONFLICT (guild_id, channel_id, day) DO UPDATE SET
+           messages = messages + excluded.messages`,
+      );
+
+      for (const [day, count] of byChannelDay) {
+        channelDayStatement.run(guildId, channelId, day, count);
+      }
+
+      // The import reaches further back than the live window, so the reported
+      // message coverage has to move with it.
+      db.prepare(
+        `UPDATE activity_meta
+         SET messages_since = MIN(COALESCE(messages_since, ?), ?)
+         WHERE guild_id = ?`,
+      ).run(oldestAt, oldestAt, guildId);
+    }
+
+    db.prepare(
+      `INSERT INTO activity_backfill
+         (guild_id, channel_id, cursor_id, oldest_at, done, fetched, error, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, NULL, ?)
+       ON CONFLICT (guild_id, channel_id) DO UPDATE SET
+         cursor_id = COALESCE(excluded.cursor_id, activity_backfill.cursor_id),
+         oldest_at = CASE
+           WHEN excluded.oldest_at IS NULL THEN activity_backfill.oldest_at
+           WHEN activity_backfill.oldest_at IS NULL THEN excluded.oldest_at
+           ELSE MIN(activity_backfill.oldest_at, excluded.oldest_at)
+         END,
+         done = excluded.done,
+         fetched = activity_backfill.fetched + excluded.fetched,
+         error = NULL,
+         updated_at = excluded.updated_at`,
+    ).run(
+      guildId,
+      channelId,
+      cursorId,
+      oldestAt,
+      done ? 1 : 0,
+      channelMessages,
+      at,
+    );
+  });
+
+  return { messages: channelMessages, oldestAt };
+}
+
+export function backfillChannel(guildId, channelId) {
+  return (
+    getDb()
+      .prepare(
+        `SELECT cursor_id AS cursorId, oldest_at AS oldestAt, done, fetched, error
+         FROM activity_backfill
+         WHERE guild_id = ? AND channel_id = ?`,
+      )
+      .get(guildId, channelId) ?? null
+  );
+}
+
+export function markBackfillDone(guildId, channelId, at = Date.now()) {
+  getDb()
+    .prepare(
+      `INSERT INTO activity_backfill (guild_id, channel_id, done, fetched, updated_at)
+       VALUES (?, ?, 1, 0, ?)
+       ON CONFLICT (guild_id, channel_id) DO UPDATE SET
+         done = 1,
+         error = NULL,
+         updated_at = excluded.updated_at`,
+    )
+    .run(guildId, channelId, at);
+}
+
+export function markBackfillError(guildId, channelId, message, at = Date.now()) {
+  getDb()
+    .prepare(
+      `INSERT INTO activity_backfill (guild_id, channel_id, done, fetched, error, updated_at)
+       VALUES (?, ?, 0, 0, ?, ?)
+       ON CONFLICT (guild_id, channel_id) DO UPDATE SET
+         done = 0,
+         error = excluded.error,
+         updated_at = excluded.updated_at`,
+    )
+    .run(guildId, channelId, String(message ?? 'unknown error').slice(0, 500), at);
+}
+
+/** Progress for `/backfill status`; survives restarts because it is in SQLite. */
+export function backfillStats(guildId) {
+  const row = getDb()
+    .prepare(
+      `SELECT COUNT(*) AS channels,
+              COALESCE(SUM(CASE WHEN done = 1 THEN 1 ELSE 0 END), 0) AS done,
+              COALESCE(SUM(fetched), 0) AS fetched,
+              COALESCE(SUM(CASE WHEN error IS NOT NULL THEN 1 ELSE 0 END), 0) AS errors,
+              MIN(oldest_at) AS oldestAt,
+              MAX(updated_at) AS updatedAt
+       FROM activity_backfill
+       WHERE guild_id = ?`,
+    )
+    .get(guildId);
+
+  return {
+    channels: row?.channels ?? 0,
+    done: row?.done ?? 0,
+    fetched: row?.fetched ?? 0,
+    errors: row?.errors ?? 0,
+    oldestAt: row?.oldestAt ?? null,
+    updatedAt: row?.updatedAt ?? null,
   };
 }

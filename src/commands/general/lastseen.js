@@ -7,7 +7,7 @@ import {
 } from '../../lib/activity-format.js';
 import { embed, warningEmbed } from '../../lib/embeds.js';
 import { resolveUser } from '../../lib/resolve.js';
-import { memberStats, trackingSince } from '../../services/activity-store.js';
+import { memberStats, messagesSince, voiceSince } from '../../services/activity-store.js';
 
 async function resolveTarget(ctx, client) {
   if (ctx.isSlash) {
@@ -130,7 +130,9 @@ export default {
               inline: true,
             },
           ],
-          footer: `All time · tracking since ${formatDate(trackingSince(ctx.guildId))}`,
+          footer:
+            `Messages since ${formatDate(messagesSince(ctx.guildId))}` +
+            ` · voice since ${formatDate(voiceSince(ctx.guildId))}`,
         }),
       ],
       allowedMentions: { parse: [] },

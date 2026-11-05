@@ -5,6 +5,7 @@ import { loadCommands, loadEvents } from './lib/loaders.js';
 import { createLogger } from './lib/logger.js';
 import { reportDiscordReachability } from './lib/net-check.js';
 import { stopActivityTracking } from './services/activity.js';
+import { stopBackfill } from './services/activity-backfill.js';
 
 const logger = createLogger('bot');
 
@@ -62,6 +63,12 @@ async function shutdown(signal) {
     await client.destroy();
   } catch {
     // Already disconnected.
+  }
+
+  try {
+    stopBackfill();
+  } catch {
+    // The import is already stopping.
   }
 
   try {

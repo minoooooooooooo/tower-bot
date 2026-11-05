@@ -9,9 +9,9 @@ import {
 import { embed, warningEmbed } from '../../lib/embeds.js';
 import { normalizeForMatch } from '../../lib/text.js';
 import {
+  messagesSince,
   periodStart,
   topChannels,
-  trackingSince,
 } from '../../services/activity-store.js';
 
 const PERIODS = new Map([
@@ -117,7 +117,7 @@ export default {
             'No channel activity yet',
             since && anyTime.length > 0
               ? `Nothing in the ${formatPeriod(period).toLowerCase()}. Try \`${ctx.isSlash ? '/topchannels period:All time' : ':-topchannels all'}\` for the all-time list.`
-              : 'Channels appear here once people send messages while I am online. Threads count toward their parent channel.',
+              : 'Channels appear here once people send messages while I am online. Threads count toward their parent channel, and `/backfill start` imports older messages.',
           ),
         ],
       });
@@ -136,7 +136,7 @@ export default {
         embed({
           title: 'Most active channels · messages',
           description: lines.join('\n'),
-          footer: `${formatPeriod(period)} · messages since ${formatDate(trackingSince(ctx.guildId))}`,
+          footer: `${formatPeriod(period)} · messages since ${formatDate(messagesSince(ctx.guildId))}`,
           timestamp: false,
         }),
       ],
