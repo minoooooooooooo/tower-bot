@@ -1,10 +1,10 @@
 import { InteractionContextType, SlashCommandBuilder } from 'discord.js';
 import {
   PERIOD_CHOICES,
+  formatDate,
   formatNumber,
   formatPeriod,
-  medalFor,
-  shortDate,
+  rankBadge,
 } from '../../lib/activity-format.js';
 import { embed, warningEmbed } from '../../lib/embeds.js';
 import { normalizeForMatch } from '../../lib/text.js';
@@ -124,9 +124,11 @@ export default {
       return;
     }
 
+    // Same LTR pin as `/top`: channel names and Arabic categories must not
+    // reorder the rank column.
     const lines = rows.map(
       (row, index) =>
-        `${medalFor(index)} ${channelLabel(ctx.guild, row.channelId)} — **${formatNumber(row.messages)}** messages`,
+        `\u200E${rankBadge(index)} ${channelLabel(ctx.guild, row.channelId)}\u200E — **${formatNumber(row.messages)}** messages`,
     );
 
     await ctx.reply({
@@ -134,7 +136,8 @@ export default {
         embed({
           title: 'Most active channels · messages',
           description: lines.join('\n'),
-          footer: `${formatPeriod(period)} · tracking since ${shortDate(trackingSince(ctx.guildId))}`,
+          footer: `${formatPeriod(period)} · messages since ${formatDate(trackingSince(ctx.guildId))}`,
+          timestamp: false,
         }),
       ],
       allowedMentions: { parse: [] },

@@ -1,8 +1,8 @@
 import { InteractionContextType, SlashCommandBuilder } from 'discord.js';
 import {
+  formatDate,
   formatNumber,
   formatVoiceTime,
-  shortDate,
 } from '../../lib/activity-format.js';
 import { embed, warningEmbed } from '../../lib/embeds.js';
 import {
@@ -21,7 +21,7 @@ function channelLabel(guild, id) {
 function memberLine(row) {
   if (!row) return 'No messages yet';
 
-  return `<@${row.userId}> — **${formatNumber(row.messages)}** messages · **${formatVoiceTime(row.voiceSeconds)}** in voice`;
+  return `\u200E<@${row.userId}>\u200E — **${formatNumber(row.messages)}** messages · **${formatVoiceTime(row.voiceSeconds)}** in voice`;
 }
 
 export default {
@@ -82,7 +82,7 @@ export default {
             },
             {
               name: 'Tracking since',
-              value: shortDate(since),
+              value: formatDate(since),
               inline: true,
             },
             {
@@ -111,7 +111,7 @@ export default {
             {
               name: 'Most active channel',
               value: topChannel
-                ? `${channelLabel(ctx.guild, topChannel.channelId)} — **${formatNumber(topChannel.messages)}** messages`
+                ? `\u200E${channelLabel(ctx.guild, topChannel.channelId)}\u200E — **${formatNumber(topChannel.messages)}** messages`
                 : 'No messages yet',
               inline: false,
             },

@@ -118,6 +118,7 @@ The bot counts **messages** and **voice time** per member and per channel, then 
 - **Voice sessions survive restarts.** A graceful shutdown closes them; after a crash they are closed at the last five-minute heartbeat, so at most five minutes can be overcounted. Downtime while the bot is offline is not counted.
 - The numbers live only in the server's own SQLite file (`data/bot.db`). There is no external service and no per-member profile card yet.
 - `/top` and `/topchannels` show the top 10 by default (max 25); `/compare` shows messages, voice time and last activity side by side.
+- **Readable even with Arabic names.** Rankings use a fixed `01` rank column and left-to-right pins, so a display name cannot reorder the rows; the footer dates the tracking start instead of printing a raw timestamp.
 
 ## Moderation
 

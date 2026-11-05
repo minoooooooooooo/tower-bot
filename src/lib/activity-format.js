@@ -1,3 +1,6 @@
+import { config } from '../config.js';
+import { formatListDate, zonedDate } from './dates.js';
+
 export const PERIOD_CHOICES = [
   { name: 'All time', value: 'all' },
   { name: 'Last 7 days', value: '7d' },
@@ -31,15 +34,20 @@ export function formatPeriod(period) {
   return PERIOD_LABELS[period] ?? PERIOD_LABELS.all;
 }
 
-export function medalFor(index) {
-  return ['🥇', '🥈', '🥉'][index] ?? `**${index + 1}.**`;
+/** "05 Nov 2026" in the bot's time zone. Safe inside a footer, unlike `<t:…>`. */
+export function formatDate(ms) {
+  if (!ms) return 'unknown';
+
+  const { year, month, day } = zonedDate(new Date(ms), config.timezone);
+  return formatListDate(year, month, day);
+}
+
+/** A fixed-width rank column: `01`, `02`, … `10`. */
+export function rankBadge(index) {
+  return `\`${String(index + 1).padStart(2, '0')}\``;
 }
 
 /** Discord relative timestamp, or "Never" when there is no recorded time. */
 export function relativeTime(ms) {
   return ms ? `<t:${Math.floor(ms / 1000)}:R>` : 'Never';
-}
-
-export function shortDate(ms) {
-  return ms ? `<t:${Math.floor(ms / 1000)}:D>` : 'Unknown';
 }

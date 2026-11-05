@@ -149,11 +149,13 @@ export default {
     const leads = [];
 
     if (aMessages !== bMessages) {
-      leads.push(`${aMessages > bMessages ? aTag : bTag} leads in messages`);
+      leads.push(
+        `\u200E${aMessages > bMessages ? aTag : bTag} leads in messages`,
+      );
     }
 
     if (aVoice !== bVoice) {
-      leads.push(`${aVoice > bVoice ? aTag : bTag} leads in voice time`);
+      leads.push(`\u200E${aVoice > bVoice ? aTag : bTag} leads in voice time`);
     }
 
     await ctx.reply({
@@ -161,23 +163,23 @@ export default {
         embed({
           title: 'Member comparison',
           description: [
-            `${aTag} vs ${bTag}`,
+            `\u200E${aTag} vs ${bTag}`,
             leads.length ? leads.join(' · ') : 'Dead heat so far.',
           ].join('\n'),
           fields: [
             {
               name: 'Messages',
-              value: `${aTag}: **${formatNumber(aMessages)}**\n${bTag}: **${formatNumber(bMessages)}**`,
+              value: `\u200E${aTag}: **${formatNumber(aMessages)}**\n\u200E${bTag}: **${formatNumber(bMessages)}**`,
               inline: true,
             },
             {
               name: 'Voice time',
-              value: `${aTag}: **${formatVoiceTime(aVoice)}**\n${bTag}: **${formatVoiceTime(bVoice)}**`,
+              value: `\u200E${aTag}: **${formatVoiceTime(aVoice)}**\n\u200E${bTag}: **${formatVoiceTime(bVoice)}**`,
               inline: true,
             },
             {
               name: 'Last active',
-              value: `${aTag}: ${relativeTime(a.lastActiveAt)}\n${bTag}: ${relativeTime(b.lastActiveAt)}`,
+              value: `\u200E${aTag}: ${relativeTime(a.lastActiveAt)}\n\u200E${bTag}: ${relativeTime(b.lastActiveAt)}`,
               inline: false,
             },
           ],

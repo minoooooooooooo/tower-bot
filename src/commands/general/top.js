@@ -1,11 +1,11 @@
 import { InteractionContextType, SlashCommandBuilder } from 'discord.js';
 import {
   PERIOD_CHOICES,
+  formatDate,
   formatNumber,
   formatPeriod,
   formatVoiceTime,
-  medalFor,
-  shortDate,
+  rankBadge,
 } from '../../lib/activity-format.js';
 import { embed, warningEmbed } from '../../lib/embeds.js';
 import { normalizeForMatch } from '../../lib/text.js';
@@ -160,8 +160,12 @@ export default {
       return;
     }
 
+    // Leading LRM pins the paragraph to LTR so an Arabic display name cannot
+    // flip the rank column to the right edge; the LRM after the mention keeps
+    // the dash and the value in the same visual order for every name.
     const lines = rows.map(
-      (row, index) => `${medalFor(index)} <@${row.userId}> — ${rowValue(row, metric)}`,
+      (row, index) =>
+        `\u200E${rankBadge(index)} <@${row.userId}>\u200E — ${rowValue(row, metric)}`,
     );
 
     await ctx.reply({
@@ -169,7 +173,8 @@ export default {
         embed({
           title: `Most active members · ${metric === 'voice' ? 'voice time' : 'messages'}`,
           description: lines.join('\n'),
-          footer: `${formatPeriod(period)} · tracking since ${shortDate(trackingSince(ctx.guildId))}`,
+          footer: `${formatPeriod(period)} · ${metric === 'voice' ? 'voice' : 'messages'} since ${formatDate(trackingSince(ctx.guildId))}`,
+          timestamp: false,
         }),
       ],
       allowedMentions: { parse: [] },
