@@ -71,6 +71,7 @@ Both run `src/boot.js`, which checks the Node version before loading the bot and
 | `/topchannels [all\|7d\|30d] [limit]` | `:-channels`, `:-top-channels` | Rank text channels by messages sent |
 | `/compare <@member> <@member> [all\|7d\|30d]` | `:-versus`, `:-vs` | Compare two members’ messages and voice time |
 | `/serverstats` | `:-activity`, `:-serveractivity`, `:-sstats` | Server activity totals, top member and top channel |
+| `/lastseen [user]` | `:-lastactive`, `:-lastactivity`, `:-seen`, `:-last` | When a member was last active, with first message and join date |
 | `/avatar [user]` | `:-av`, `:-pfp` | Show a member's global and per-server avatar |
 | `/banner [user]` | `:-userbanner` | Show a member's profile banner |
 | `/server-avatar [server]` | `:-serverav`, `:-servericon`, `:-sicon` | Show a server icon, including another server the bot is in |
@@ -109,7 +110,7 @@ Both run `src/boot.js`, which checks the Node version before loading the bot and
 
 ## Activity stats
 
-The bot counts **messages** and **voice time** per member and per channel, then answers `/top`, `/topchannels`, `/compare` and `/serverstats`.
+The bot counts **messages** and **voice time** per member and per channel, then answers `/top`, `/topchannels`, `/compare`, `/serverstats` and `/lastseen`.
 
 - **Tracking starts when the bot first sees activity.** There is no backfill, so the first days are incomplete; `/serverstats` shows the exact start date.
 - **Counted:** every human message (commands included) and time spent in a voice channel. Bots are ignored, and the server's **AFK channel** never counts.
@@ -119,6 +120,7 @@ The bot counts **messages** and **voice time** per member and per channel, then 
 - The numbers live only in the server's own SQLite file (`data/bot.db`). There is no external service and no per-member profile card yet.
 - `/top` and `/topchannels` show the top 10 by default (max 25); `/compare` shows messages, voice time and last activity side by side.
 - **Readable even with Arabic names.** Rankings use a fixed `01` rank column and left-to-right pins, so a display name cannot reorder the rows; the footer dates the tracking start instead of printing a raw timestamp.
+- **`/lastseen [user]`** shows one member's last activity, last message, message count, voice time, first message and join date. It defaults to you when no member is given.
 
 ## Moderation
 

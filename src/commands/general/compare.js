@@ -52,6 +52,23 @@ async function resolveCompared(ctx, client, token, option) {
   return resolveUser(client, token, ctx.message);
 }
 
+/**
+ * One stacked card per member. The old side-by-side fields squeezed two names
+ * and four numbers into half a width each; a full-width field per member keeps
+ * the numbers scannable and gives long Arabic names room to breathe.
+ */
+function memberField(tag, messages, voiceSeconds, lastActiveAt) {
+  return {
+    name: `\u200E${tag}`,
+    value: [
+      `**Messages:** ${formatNumber(messages)}`,
+      `**Voice time:** ${formatVoiceTime(voiceSeconds)}`,
+      `**Last active:** ${relativeTime(lastActiveAt)}`,
+    ].join('\n'),
+    inline: false,
+  };
+}
+
 export default {
   data: new SlashCommandBuilder()
     .setName('compare')
@@ -167,21 +184,8 @@ export default {
             leads.length ? leads.join(' · ') : 'Dead heat so far.',
           ].join('\n'),
           fields: [
-            {
-              name: 'Messages',
-              value: `\u200E${aTag}: **${formatNumber(aMessages)}**\n\u200E${bTag}: **${formatNumber(bMessages)}**`,
-              inline: true,
-            },
-            {
-              name: 'Voice time',
-              value: `\u200E${aTag}: **${formatVoiceTime(aVoice)}**\n\u200E${bTag}: **${formatVoiceTime(bVoice)}**`,
-              inline: true,
-            },
-            {
-              name: 'Last active',
-              value: `\u200E${aTag}: ${relativeTime(a.lastActiveAt)}\n\u200E${bTag}: ${relativeTime(b.lastActiveAt)}`,
-              inline: false,
-            },
+            memberField(aTag, aMessages, aVoice, a.lastActiveAt),
+            memberField(bTag, bMessages, bVoice, b.lastActiveAt),
           ],
           footer: period
             ? `${formatPeriod(period)} · last active is all-time`
