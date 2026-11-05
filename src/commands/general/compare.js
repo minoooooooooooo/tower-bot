@@ -53,13 +53,12 @@ async function resolveCompared(ctx, client, token, option) {
 }
 
 /**
- * One stacked card per member. The old side-by-side fields squeezed two names
- * and four numbers into half a width each; a full-width field per member keeps
- * the numbers scannable and gives long Arabic names room to breathe.
+ * One stacked card per member. Discord does not resolve mentions inside field
+ * names, so the header uses the display name and the values carry the numbers.
  */
-function memberField(tag, messages, voiceSeconds, lastActiveAt) {
+function memberField(name, messages, voiceSeconds, lastActiveAt) {
   return {
-    name: `\u200E${tag}`,
+    name: `\u200E${name}`,
     value: [
       `**Messages:** ${formatNumber(messages)}`,
       `**Voice time:** ${formatVoiceTime(voiceSeconds)}`,
@@ -67,6 +66,14 @@ function memberField(tag, messages, voiceSeconds, lastActiveAt) {
     ].join('\n'),
     inline: false,
   };
+}
+
+function memberName(ctx, user, option) {
+  const member = ctx.isSlash
+    ? ctx.getMember(option)
+    : ctx.guild.members?.cache?.get(user.id);
+
+  return member?.displayName ?? user.globalName ?? user.username ?? String(user.id);
 }
 
 export default {
@@ -163,29 +170,28 @@ export default {
 
     const aTag = `<@${first.id}>`;
     const bTag = `<@${second.id}>`;
+    const aName = memberName(ctx, first, 'first');
+    const bName = memberName(ctx, second, 'second');
     const leads = [];
 
     if (aMessages !== bMessages) {
       leads.push(
-        `\u200E${aMessages > bMessages ? aTag : bTag} leads in messages`,
+        `Leads in messages: \u200E${aMessages > bMessages ? aTag : bTag}`,
       );
     }
 
     if (aVoice !== bVoice) {
-      leads.push(`\u200E${aVoice > bVoice ? aTag : bTag} leads in voice time`);
+      leads.push(`Leads in voice time: \u200E${aVoice > bVoice ? aTag : bTag}`);
     }
 
     await ctx.reply({
       embeds: [
         embed({
           title: 'Member comparison',
-          description: [
-            `\u200E${aTag} vs ${bTag}`,
-            leads.length ? leads.join(' · ') : 'Dead heat so far.',
-          ].join('\n'),
+          description: leads.length ? leads.join('\n') : 'Dead heat so far.',
           fields: [
-            memberField(aTag, aMessages, aVoice, a.lastActiveAt),
-            memberField(bTag, bMessages, bVoice, b.lastActiveAt),
+            memberField(aName, aMessages, aVoice, a.lastActiveAt),
+            memberField(bName, bMessages, bVoice, b.lastActiveAt),
           ],
           footer: period
             ? `${formatPeriod(period)} · last active is all-time`
