@@ -6,14 +6,18 @@ import {
 } from 'discord.js';
 import { config } from '../../config.js';
 import { COLORS, embed, errorEmbed, successEmbed } from '../../lib/embeds.js';
+import { resolveChannel } from '../../lib/resolve.js';
 import {
   MAX_ALIASES,
   MAX_TRIGGER_LENGTH,
+  addAliasChannel,
+  clearAliasChannels,
   countAliases,
   getAlias,
   listAliases,
   normalizeTrigger,
   removeAlias,
+  removeAliasChannel,
   saveAlias,
 } from '../../services/alias-store.js';
 
@@ -105,6 +109,19 @@ function usageFor(alias, command) {
   const usage = command.usage ?? command.name;
   const rest = usage.startsWith(command.name) ? usage.slice(command.name.length) : usage;
   return `${alias}${rest}`.replace(/\s+/g, ' ').trim();
+}
+
+function channelName(guild, channelId) {
+  const channel = guild?.channels?.cache?.get?.(channelId);
+  return channel?.name ? `#${channel.name}` : `\`${channelId}\``;
+}
+
+/** "only #general, #bot-spam" / "everywhere except #general". */
+function ruleSummary(alias, guild) {
+  if (!alias?.channelMode || !alias.channels?.length) return 'everywhere';
+
+  const names = alias.channels.map((id) => channelName(guild, id)).join(', ');
+  return alias.channelMode === 'allow' ? `only in ${names}` : `everywhere except ${names}`;
 }
 
 function describeAdd({ alias, command, updated }) {
@@ -261,6 +278,172 @@ async function handleRemove(ctx) {
   );
 }
 
+async function handleChannel(ctx) {
+  if (!(await requireManageGuild(ctx))) return;
+
+  const triggerInput = ctx.isSlash ? ctx.getString('trigger') : ctx.args[1];
+  const alias = getAlias(ctx.guildId, triggerInput);
+
+  if (!alias) {
+    await ctx.reply(
+      ephemeral({
+        embeds: [
+          errorEmbed(
+            'No such alias',
+            triggerInput
+              ? `Nothing is mapped to \`${triggerInput}\`. Create it with \`${config.prefix}alias add ${triggerInput} clear\`.`
+              : `Say which alias to restrict, for example \`${config.prefix}alias channel مسح allow #general\`.`,
+          ),
+        ],
+      }),
+    );
+    return;
+  }
+
+  const action = String(
+    (ctx.isSlash ? ctx.getString('action') : ctx.args[2]) ?? 'list',
+  ).toLowerCase();
+
+  if (action === 'list' || action === 'show') {
+    const description =
+      alias.channelMode && alias.channels.length
+        ? `**${alias.label}** works ${ruleSummary(alias, ctx.guild)}.`
+        : `**${alias.label}** works in every channel.`;
+
+    await ctx.reply(
+      ephemeral({
+        embeds: [
+          embed({
+            title: `Alias channels · ${alias.label}`,
+            description: [
+              description,
+              '',
+              `\`${config.prefix}alias channel ${alias.label} allow #channel\` — only that channel (add more to extend the list)`,
+              `\`${config.prefix}alias channel ${alias.label} deny #channel\` — everywhere except that channel`,
+              `\`${config.prefix}alias channel ${alias.label} remove #channel\` — drop one channel`,
+              `\`${config.prefix}alias channel ${alias.label} clear\` — remove all rules`,
+            ].join('\n'),
+            footer: 'Threads inherit their parent channel; channels inherit their category',
+          }),
+        ],
+      }),
+    );
+    return;
+  }
+
+  if (action === 'clear' || action === 'everywhere' || action === 'reset') {
+    clearAliasChannels(ctx.guildId, alias.trigger);
+
+    await ctx.reply(
+      ephemeral({
+        embeds: [
+          successEmbed(
+            'Alias channels cleared',
+            `**${alias.label}** now works in every channel again.`,
+          ),
+        ],
+      }),
+    );
+    return;
+  }
+
+  if (!['allow', 'deny', 'remove'].includes(action)) {
+    await ctx.reply(
+      ephemeral({
+        embeds: [
+          errorEmbed(
+            'Unknown action',
+            `Use \`allow\`, \`deny\`, \`remove\`, \`clear\` or \`list\`.\n` +
+              `Example: \`${config.prefix}alias channel ${alias.label} allow #general\`.`,
+          ),
+        ],
+      }),
+    );
+    return;
+  }
+
+  const channelInput = ctx.isSlash ? ctx.getChannel('channel') : ctx.args[3];
+  const channel = ctx.isSlash
+    ? channelInput
+    : await resolveChannel(ctx.guild, channelInput);
+
+  if (!channel) {
+    await ctx.reply(
+      ephemeral({
+        embeds: [
+          errorEmbed(
+            'Pick a channel',
+            `Mention a channel, for example \`${config.prefix}alias channel ${alias.label} ${action} #general\`.`,
+          ),
+        ],
+      }),
+    );
+    return;
+  }
+
+  if (action === 'remove') {
+    const updated = removeAliasChannel({
+      guildId: ctx.guildId,
+      trigger: alias.trigger,
+      channelId: channel.id,
+    });
+
+    if (!updated) {
+      await ctx.reply(
+        ephemeral({ embeds: [errorEmbed('No such alias', 'The alias disappeared while editing it.')] }),
+      );
+      return;
+    }
+
+    await ctx.reply(
+      ephemeral({
+        embeds: [
+          successEmbed(
+            'Alias channel removed',
+            updated.channelMode
+              ? `**${alias.label}** no longer includes ${channelName(ctx.guild, channel.id)}. It works ${ruleSummary(updated, ctx.guild)}.`
+              : `**${alias.label}** no longer includes ${channelName(ctx.guild, channel.id)} and now works in every channel.`,
+          ),
+        ],
+      }),
+    );
+    return;
+  }
+
+  const beforeMode = alias.channelMode;
+  const updated = addAliasChannel({
+    guildId: ctx.guildId,
+    trigger: alias.trigger,
+    channelId: channel.id,
+    mode: action,
+  });
+
+  if (!updated) {
+    await ctx.reply(
+      ephemeral({ embeds: [errorEmbed('No such alias', 'The alias disappeared while editing it.')] }),
+    );
+    return;
+  }
+
+  const switched = beforeMode && beforeMode !== action;
+  const lines = [`**${alias.label}** now works ${ruleSummary(updated, ctx.guild)}.`];
+
+  if (switched) {
+    lines.push(
+      '',
+      `The old **${beforeMode}** list was cleared when the rule switched to **${action}**.`,
+    );
+  }
+
+  lines.push('', 'Threads inherit their parent channel; channels inherit their category.');
+
+  await ctx.reply(
+    ephemeral({
+      embeds: [successEmbed('Alias channels updated', lines.join('\n'))],
+    }),
+  );
+}
+
 async function handleList(ctx) {
   const aliases = listAliases(ctx.guildId);
   const commands = ctx.client.commands;
@@ -287,7 +470,11 @@ async function handleList(ctx) {
     const command = commands.get(alias.command);
     const usage = command ? usageFor(alias.label, command) : `${alias.label} …`;
     const broken = command ? '' : ' *(broken — command missing)*';
-    return `**${alias.label}** → \`${alias.command}\`${broken}\n\`${usage}\``;
+    const rule =
+      alias.channelMode && alias.channels.length
+        ? ` · ${ruleSummary(alias, ctx.guild)}`
+        : '';
+    return `**${alias.label}** → \`${alias.command}\`${broken}${rule}\n\`${usage}\``;
   });
 
   await ctx.reply(
@@ -311,6 +498,9 @@ function usageEmbed() {
       '',
       `\`${config.prefix}alias add مسح clear\` — create or change one`,
       `\`${config.prefix}alias remove مسح\` — delete one`,
+      `\`${config.prefix}alias channel مسح allow #general\` — only in that channel`,
+      `\`${config.prefix}alias channel مسح deny #off-topic\` — everywhere except that channel`,
+      `\`${config.prefix}alias channel مسح clear\` — works everywhere again`,
       `\`${config.prefix}alias list\` — show them all`,
       '',
       'Everything after the word is passed to the command as arguments.',
@@ -354,13 +544,45 @@ export default {
             .setAutocomplete(true),
         ),
     )
-    .addSubcommand((subcommand) => subcommand.setName('list').setDescription('Show every alias')),
+    .addSubcommand((subcommand) => subcommand.setName('list').setDescription('Show every alias'))
+    .addSubcommand((subcommand) =>
+      subcommand
+        .setName('channel')
+        .setDescription('Choose which channels an alias works in')
+        .addStringOption((option) =>
+          option
+            .setName('trigger')
+            .setDescription('The alias word to restrict')
+            .setRequired(true)
+            .setAutocomplete(true),
+        )
+        .addStringOption((option) =>
+          option
+            .setName('action')
+            .setDescription('Allow, deny, remove a channel, clear rules, or list them (default: list)')
+            .setRequired(false)
+            .addChoices(
+              { name: 'Allow channel', value: 'allow' },
+              { name: 'Deny channel', value: 'deny' },
+              { name: 'Remove channel', value: 'remove' },
+              { name: 'Clear all rules', value: 'clear' },
+              { name: 'List rules', value: 'list' },
+            ),
+        )
+        .addChannelOption((option) =>
+          option
+            .setName('channel')
+            .setDescription('Channel, category or thread (not needed for clear/list)')
+            .setRequired(false),
+        ),
+    ),
 
   name: 'alias',
   aliases: ['aliases', 'shortcut', 'shortcuts'],
   description: 'Run a command by typing a word, with no prefix',
   category: 'General',
-  usage: 'alias add <word> <command> | remove <word> | list',
+  usage:
+    'alias add <word> <command> | remove <word> | channel <word> <allow|deny|remove|clear|list> [#channel] | list',
   cooldown: 3,
   guildOnly: true,
 
@@ -395,6 +617,7 @@ export default {
 
     if (subcommand === 'add') return handleAdd(ctx, client);
     if (subcommand === 'remove' || subcommand === 'delete') return handleRemove(ctx);
+    if (subcommand === 'channel' || subcommand === 'channels') return handleChannel(ctx);
     if (subcommand === 'list' || subcommand === 'show') return handleList(ctx);
 
     await ctx.reply(ephemeral({ embeds: [usageEmbed()] }));

@@ -3,7 +3,7 @@ import { CommandContext } from '../lib/context.js';
 import { createLogger } from '../lib/logger.js';
 import { parseArgs } from '../lib/parse-args.js';
 import { runCommand } from '../lib/run-command.js';
-import { getAlias } from '../services/alias-store.js';
+import { aliasAllowsChannel, getAlias } from '../services/alias-store.js';
 import { runAliasCommand } from '../services/alias-runner.js';
 import { recordMessage } from '../services/activity-store.js';
 import { handleKeywordAlerts } from '../services/watch.js';
@@ -70,9 +70,12 @@ export default {
 
     if (!command) {
       // `:-مسح 100` reaches the same alias the bare word does, so an explicit
-      // prefix is never a dead end for a word the admin defined.
+      // prefix is never a dead end for a word the admin defined. The channel
+      // rule applies to this path too.
       const alias = getAlias(message.guildId, name);
-      const target = alias ? client.commands.get(alias.command) : null;
+      if (!alias || !aliasAllowsChannel(alias, message.channel)) return;
+
+      const target = client.commands.get(alias.command);
 
       if (!target || target.slashOnly) return;
 

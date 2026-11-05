@@ -178,7 +178,17 @@ const SCHEMA = `
     command    TEXT    NOT NULL,
     created_by TEXT    NOT NULL,
     created_at INTEGER NOT NULL,
+    channel_mode TEXT,
     PRIMARY KEY (guild_id, trigger)
+  );
+
+  -- Channels where an alias is allowed (mode 'allow') or blocked (mode 'deny').
+  -- An empty list with a NULL mode means "everywhere".
+  CREATE TABLE IF NOT EXISTS command_alias_channels (
+    guild_id   TEXT NOT NULL,
+    trigger    TEXT NOT NULL,
+    channel_id TEXT NOT NULL,
+    PRIMARY KEY (guild_id, trigger, channel_id)
   );
 
   -- Where exile actions are reported. Kept separate from the exile roles so the
@@ -409,6 +419,7 @@ const COLUMN_MIGRATIONS = [
   ['welcome_settings', 'gif_url', 'TEXT'],
   ['activity_meta', 'messages_since', 'INTEGER'],
   ['activity_meta', 'voice_since', 'INTEGER'],
+  ['command_aliases', 'channel_mode', 'TEXT'],
 ];
 
 function applyMigrations(db) {

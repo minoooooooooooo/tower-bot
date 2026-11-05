@@ -4,7 +4,7 @@ import { errorEmbed } from '../lib/embeds.js';
 import { createLogger } from '../lib/logger.js';
 import { parseArgs } from '../lib/parse-args.js';
 import { runCommand } from '../lib/run-command.js';
-import { getAlias } from './alias-store.js';
+import { aliasAllowsChannel, getAlias } from './alias-store.js';
 
 const logger = createLogger('alias');
 
@@ -55,6 +55,11 @@ export async function runAliasCommand(message, client) {
   if (!found) return false;
 
   const { alias, command } = found;
+
+  // A restricted alias is ordinary chat outside its allowed scope. Staying
+  // silent avoids a public "not allowed here" reply every time somebody starts
+  // a sentence with the trigger word.
+  if (!aliasAllowsChannel(alias, message.channel)) return false;
 
   if (!command) {
     await message

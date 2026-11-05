@@ -98,7 +98,7 @@ Both run `src/boot.js`, which checks the Node version before loading the bot and
 | `/watch <subcommand>` | `:-alert`, `:-keywords` | Post an alert in a channel when a watched word appears anywhere in the server |
 | `/glossary <subcommand>` | `:-jargon` | Terms and jargon the summarizer should understand |
 | `/autoreport <subcommand>` | `:-schedule`, `:-digest` | Post a channel summary automatically, on an interval or at a fixed daily time |
-| `/alias <subcommand>` | `:-shortcut`, `:-aliases` | Run a command by typing a word, with no prefix |
+| `/alias <subcommand>` | `:-shortcut`, `:-aliases` | Run a command by typing a word, with no prefix; restrict it to channels |
 
 ## Profile lookups
 
@@ -216,17 +216,22 @@ An alias turns a word into a command, so you can moderate without the prefix:
 ```
 :-alias add مسح clear       # now: مسح 100
 :-alias add نظف clear       # a second word for the same command
+:-alias channel مسح allow #staff-chat
+:-alias channel مسح deny #general
+:-alias channel مسح clear
+:-alias channel مسح list
 :-alias list
 :-alias remove مسح
 ```
 
+- **Channel rules.** `/alias channel <word> allow #channel` makes the alias work only there; `deny` makes it work everywhere except there; `remove` drops one channel; `clear` returns it to every channel. A thread inherits its parent channel and a channel inherits its category, so a rule on a category covers everything inside.
 - Everything after the word becomes the command's arguments: `مسح 100` runs `clear` with `100`. Quotes still group words: `مسح 100 "raid cleanup"`.
 - The prefix keeps working: `:-مسح 100` reaches the same alias, and `:-clear 100` is untouched.
-- **Only people who could already run the command trigger it.** A member without Manage Messages typing `مسح ...` is treated as ordinary chat — the bot does not answer "Missing permissions" in the channel.
+- **Only people who could already run the command trigger it.** A member without Manage Messages typing `مسح ...` is treated as ordinary chat — the bot does not answer "Missing permissions" in the channel. A channel rule is silent the same way.
 - Real commands win: an alias cannot be named after a command or a built-in alias, and if a command with that name appears later it takes over.
 - One word made of letters, numbers, `_` or `-` (up to 32 characters). Arabic is fine, with or without diacritics.
 - Common words (`من`, `في`, `هذا`…) are allowed but warned about: every message that starts with that word runs the command. Pick a distinctive word.
-- Max 50 per server. **Manage Server** is required to add or remove one; `/alias list` is open to everyone.
+- Max 50 per server. **Manage Server** is required to add, remove or restrict one; `/alias list` is open to everyone.
 - Permissions and cooldowns are the command's own, because the alias runs the real command through the normal pipeline.
 - `/help clear` lists the server's own words next to the built-in aliases (for example `:-purge`, `:-prune`, `:-مسح`), and `/help مسح` opens the `clear` page.
 
