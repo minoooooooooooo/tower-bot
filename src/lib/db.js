@@ -379,6 +379,24 @@ const SCHEMA = `
     updated_at INTEGER NOT NULL,
     PRIMARY KEY (guild_id, channel_id)
   );
+
+  -- Dry-run counterpart to activity_backfill. It walks the same channels but
+  -- only counts what it sees, so the totals can be checked without writing.
+  CREATE TABLE IF NOT EXISTS activity_backfill_audit (
+    guild_id   TEXT    NOT NULL,
+    channel_id TEXT    NOT NULL,
+    cursor_id  TEXT,
+    oldest_at  INTEGER,
+    done       INTEGER NOT NULL DEFAULT 0,
+    seen       INTEGER NOT NULL DEFAULT 0,
+    bots       INTEGER NOT NULL DEFAULT 0,
+    system     INTEGER NOT NULL DEFAULT 0,
+    newer      INTEGER NOT NULL DEFAULT 0,
+    human      INTEGER NOT NULL DEFAULT 0,
+    error      TEXT,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (guild_id, channel_id)
+  );
 `;
 
 // Columns added after the first release. `CREATE TABLE IF NOT EXISTS` does not

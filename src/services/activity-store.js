@@ -632,3 +632,131 @@ export function backfillStats(guildId) {
     updatedAt: row?.updatedAt ?? null,
   };
 }
+
+/**
+ * Dry-run page. Counters are mutually exclusive: system first, then bots, then
+ * human messages split by the live boundary. Nothing is written to the activity
+ * totals, so this can be run at any time without changing a single number.
+ */
+export function recordAuditPage({
+  guildId,
+  channelId,
+  cursorId = null,
+  oldestAt = null,
+  done = false,
+  seen = 0,
+  bots = 0,
+  system = 0,
+  newer = 0,
+  human = 0,
+  at = Date.now(),
+}) {
+  if (!guildId || !channelId) return;
+
+  getDb()
+    .prepare(
+      `INSERT INTO activity_backfill_audit
+         (guild_id, channel_id, cursor_id, oldest_at, done, seen, bots, system, newer, human, error, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
+       ON CONFLICT (guild_id, channel_id) DO UPDATE SET
+         cursor_id = COALESCE(excluded.cursor_id, activity_backfill_audit.cursor_id),
+         oldest_at = CASE
+           WHEN excluded.oldest_at IS NULL THEN activity_backfill_audit.oldest_at
+           WHEN activity_backfill_audit.oldest_at IS NULL THEN excluded.oldest_at
+           ELSE MIN(activity_backfill_audit.oldest_at, excluded.oldest_at)
+         END,
+         done = excluded.done,
+         seen = activity_backfill_audit.seen + excluded.seen,
+         bots = activity_backfill_audit.bots + excluded.bots,
+         system = activity_backfill_audit.system + excluded.system,
+         newer = activity_backfill_audit.newer + excluded.newer,
+         human = activity_backfill_audit.human + excluded.human,
+         error = NULL,
+         updated_at = excluded.updated_at`,
+    )
+    .run(
+      guildId,
+      channelId,
+      cursorId,
+      oldestAt,
+      done ? 1 : 0,
+      seen,
+      bots,
+      system,
+      newer,
+      human,
+      at,
+    );
+}
+
+export function auditChannel(guildId, channelId) {
+  return (
+    getDb()
+      .prepare(
+        `SELECT cursor_id AS cursorId, oldest_at AS oldestAt, done,
+                seen, bots, system, newer, human, error
+         FROM activity_backfill_audit
+         WHERE guild_id = ? AND channel_id = ?`,
+      )
+      .get(guildId, channelId) ?? null
+  );
+}
+
+export function markAuditDone(guildId, channelId, at = Date.now()) {
+  getDb()
+    .prepare(
+      `INSERT INTO activity_backfill_audit (guild_id, channel_id, done, updated_at)
+       VALUES (?, ?, 1, ?)
+       ON CONFLICT (guild_id, channel_id) DO UPDATE SET
+         done = 1,
+         error = NULL,
+         updated_at = excluded.updated_at`,
+    )
+    .run(guildId, channelId, at);
+}
+
+export function markAuditError(guildId, channelId, message, at = Date.now()) {
+  getDb()
+    .prepare(
+      `INSERT INTO activity_backfill_audit (guild_id, channel_id, done, error, updated_at)
+       VALUES (?, ?, 0, ?, ?)
+       ON CONFLICT (guild_id, channel_id) DO UPDATE SET
+         done = 0,
+         error = excluded.error,
+         updated_at = excluded.updated_at`,
+    )
+    .run(guildId, channelId, String(message ?? 'unknown error').slice(0, 500), at);
+}
+
+/** Totals for the dry-run report; one row per scanned channel. */
+export function auditStats(guildId) {
+  const row = getDb()
+    .prepare(
+      `SELECT COUNT(*) AS channels,
+              COALESCE(SUM(CASE WHEN done = 1 THEN 1 ELSE 0 END), 0) AS done,
+              COALESCE(SUM(seen), 0) AS seen,
+              COALESCE(SUM(bots), 0) AS bots,
+              COALESCE(SUM(system), 0) AS system,
+              COALESCE(SUM(newer), 0) AS newer,
+              COALESCE(SUM(human), 0) AS human,
+              COALESCE(SUM(CASE WHEN error IS NOT NULL THEN 1 ELSE 0 END), 0) AS errors,
+              MIN(oldest_at) AS oldestAt,
+              MAX(updated_at) AS updatedAt
+       FROM activity_backfill_audit
+       WHERE guild_id = ?`,
+    )
+    .get(guildId);
+
+  return {
+    channels: row?.channels ?? 0,
+    done: row?.done ?? 0,
+    seen: row?.seen ?? 0,
+    bots: row?.bots ?? 0,
+    system: row?.system ?? 0,
+    newer: row?.newer ?? 0,
+    human: row?.human ?? 0,
+    errors: row?.errors ?? 0,
+    oldestAt: row?.oldestAt ?? null,
+    updatedAt: row?.updatedAt ?? null,
+  };
+}

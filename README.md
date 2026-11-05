@@ -72,7 +72,7 @@ Both run `src/boot.js`, which checks the Node version before loading the bot and
 | `/compare <@member> <@member> [all\|7d\|30d]` | `:-versus`, `:-vs` | Compare two members’ messages and voice time |
 | `/serverstats` | `:-activity`, `:-serveractivity`, `:-sstats` | Server activity totals, top member and top channel |
 | `/lastseen [user]` | `:-lastactive`, `:-lastactivity`, `:-seen`, `:-last` | When a member was last active, with first message and join date |
-| `/backfill [start\|status\|cancel]` | `:-importactivity`, `:-historyimport` | Import older message history into activity stats (owner-only) |
+| `/backfill [start\|status\|audit\|cancel]` | `:-importactivity`, `:-historyimport` | Import older message history into activity stats (owner-only) |
 | `/avatar [user]` | `:-av`, `:-pfp` | Show a member's global and per-server avatar |
 | `/banner [user]` | `:-userbanner` | Show a member's profile banner |
 | `/server-avatar [server]` | `:-serverav`, `:-servericon`, `:-sicon` | Show a server icon, including another server the bot is in |
@@ -115,6 +115,7 @@ The bot counts **messages** and **voice time** per member and per channel, then 
 
 - **Tracking starts when the bot first sees activity.** `/serverstats` shows separate message and voice start dates. Voice history cannot be recovered, so the voice date never moves earlier.
 - **Message history can be imported once.** Run `/backfill start` (owner-only) to walk every text channel backwards from the live start. It runs in the background, saves a cursor after every 100-message page, survives restarts, and never counts a message twice. `/backfill status` shows progress and `/backfill cancel` stops cleanly. Threads and voice history are not backfilled.
+- **`/backfill audit`** is a dry run for the same history: it counts human, bot/webhook, system and live-window messages without changing any totals, so you can verify why the imported count differs from Discord search.
 - **Counted:** every human message (commands included) and time spent in a voice channel. Bots are ignored, and the server's **AFK channel** never counts.
 - **Threads** count toward their parent text channel, so a busy thread does not hide the channel that spawned it.
 - **Windows** are `all` (default), `7d` and `30d`. Days are bucketed in the bot's `TIMEZONE`. `:-top` also accepts the shorter words `week` and `month`, and Arabic `رسائل`/`صوت`/`اسبوع`/`شهر`.
