@@ -25,6 +25,7 @@ if (Test-Path $zip) { Remove-Item $zip -Force }
 
 $include = @(
   'src',
+  'assets',
   'package.json',
   'package-lock.json',
   'Dockerfile',

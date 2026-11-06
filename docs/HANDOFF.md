@@ -1,16 +1,16 @@
 # Handoff — Discord bot
 
-Last updated: 2026-11-05. Read this before continuing work. It exists so a fresh
+Last updated: 2026-11-06. Read this before continuing work. It exists so a fresh
 OpenCode session can resume without the original conversation.
 
 ## Status
 
-The bot is **built and running locally** from `start.bat`. Thirty-five commands are
+The bot is **built and running locally** from `start.bat`. Thirty-nine commands are
 implemented: `/ping`, `/help`, `/botinfo`, `/color`, `/colors`, `/birthday`, `/welcome`,
 `/clear`, `/top`, `/topchannels`, `/compare`, `/serverstats`, `/summary`, `/watch`,
-`/glossary`, `/autoreport`, `/alias`, the profile lookup and moderation packages, and
-the exile package (`/exile-setup`, `/exile-role`, `/exile`, `/exile-release`,
-`/exile-list`, `/exile-log`).
+`/glossary`, `/autoreport`, `/alias`, the profile lookup and moderation packages, the
+generated profile cards (`/profile`, `/profile-edit`), and the exile package
+(`/exile-setup`, `/exile-role`, `/exile`, `/exile-release`, `/exile-list`, `/exile-log`).
 
 **Source is on GitHub:** <https://github.com/minoooooooooooo/tower-bot>
 (public, branch `main`). Pushed 2026-10-31 with Git 2.56.0 + `gh` browser auth; no
@@ -33,9 +33,10 @@ undeletable. The server was deleted and recreated; the new node logged in on the
 first attempt. Current state (boot 10:29 UTC): Node **26.12.1**, `Logged in as
 11/10#8627`, `SQLite ready at /home/container/data/bot.db`, scheduler running,
 slash commands registered instantly in "𝗧𝗵𝗲 𝗧𝗼𝘄𝗲𝗿 v2". The process now loads
-**37 commands / 8 events** (birthday, welcome, clear, colors, color, activity,
-profile lookups, moderation, summary, watch, glossary, autoreport, alias, and the six
-exile commands).
+**39 commands / 8 events** (birthday, welcome, clear, colors, color, activity,
+profile lookups and cards, moderation, summary, watch, glossary, autoreport, alias,
+and the six exile commands). The profile cards add `@napi-rs/canvas`, so the panel
+must run an install on the next restart before `/profile` can import.
 
 Two consequences worth remembering: the install/reinstall script on this panel
 does **not** run (two reinstalls produced an empty directory), so the code is
@@ -64,6 +65,7 @@ Oracle Cloud is kept as the card-verification alternative in
 | `/welcome <sub>` | `greet` | 8 subcommands, six card styles with editable text |
 | `/clear <amount> [user]` | `purge`, `prune` | Bulk-delete recent messages, optionally from one member |
 | `/avatar [user]` | `av`, `pfp` | Global + per-server avatar |
+| `/profile [user]` | `card`, `profilecard` | Generated PNG card: title, rank, level, points, XP |
 | `/banner [user]` | `userbanner` | Profile banner, fetched fresh |
 | `/server-avatar [server]` | `serverav`, `servericon`, `sicon` | Server icon; another server only if the bot is in it |
 | `/server-banner [server]` | `serverbanner`, `sbanner` | Server banner; another server only if the bot is in it |
@@ -75,6 +77,7 @@ Oracle Cloud is kept as the card-verification alternative in
 | `/ban <@user\|id> [duration] [reason]` | — | Permanent or timed ban; an id works for users outside the server |
 | `/unban <@user\|id> [reason]` | — | Remove a ban and its timer |
 | `/perm grant\|revoke\|list` | `perms`, `commandperm` | Bot-side per-role command grants |
+| `/profile-edit <@member> ...` | `editprofile`, `profile-points` | Title and point edits (Manage Server, grantable) |
 | `/summary <sub>` | `summarize`, `report` | AI summary of any channel into the management channel + HTML export |
 | `/watch <sub>` | `alert`, `keywords` | Post an alert in a channel when a keyword appears anywhere in the server |
 | `/glossary <sub>` | `jargon` | Server terms sent to the summarizer as context |
@@ -187,6 +190,26 @@ Behavior that must be preserved:
 - `avatar` prefers the member's per-server avatar and links both pictures; `banner` forces a user fetch because banners are absent from cached payloads.
 - `server-avatar` shows `guild.iconURL()` and `server-banner` shows `guild.bannerURL()`. Both accept a server id or exact name, and can only resolve servers the bot has joined (`client.guilds.fetch`), which is a Discord limitation rather than a choice.
 
+### Profile cards
+
+`/profile` (prefix `:-profile`, aliases `card`/`profilecard`) renders `assets/profile/card.png` at 1868×1200 with `@napi-rs/canvas` and sends only the image. `/profile-edit` (aliases `editprofile`/`profile-points`) writes the numbers and requires **Manage Server**; `/perm grant @Role profile-edit` opens it without that permission.
+
+Behavior that must be preserved:
+
+- **Layout is measured from the template.** Avatar circle at `(108,126)` size 168, name/username at `x=300`, title right-aligned to `x=1750` baseline `198`, six value panels, and the XP track at `x=681 y=980 w=1059 h=49 r=24` in flat `#3c3c42`. `drawXpBar` repaints the track before filling it, so 0% is truly empty and 99% leaves a tiny gap at the right edge. Values are right-aligned to each panel's bottom-right.
+- **Fonts are bundled and registered once.** Inter Medium/SemiBold/ExtraBold for Latin; `Noto Sans Arabic` is selected whenever the nickname matches `/[\u0600-\u06ff…]/`. Canvas shapes Arabic correctly with no HarfBuzz workaround. Long names shrink to a floor and then truncate with `…`, so a renamed member cannot leave the panel.
+- **Members who left still render.** The card falls back to the `user` for the name and avatar and reads stored points; `rankFor` returns `null` because the id is not in the current member list. The rank field is left empty in that case.
+- **XP:** `xp = floor((nightmare + vex) / 5)`, `level = floor(xp / 100) + 1`, bar progress `xp % 100`. The bar text reads `progress / 100`.
+- **Rank:** nightmare + vex among current members. Ties share the rank; a score of zero has no rank; members who left do not push anyone down.
+- **Manual points are deltas, never replacements.** Nightmare, vex, good behavior and raw punishment mini points clamp at zero in SQL (`MAX(0, …)`). Good behavior accepts both signs. `/profile-edit` with no options shows the current block instead of changing anything.
+- **Punishments are raw mini points.** Seven raw points display as one punishment, and the remainder carries over. Mute/timeout/kick/ban = +1, exile = +4.
+- **Only fresh, successful bot actions count.** A failed API call returns before the award. A re-mute while the Muted role is still present, a timeout extension (`member.isCommunicationDisabled()` was true), a ban of someone already banned (`guild.bans.fetch` succeeds before the call), and a level change on an active exile add nothing. A fresh action after release/expiry counts again.
+- **Exile history is imported once per guild.** `profile_meta.exile_seeded_at` gates `ensureExileBackfill`, which adds `4 × COUNT(exiles)` to each member. `/exile` calls it **before** `createExile`, so the new row cannot be counted by both the import and the live hook. `/profile` and `/profile-edit` call it too, so old points appear without needing an exile first.
+- **The slash reply defers before any fetch or render.** Avatar download, full member fetch for rank and the canvas render can exceed Discord's three-second window; `ctx.defer()` happens first and the error path uses `ctx.fail`.
+- **Storage:** `profiles` (`guild_id`, `user_id`, `title`, `nightmare`, `vex`, `punish_mini`, `good_behavior`, `created_at`, `updated_at`) and `profile_meta` (`guild_id`, `exile_seeded_at`, `updated_at`). A missing row reads as zeroes, so rendering never writes.
+- **Title:** capped at `MAX_TITLE_LENGTH = 32`; empty/`reset`/`clear`/`none`/`-` clears it, and the card draws `No Title`.
+- **Shipping:** `assets/` is copied by the Dockerfile and included by `scripts/package.ps1`. `package.json` now depends on `@napi-rs/canvas` (prebuilt native binary). The panel must install on restart or the import fails.
+
 ### Activity stats
 
 `/top` (prefix `:-top`, aliases `leaderboard`/`ranking`/`rank`), `/topchannels`
@@ -258,9 +281,9 @@ Behavior that must be preserved:
   `tracking_since`, `messages_since`, `voice_since`) and `activity_backfill`
   (`cursor_id`, `oldest_at`, `done`, `fetched`, `error`) plus
   `activity_backfill_audit` (`cursor_id`, `oldest_at`, `done`, `seen`, `bots`,
-  `system`, `newer`, `human`, `error`). The per-member profile card is
-  intentionally **not** built yet; the stored
-  `first_message_at`/`last_message_at`/`last_active_at` are ready for it.
+  `system`, `newer`, `human`, `error`). The richer per-member card now lives in
+  the profile package above; activity still stores
+  `first_message_at`/`last_message_at`/`last_active_at` for it.
 
 ### Exile package
 
@@ -464,6 +487,11 @@ Behavior that must be preserved:
   "successful" exile that still sees everything; restoring it on a failed assignment
   prevents collateral damage.
 - **Leaving the server releases automatically.** Roles vanish with the member, so keeping an active row would leave a permanent ghost in `/exile-list` and in the audit channel. `guildMemberRemove` closes the record with an automatic reason.
+- **The profile card is a canvas render, not an embed.** The operator supplied the artwork and asked for the exact layout; a generated PNG is the only way to place values inside its panels. `@napi-rs/canvas` ships prebuilt binaries (no compiler in the Docker image, works on Alpine ARM), and the template plus fonts live in `assets/profile/` so the card is identical on every host.
+- **Editing is a separate, grantable command.** `/profile` stays open to everyone, while `/profile-edit` requires **Manage Server**. `/perm grant` already existed for exactly this shape, so an editor role can be delegated without handing out Discord permissions.
+- **Punishment dedupe reads live state, not a new table.** Mute role presence, `member.isCommunicationDisabled()`, an active exile row and Discord's idempotent ban endpoint already say whether the punishment is still in force; a second "last punished" table could disagree with reality after a manual change. The pre-ban `bans.fetch` is the one extra call, and it is only needed because the ban endpoint succeeds on an already-banned user.
+- **Only exiles can be backfilled.** Mutes, timeouts, kicks and bans have no history table (the bot never stored them), so the one-time import is limited to `exiles`, at four points per row. `/exile` runs the import first, which is the only ordering that avoids counting a new row twice.
+- **Raw punishment points are stored, not the displayed count.** `punish_mini` keeps the remainder, so `13` becomes one punishment now and the next one after two more events, and staff can correct the count without losing history.
 
 ## Known issues / caveats
 
@@ -519,7 +547,10 @@ Behavior that must be preserved:
 - [ ] Run `/backfill start` once, watch `/backfill status` until it finishes, then check `/serverstats` shows an older **Messages since** date and the same **Voice since** date, and the message totals stop changing after a second start. Use `/backfill cancel` once mid-run and confirm the next start resumes instead of double-counting; a restart during the import should resume the same way.
 - [ ] Run `/backfill audit` after the import and compare its **Human · importable** field with **Imported by backfill**; they should match. Use the **Bots / webhooks** and **Live window · human** fields to explain any gap against Discord search.
 - [x] **Last-activity command** (`/lastseen`) — last active, last message, message count, voice time, first message and join date.
-- [ ] Build a richer per-member **profile card** later: the same numbers plus an avatar and membership duration, presented as a card rather than fields.
+- [x] **Profile cards** (`/profile`, `/profile-edit`) — 2026-11-06. Avatar, title, rank, level, nightmare/vex, punishments, good behavior and XP bar on the supplied artwork.
+- [ ] After the next restart (which must run `npm install` for `@napi-rs/canvas`), run `/profile` and confirm the image arrives with the avatar, name and an empty rank. Run `/profile-edit @member title:The Keeper nightmare:10 vex:5 punishment:7 behavior:3`, then `/profile @member` and check every panel and the XP bar.
+- [ ] Test the automatic points on an alt: mute (+1), a second mute while still muted (+0), timeout (+1), extending it (+0), unmute, mute again (+1), kick (+1), ban (+1), re-ban (+0), and a fresh exile (+4 after the one-time import). Confirm `/profile` shows `floor(mini / 7)`.
+- [ ] Confirm `/perm grant @Role profile-edit` lets that role edit without **Manage Server**, and that an ordinary member cannot run `/profile-edit`.
 - [ ] Ask the user for the next batch of commands (games were mentioned).
 - [ ] **Enable the Server Members intent in the Discord Developer Portal** before the next restart. The bot now requests `GatewayIntentBits.GuildMembers` for welcome cards; without the portal toggle Discord refuses the login (`Used disallowed intents`) and the bot stays offline until it is enabled.
 - [ ] After that restart: `/welcome channel #welcome`, then `/welcome test` to see each of the six styles, then join with an alt (or ask a member to rejoin) to confirm `guildMemberAdd` fires.
@@ -528,7 +559,7 @@ Behavior that must be preserved:
 ## Verification used so far
 
 - `node --check` across all `src/**/*.js`.
-- Load test with a fake token: 37 commands, 8 events, clean login failure.
+- Load test with a fake token: 39 commands, 8 events, clean login failure.
 - Date math: Feb 29 in leap/non-leap years, timezone date shift (`America/New_York`), year rollover.
 - Scheduler: role added on birthday, removed the next day, removed immediately when the birthday is deleted.
 - Command paths: set (valid/invalid), list, next, today, remove, admin guards, role set/clear, timezone invalid/valid.
@@ -537,7 +568,7 @@ Behavior that must be preserved:
 - `package.bat` produces `dist/bot.zip` with no `node_modules`, `.tools`, `.env`, or `data`, and no entry containing a backslash (the script verifies this and fails loudly).
 - Runtime guard test (20 checks): `hasSqliteModule` across Node 18/20/22.4/22.5/24/26 and a malformed version, `needsSqliteFlag` across the 22.5–23.3 boundary, and the three message branches (unsupported version, flag required, unexpected failure).
 - Alias integration test on a temp DB (142 checks): store roundtrip, guild scoping, normalization (diacritics, alef variants, case, upsert in place), remove/clear, table creation; channel rules (allow/deny storage, mode switching clears the old list, removing the last channel resets, clear, category and thread inheritance, cache invalidation, cleanup on remove/clear); dispatch (`مسح 100` → `clear` with `["100"]`, quotes, no arguments, ordinary chat not hijacked, unknown word, missing permission stays silent, owner-only refused for others and allowed for the owner, broken target explained, slash-only target explained, a real command name outranks an alias and the alias returns when that command is removed, allow/deny silence incl. threads and the prefixed form); `messageCreate` for the bare and `:-`-prefixed forms with real commands unaffected; the command surface (add/update/remove/list, channel allow/deny/remove/clear/list, slash options and autocomplete, one-word/punctuation/emoji/length validation, command-name and built-in-alias refusal, unknown command, slash-only and `alias` targets, Manage Server guard on add/remove/channel but not list, prefixed and slashed command input cleaned, common-word warning, the 50-alias limit with updates still allowed, empty list, usage text, broken-row marker, footer count), `help <command>` merging custom aliases with built-ins (no aliases, merged field, resolving a custom alias, other commands excluded, built-in duplicate printed once), and the slash schema.
-- `node src/boot.js` with a fake token logs the runtime version, loads 37 commands / 8 events, then fails login cleanly with `TokenInvalid`.
+- `node src/boot.js` with a fake token logs the runtime version, loads 39 commands / 8 events, then fails login cleanly with `TokenInvalid`.
 - Welcome integration test on a temp DB (207 checks): style metadata (six keys, modal inputs ≤5, unique keys, label/default limits, known placeholders), settings/text/gif store roundtrips (JSON `enabled`, last style, per-style GIF, per-piece override, clear one/all), style selection (random never repeats, stays inside the enabled set, rotate cycles and wraps, single pins, disabled style falls back, empty list means all), all six payloads (ledger rows/date/count/timestamp, classic thumbnail/fields/shared labels/GIF, poster banner→splash→icon fallback and GIF precedence, story floor, whisper two lines without timestamp, concierge link buttons and the welcome-channel fallback), a GIF on every style, overrides and blank-override fallback, unknown style fallback, ping rules (`allowedMentions` = new member only, title mentions still ping from content), ordinal helper, `guildMemberAdd` (posts once, records the style, skips bots, skips without a channel, failed send keeps `last_style`), and the command surface (channel set/clear + admin guard, mode validation, toggle + last-style guard, list with GIF markers, ephemeral preview, per-style gif set/show/invalid/clear, modal open and prefill, prefix edit redirect, reset one/all, links, overview) including modal submit (save, default-detection, empty clears, unknown placeholder warning, title/footer mention warning, GIF saved per style from any card's modal, invalid GIF rejecting the whole submit, admin guard) and the slash schema. A separate migration script moves a legacy `welcome_settings.gif_url` into `welcome_gifs` on boot.
 - Report integration test on a temp DB with a stubbed `fetch` (260 checks): windowed history reads (only the requested range, oldest-first, cap + truncation flag), transcript format and chunking, `normalizeSummary` against drifted model output (strings for objects, unknown keys, overlong text, item caps), single-call vs map-reduce paths (progress callback, merge call content, glossary and focus reaching the prompt), provider failures (retry on 5xx, non-JSON reply, 429 with the provider message and retry-after in `aiProblemHint`, fenced/prose JSON extraction), summary-channel store roundtrip and clear, saved-report roundtrip and guild scoping, glossary upsert/remove/clear and prompt formatting, keyword normalization (diacritics, alef variants, case), whole-word matching for Latin and Arabic, term CRUD and duplicates, channel alert payload (jump link, keywords, an @everyone ping in content outside the embed, quote), skips for bots/empty/unrelated text, quiet-window throttling, missing/deleted-channel handling, HTML export (RTL detection, action items, print stylesheet, safe filename, HTML escaping), and the command surfaces (missing key hint, targeted-without-focus, hours bounds, prefix run posting + storage + export button, management-channel routing, private run, slash run, channel config + Manage Server guard, export file, history list, watch add/list/remove/validation, glossary add/list/guard) plus the five new tables.
 - Schedule integration test in the same suite (60 of those 260): `parseInterval` for `6h`/`90m`/`2d`/bare hours and rejection of 5m, 10d and nonsense, `parseClock` for `09:00`/`9:05` and rejection of `24:00`/`09:60`, `formatClock`/`formatInterval` round trips, schedule upsert (cadence stored, countdown starts at creation, one row per channel, second save updates in place and restarts the clock), `isScheduleDue` for interval/paused/daily including "not early" and "not twice in a day" across `Asia/Riyadh`, `nextRunAt` for intervals and daily rollover, a full `runScheduledReport` (delivered to the management channel, export button present, no pings, stored with the scheduler as author, whole window summarized), empty window skipped without sending and reporting no-messages, a model that answers with nothing skipped as empty-summary without posting or storing, missing management channel skipped, and the `/autoreport` surface (prefix interval + daily, in-place switch to daily, missing cadence, targeted without focus, list shows the cadence, pause/resume/remove, Manage Server guard, refusal without a summary channel) plus the slash schema.

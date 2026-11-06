@@ -390,6 +390,29 @@ const SCHEMA = `
     PRIMARY KEY (guild_id, channel_id)
   );
 
+  -- The numbers on a member's profile card. nightmare and vex are entered by
+  -- staff and add up to XP; punish_mini counts raw punishment points so the
+  -- card can show floor(punish_mini / 7) without losing the remainder.
+  CREATE TABLE IF NOT EXISTS profiles (
+    guild_id     TEXT    NOT NULL,
+    user_id      TEXT    NOT NULL,
+    title        TEXT,
+    nightmare    INTEGER NOT NULL DEFAULT 0,
+    vex          INTEGER NOT NULL DEFAULT 0,
+    punish_mini  INTEGER NOT NULL DEFAULT 0,
+    good_behavior INTEGER NOT NULL DEFAULT 0,
+    created_at   INTEGER NOT NULL,
+    updated_at   INTEGER NOT NULL,
+    PRIMARY KEY (guild_id, user_id)
+  );
+
+  -- One row per guild, so one-time imports (the exile history) never run twice.
+  CREATE TABLE IF NOT EXISTS profile_meta (
+    guild_id        TEXT PRIMARY KEY,
+    exile_seeded_at INTEGER,
+    updated_at      INTEGER NOT NULL
+  );
+
   -- Dry-run counterpart to activity_backfill. It walks the same channels but
   -- only counts what it sees, so the totals can be checked without writing.
   CREATE TABLE IF NOT EXISTS activity_backfill_audit (

@@ -11,6 +11,7 @@ import {
   botPermissionProblem,
   targetProblem,
 } from '../../services/moderation.js';
+import { recordPunishment } from '../../services/profile-store.js';
 import {
   apiProblem,
   defaultReason,
@@ -101,6 +102,9 @@ export default {
     }
 
     const reason = defaultReason(reasonText);
+    // Extending a timeout that is still running is the same punishment, not a
+    // second one; only a timeout applied after it ended counts again.
+    const wasTimedOut = member.isCommunicationDisabled?.() ?? false;
 
     try {
       await member.timeout(durationMs, `Timed out by ${ctx.user.tag ?? ctx.user.username}: ${reason}`);
@@ -108,6 +112,8 @@ export default {
       await fail(ctx, 'Could not time that member out', apiProblem(error));
       return;
     }
+
+    if (!wasTimedOut) recordPunishment(ctx.guildId, member.id, 'timeout');
 
     await done(
       ctx,

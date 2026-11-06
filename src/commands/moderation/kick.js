@@ -10,6 +10,7 @@ import {
   targetProblem,
 } from '../../services/moderation.js';
 import { apiProblem, defaultReason, done, fail, slashReason } from './_shared.js';
+import { recordPunishment } from '../../services/profile-store.js';
 
 export default {
   data: new SlashCommandBuilder()
@@ -63,6 +64,8 @@ export default {
       await fail(ctx, 'Could not kick that member', apiProblem(error));
       return;
     }
+
+    recordPunishment(ctx.guildId, member.id, 'kick');
 
     await done(ctx, 'Member kicked', `${member.user?.tag ?? member.id} was kicked.\n**Reason:** ${reason}`);
   },

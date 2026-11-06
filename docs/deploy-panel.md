@@ -42,8 +42,12 @@ outbound connections.
 
 On your PC, double-click **`package.bat`**.
 
-That produces `dist/bot.zip` containing `src/`, `package.json`,
+That produces `dist/bot.zip` containing `src/`, `assets/`, `package.json`,
 `package-lock.json`, `.env.example`, `README.md` and `docs/`.
+
+`assets/profile/` carries the card artwork and fonts. Keep it next to `src/` —
+`/profile` reads it at runtime, and the canvas binary is installed with the other
+dependencies.
 
 `node_modules/`, `data/` and `.env` are deliberately excluded:
 
@@ -76,6 +80,8 @@ src/boot.js
 src/index.js
 src/commands/...
 src/events/...
+assets/profile/card.png
+assets/profile/fonts/...
 docs/...
 ```
 
@@ -272,6 +278,8 @@ time zone setting — not the bot itself, which redeploys from GitHub in a minut
 | Deleting those stray files fails with *"One or more filenames are invalid"* | the panel validates names on delete, and a backslash fails its check | don't delete them; `src\boot.js` (a filename) and `src/boot.js` (a file in a folder) coexist harmlessly on Linux. If the clutter matters, remove the whole server and recreate it, or use SFTP when available |
 | `[boot] Node x.y.z cannot load "node:sqlite"` | Image older than Node 22.5 | Ask support for Node 24, or recreate the server with a newer Node.js image |
 | `Cannot find module 'discord.js'` | Dependencies not installed | Startup command `npm ci --omit=dev && node src/boot.js` |
+| `Cannot find module '@napi-rs/canvas'` after an update | the restart did not run an install, so the new dependency is missing | run the startup command once (or reinstall dependencies in the panel) and restart; `/profile` needs the prebuilt canvas binary |
+| `/profile` fails with `ENOENT ... assets/profile/card.png` | zip built before 2026-11-06, or `assets/` was not uploaded | rebuild with `package.bat` and extract `assets/` next to `src/` |
 | `TokenInvalid` | Wrong or truncated token | Re-copy from Developer Portal → Bot → Reset Token |
 | `Used disallowed intents` | Message Content Intent off | Developer Portal → Bot → Privileged Gateway Intents → enable **Message Content Intent** |
 | Prefix commands do nothing, slash works | Message Content Intent still off, or wrong `PREFIX` | Check the intent first; then confirm `PREFIX=:-` |

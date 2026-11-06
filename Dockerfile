@@ -12,6 +12,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
 COPY src ./src
+COPY assets ./assets
 
 # SQLite lives here. Created in the image so the unprivileged user can write
 # to it when a volume is mounted over this path.

@@ -27,6 +27,7 @@ import {
   normalizeLevel,
   updateActiveExile,
 } from '../../services/exile-store.js';
+import { ensureExileBackfill, recordPunishment } from '../../services/profile-store.js';
 
 function ephemeral(payload) {
   return { ...payload, flags: MessageFlags.Ephemeral };
@@ -127,6 +128,14 @@ export default {
 
   async execute(ctx) {
     if (!(await requireManageServer(ctx))) return;
+
+    // The one-time exile history import must finish before this command can
+    // create a new row, or the new exile would be counted twice.
+    try {
+      ensureExileBackfill(ctx.guildId);
+    } catch {
+      // A failed import must not block moderation.
+    }
 
     let member;
     let level;
@@ -340,6 +349,10 @@ export default {
         reason: auditReason,
         createdBy: ctx.user.id,
       });
+
+      // A level change on an active exile is the same punishment; only a
+      // fresh exile (after release) is worth points.
+      recordPunishment(ctx.guildId, member.id, 'exile');
     }
 
     if (!sameLevel) {

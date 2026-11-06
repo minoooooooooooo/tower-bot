@@ -11,6 +11,7 @@ import {
   targetProblem,
 } from '../../services/moderation.js';
 import { deleteExpiry, setExpiry } from '../../services/moderation-store.js';
+import { recordPunishment } from '../../services/profile-store.js';
 import {
   apiProblem,
   defaultReason,
@@ -142,6 +143,13 @@ export default {
 
     const reason = defaultReason(reasonText);
 
+    // Discord's ban endpoint is idempotent, so banning someone who is already
+    // banned must not earn a second punishment point.
+    const alreadyBanned = await ctx.guild.bans
+      .fetch(userId)
+      .then(() => true)
+      .catch(() => false);
+
     try {
       await ctx.guild.members.ban(userId, {
         reason: `Banned by ${ctx.user.tag ?? ctx.user.username}: ${reason}`,
@@ -151,6 +159,8 @@ export default {
       await fail(ctx, 'Could not ban that user', apiProblem(error));
       return;
     }
+
+    if (!alreadyBanned) recordPunishment(ctx.guildId, userId, 'ban');
 
     if (durationMs) {
       setExpiry({

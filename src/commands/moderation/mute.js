@@ -7,6 +7,7 @@ import { formatDuration, parseDuration } from '../../lib/durations.js';
 import { targetMember } from '../../lib/targets.js';
 import { targetProblem, actorProblem, ensureMuteRole, muteRoleProblem } from '../../services/moderation.js';
 import { deleteExpiry, setExpiry } from '../../services/moderation-store.js';
+import { recordPunishment } from '../../services/profile-store.js';
 import {
   apiProblem,
   defaultReason,
@@ -154,6 +155,10 @@ export default {
       await fail(ctx, 'Could not mute that member', apiProblem(error));
       return;
     }
+
+    // The branch above already handled "already muted", so reaching this point
+    // always means a fresh punishment.
+    recordPunishment(ctx.guildId, member.id, 'mute');
 
     if (durationMs) {
       setExpiry({

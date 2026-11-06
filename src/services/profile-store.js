@@ -1,0 +1,293 @@
+import { getDb } from '../lib/db.js';
+import { createLogger } from '../lib/logger.js';
+
+const logger = createLogger('profile');
+
+/** How many raw points each bot punishment is worth on the card. */
+export const PUNISHMENT_WEIGHTS = {
+  mute: 1,
+  timeout: 1,
+  kick: 1,
+  ban: 1,
+  exile: 4,
+};
+
+/** Seven raw points make one displayed punishment. */
+export const PUNISHMENT_POINTS_PER_UNIT = 7;
+
+/** XP is one point for every five nightmare + vex points. */
+export const POINTS_PER_XP = 5;
+
+/** Every level costs exactly this much XP. */
+export const XP_PER_LEVEL = 100;
+
+export const MAX_TITLE_LENGTH = 32;
+
+const EMPTY_PROFILE = Object.freeze({
+  title: null,
+  nightmare: 0,
+  vex: 0,
+  punishMini: 0,
+  goodBehavior: 0,
+  createdAt: null,
+  updatedAt: null,
+});
+
+// Seeding the exile history is a one-time import per guild. Caching the answer
+// keeps the common path (a mute, a profile view) from touching the meta table.
+const seededGuilds = new Set();
+
+function toProfile(row) {
+  if (!row) return { ...EMPTY_PROFILE };
+
+  return {
+    title: row.title ?? null,
+    nightmare: row.nightmare,
+    vex: row.vex,
+    punishMini: row.punish_mini,
+    goodBehavior: row.good_behavior,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+/** A missing row reads as zeroes, so the card never needs a write to render. */
+export function getProfile(guildId, userId) {
+  const row = getDb()
+    .prepare(
+      `SELECT title, nightmare, vex, punish_mini, good_behavior, created_at, updated_at
+         FROM profiles WHERE guild_id = ? AND user_id = ?`,
+    )
+    .get(guildId, userId);
+
+  return toProfile(row);
+}
+
+function upsertProfile(db, guildId, userId, now) {
+  db.prepare(
+    `INSERT INTO profiles (guild_id, user_id, created_at, updated_at)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT (guild_id, user_id) DO NOTHING`,
+  ).run(guildId, userId, now, now);
+}
+
+/**
+ * Adds (or subtracts) points. Every stored field is clamped at zero: a
+ * correction can take a member back to nothing, never below it.
+ */
+export function addProfilePoints(
+  guildId,
+  userId,
+  { nightmare = 0, vex = 0, punishMini = 0, goodBehavior = 0 } = {},
+) {
+  const deltas = {
+    nightmare: Math.trunc(Number(nightmare) || 0),
+    vex: Math.trunc(Number(vex) || 0),
+    punish_mini: Math.trunc(Number(punishMini) || 0),
+    good_behavior: Math.trunc(Number(goodBehavior) || 0),
+  };
+
+  const db = getDb();
+  const now = Date.now();
+
+  db.exec('BEGIN');
+
+  try {
+    upsertProfile(db, guildId, userId, now);
+
+    db.prepare(
+      `UPDATE profiles
+          SET nightmare = MAX(0, nightmare + ?),
+              vex = MAX(0, vex + ?),
+              punish_mini = MAX(0, punish_mini + ?),
+              good_behavior = MAX(0, good_behavior + ?),
+              updated_at = ?
+        WHERE guild_id = ? AND user_id = ?`,
+    ).run(
+      deltas.nightmare,
+      deltas.vex,
+      deltas.punish_mini,
+      deltas.good_behavior,
+      now,
+      guildId,
+      userId,
+    );
+
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+
+  return getProfile(guildId, userId);
+}
+
+/** Sets or clears the title. `null` makes the card show "No Title". */
+export function setProfileTitle(guildId, userId, title) {
+  const cleaned = title === null || title === undefined
+    ? null
+    : String(title).trim().slice(0, MAX_TITLE_LENGTH) || null;
+  const now = Date.now();
+  const db = getDb();
+
+  db.exec('BEGIN');
+
+  try {
+    upsertProfile(db, guildId, userId, now);
+    db.prepare(
+      'UPDATE profiles SET title = ?, updated_at = ? WHERE guild_id = ? AND user_id = ?',
+    ).run(cleaned, now, guildId, userId);
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+
+  return getProfile(guildId, userId);
+}
+
+/**
+ * Gives a member the points for a punishment the bot actually applied. The
+ * caller is responsible for not calling this when the same punishment is
+ * already active, so a mute that is re-applied without an unmute in between
+ * does not count twice.
+ */
+export function recordPunishment(guildId, userId, kind) {
+  const weight = PUNISHMENT_WEIGHTS[kind];
+
+  if (!weight) return null;
+
+  try {
+    return addProfilePoints(guildId, userId, { punishMini: weight });
+  } catch (error) {
+    // The punishment already happened; a database problem must not turn a
+    // successful moderation action into a failed command.
+    logger.warn(`Could not record ${kind} points for ${userId}: ${error.message}`);
+    return null;
+  }
+}
+
+/**
+ * Imports the existing exile history once per guild: every exile row is a
+ * fresh exile, so it is worth four raw points. Mutes, timeouts, kicks and bans
+ * have no history table, which is why only exiles can be recovered.
+ *
+ * Callers that create a new exile must call this first, otherwise the new row
+ * would be counted by the import and again by the live hook.
+ */
+export function ensureExileBackfill(guildId) {
+  if (seededGuilds.has(guildId)) return 0;
+
+  const db = getDb();
+  const existing = db
+    .prepare('SELECT exile_seeded_at FROM profile_meta WHERE guild_id = ?')
+    .get(guildId);
+
+  if (existing?.exile_seeded_at) {
+    seededGuilds.add(guildId);
+    return 0;
+  }
+
+  const now = Date.now();
+  let users = 0;
+
+  db.exec('BEGIN');
+
+  try {
+    db.prepare(
+      `INSERT INTO profile_meta (guild_id, exile_seeded_at, updated_at)
+       VALUES (?, ?, ?)
+       ON CONFLICT (guild_id) DO UPDATE SET
+         exile_seeded_at = excluded.exile_seeded_at,
+         updated_at = excluded.updated_at`,
+    ).run(guildId, now, now);
+
+    const rows = db
+      .prepare(
+        `SELECT user_id, COUNT(*) AS total FROM exiles
+          WHERE guild_id = ? GROUP BY user_id`,
+      )
+      .all(guildId);
+
+    for (const row of rows) {
+      upsertProfile(db, guildId, row.user_id, now);
+      db.prepare(
+        `UPDATE profiles
+            SET punish_mini = punish_mini + ?, updated_at = ?
+          WHERE guild_id = ? AND user_id = ?`,
+      ).run(row.total * PUNISHMENT_WEIGHTS.exile, now, guildId, row.user_id);
+    }
+
+    users = rows.length;
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+
+  seededGuilds.add(guildId);
+  return users;
+}
+
+export function xpFor(profile) {
+  return Math.floor((profile.nightmare + profile.vex) / POINTS_PER_XP);
+}
+
+export function levelFor(xp) {
+  return Math.floor(xp / XP_PER_LEVEL) + 1;
+}
+
+/** Progress inside the current level, 0–99. */
+export function progressFor(xp) {
+  return xp % XP_PER_LEVEL;
+}
+
+export function displayedPunishments(profile) {
+  return Math.floor(profile.punishMini / PUNISHMENT_POINTS_PER_UNIT);
+}
+
+/**
+ * Rank by nightmare + vex among the members who are still in the server. Ties
+ * share a rank (there is no tie-breaker), and a score of zero has no rank at
+ * all — the card leaves that field empty.
+ */
+export function rankFor(guildId, userId, memberIds, score) {
+  if (!score) return null;
+
+  const present = new Set(memberIds);
+
+  // Members who left keep their points, but they are not in the ranking.
+  if (!present.has(userId)) return null;
+
+  const higher = getDb()
+    .prepare(
+      `SELECT user_id FROM profiles
+        WHERE guild_id = ? AND (nightmare + vex) > ?`,
+    )
+    .all(guildId, score);
+
+  let above = 0;
+
+  for (const row of higher) {
+    if (present.has(row.user_id)) above += 1;
+  }
+
+  return above + 1;
+}
+
+/** Everything the card needs for one member. */
+export function profileStats(guildId, userId, memberIds) {
+  const profile = getProfile(guildId, userId);
+  const score = profile.nightmare + profile.vex;
+  const xp = xpFor(profile);
+
+  return {
+    ...profile,
+    score,
+    xp,
+    level: levelFor(xp),
+    progress: progressFor(xp),
+    punishments: displayedPunishments(profile),
+    rank: rankFor(guildId, userId, memberIds, score),
+  };
+}

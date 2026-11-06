@@ -10,6 +10,7 @@ A Discord bot with **both slash (`/ping`) and prefix (`:-ping`) commands**, buil
 - Friendly error embeds + full error logging
 - Graceful shutdown, unhandled rejection/exception logging
 - Slash commands registered automatically on startup (guild scope if `GUILD_ID` is set)
+- Generated PNG profile cards with `@napi-rs/canvas`, shipped with their template and fonts
 - Portable Node.js in `.tools\node` — nothing installed system-wide
 
 ## Setup
@@ -74,6 +75,7 @@ Both run `src/boot.js`, which checks the Node version before loading the bot and
 | `/lastseen [user]` | `:-lastactive`, `:-lastactivity`, `:-seen`, `:-last` | When a member was last active, with first message and join date |
 | `/backfill [start\|status\|audit\|cancel]` | `:-importactivity`, `:-historyimport` | Import older message history into activity stats (owner-only) |
 | `/avatar [user]` | `:-av`, `:-pfp` | Show a member's global and per-server avatar |
+| `/profile [user]` | `:-card`, `:-profilecard` | Generated profile card with title, rank, level, points and XP |
 | `/banner [user]` | `:-userbanner` | Show a member's profile banner |
 | `/server-avatar [server]` | `:-serverav`, `:-servericon`, `:-sicon` | Show a server icon, including another server the bot is in |
 | `/server-banner [server]` | `:-serverbanner`, `:-sbanner` | Show a server banner, including another server the bot is in |
@@ -88,6 +90,7 @@ Both run `src/boot.js`, which checks the Node version before loading the bot and
 | `/ban <@user\|id> [duration] [reason]` | — | Ban permanently or until the timer ends; an id works when the user is not in the server |
 | `/unban <@user\|id> [reason]` | — | Remove a ban |
 | `/perm grant\|revoke <@role> <command>` | `:-perms`, `:-commandperm` | Let a role run a command without its Discord permission |
+| `/profile-edit <@member> ...` | `:-editprofile`, `:-profile-points` | Set the title and add or subtract profile points (Manage Server, grantable) |
 | `/exile <@member> [level] [reason]` | `:-jail`, `:-prison` | Give a member an exile role and hide the server from them |
 | `/exile-release <@member> [reason]` | `:-unjail`, `:-unexile` | Remove a member's exile role |
 | `/exile-setup <@role> [#except ...]` | — | Hide every channel from a role, except the listed ones |
@@ -109,6 +112,47 @@ Both run `src/boot.js`, which checks the Node version before loading the bot and
 - `/server-avatar server:<id or exact name>` and `/server-banner ...` default to the current server. Another server can only be shown if **the bot is already in it** — Discord does not expose private servers to outsiders.
 - Prefix forms accept a mention, an id, or a server name: `:-avatar @member`, `:-server-banner 123456789012345678`.
 
+## Profile cards
+
+`/profile` (prefix `:-profile`, aliases `:-card` and `:-profilecard`) renders a 1868×1200 PNG for you or the member you mention. The reply is the image alone — no embed text. Members who have left still render their stored numbers, but their rank is empty. Arabic nicknames are shaped and drawn right to left with the bundled Noto Sans Arabic; the labels on the card stay English.
+
+| Field | How it is worked out |
+|---|---|
+| Title | Set by staff; empty shows **No Title** (max 32 characters) |
+| Rank | Nightmare + vex among current members. Ties share a rank; 0 points has no rank; members who left are not ranked |
+| Level | `floor(xp / 100) + 1` |
+| XP bar | `xp % 100`, painted over the template track, from `0 / 100` to `99 / 100` |
+| Nightmare, Vex | Manual points added or subtracted by staff |
+| Punishments | `floor(punishment mini points / 7)` |
+| Good behavior | Manual points added or subtracted by staff |
+
+XP is `floor((nightmare + vex) / 5)`.
+
+### Automatic punishment points
+
+Every punishment the bot actually applies adds raw mini points; a refused or failed action adds nothing. Seven raw points make one displayed punishment, and the remainder carries over.
+
+| Action | Raw points |
+|---|---|
+| Mute, timeout, kick, ban | +1 each |
+| Exile | +4 |
+
+Repeating a punishment while it is still active counts once: a mute when the Muted role is already there, a timeout while one is running, a ban for someone already banned, and a level change on an active exile add nothing. A fresh punishment after release or expiry counts again.
+
+Existing exile rows are imported once per guild, at four points each, the first time `/profile`, `/profile-edit` or `/exile` runs. Mutes, timeouts, kicks and bans have no history table, so they start at zero.
+
+### Editing
+
+`/profile-edit` requires **Manage Server** and can be opened to a role with `/perm grant @Role profile-edit`.
+
+```text
+/profile-edit user:@member title:The Keeper nightmare:10 vex:-5 punishment:7 behavior:3
+:-profile-edit @member title The Keeper
+:-profile-edit @member nightmare +10 vex -5 punishment +7 behavior -2
+```
+
+Values are deltas, not replacements. Every stored field is clamped at zero, so a correction can empty a field but never push it negative. The `punishment` option is raw mini points (`7` is one displayed punishment). `title:reset` (or `:-profile-edit @member title reset`) clears the title.
+
 ## Activity stats
 
 The bot counts **messages** and **voice time** per member and per channel, then answers `/top`, `/topchannels`, `/compare`, `/serverstats` and `/lastseen`.
@@ -120,7 +164,7 @@ The bot counts **messages** and **voice time** per member and per channel, then 
 - **Threads** count toward their parent text channel, so a busy thread does not hide the channel that spawned it.
 - **Windows** are `all` (default), `7d` and `30d`. Days are bucketed in the bot's `TIMEZONE`. `:-top` also accepts the shorter words `week` and `month`, and Arabic `رسائل`/`صوت`/`اسبوع`/`شهر`.
 - **Voice sessions survive restarts.** A graceful shutdown closes them; after a crash they are closed at the last five-minute heartbeat, so at most five minutes can be overcounted. Downtime while the bot is offline is not counted.
-- The numbers live only in the server's own SQLite file (`data/bot.db`). There is no external service and no per-member profile card yet.
+- The numbers live only in the server's own SQLite file (`data/bot.db`). There is no external service.
 - `/top` and `/topchannels` show the top 10 by default (max 25); `/compare` shows messages, voice time and last activity side by side.
 - **Readable even with Arabic names.** Rankings use a fixed `01` rank column and left-to-right pins, so a display name cannot reorder the rows; the footer dates the tracking start instead of printing a raw timestamp.
 - **`/lastseen [user]`** shows one member's last activity, last message, message count, voice time, first message and join date. It defaults to you when no member is given.
@@ -584,6 +628,7 @@ src/
       help.js
       botinfo.js
       alias.js          admin-defined words that run a command
+      profile.js        generated profile card (PNG attachment)
     community/
       birthday.js       birthday registry + automatic role
       welcome.js        welcome cards
@@ -593,6 +638,7 @@ src/
       autoreport.js     scheduled summaries (interval or daily)
     moderation/
       clear.js          bulk message deletion with author filter
+      profile-edit.js   title + points, Manage Server or /perm grantable
       exile.js          assign an exile level to a member
       exile-setup.js    hide channels from an exile role, with exceptions
       exile-role.js     map main / 1-10 to exile roles
@@ -614,6 +660,8 @@ src/
     birthday-roles.js   role add/remove with permission-safe errors
     birthday-greetings.js greeting rendering, preview, delivery + dedupe
     birthday-scheduler.js per-member reconciliation + scheduler
+    profile-store.js    points, titles, XP/level math, punishment weights, rank
+    profile-card.js     canvas renderer: template, fonts, panels, XP bar
     welcome-store.js    welcome settings, per-style text and GIFs
     welcome-styles.js   the six card layouts and their text pieces
     summary-source.js   reads Discord history, builds the transcript
@@ -642,6 +690,10 @@ src/
     run-command.js      shared execution pipeline
     runtime.js          Node capability checks
     template.js         placeholder substitution
+assets/
+  profile/
+    card.png            profile card artwork (1868×1200)
+    fonts/              Inter + Noto Sans Arabic, with the OFL license
 ```
 
 ## Adding a command
