@@ -7,6 +7,9 @@ import {
 import { errorEmbed } from '../../lib/embeds.js';
 import { createLogger } from '../../lib/logger.js';
 import { displayNameOf, targetUser } from '../../lib/targets.js';
+import { config } from '../../config.js';
+import { memberStats } from '../../services/activity-store.js';
+import { getBirthday, getGuildSettings } from '../../services/birthday-store.js';
 import { renderProfileCard } from '../../services/profile-card.js';
 import {
   ensureExileBackfill,
@@ -14,6 +17,73 @@ import {
 } from '../../services/profile-store.js';
 
 const logger = createLogger('profile');
+
+const ACTIVITY_LABELS = {
+  0: 'Playing',
+  1: 'Streaming',
+  2: 'Listening to',
+  3: 'Watching',
+  5: 'Competing in',
+};
+
+function timestampOf(value) {
+  if (!value) return null;
+  if (value instanceof Date) return value.getTime();
+  const time = new Date(value).getTime();
+  return Number.isFinite(time) ? time : null;
+}
+
+/** The live status line: presence dot text, custom status and current activity. */
+function presenceFor(member) {
+  const presence = member?.presence;
+
+  if (!presence) {
+    return { status: 'offline', customStatus: null, activity: null, streaming: false };
+  }
+
+  const activities = Array.isArray(presence.activities) ? presence.activities : [];
+  const custom = activities.find((activity) => activity.type === 4);
+  const current = activities.find((activity) => activity.type !== 4);
+  const verb = ACTIVITY_LABELS[current?.type] ?? 'Playing';
+
+  return {
+    status: presence.status ?? 'offline',
+    customStatus: custom?.state?.trim() || null,
+    activity: current ? `${verb} ${current.name}`.trim() : null,
+    streaming: current?.type === 1,
+  };
+}
+
+/** Highest roles first, without @everyone. */
+function topRoles(member, guild) {
+  if (!member?.roles?.cache) return [];
+
+  return [...member.roles.cache.values()]
+    .filter((role) => role.id !== guild.id)
+    .sort((a, b) => (b.position ?? 0) - (a.position ?? 0))
+    .slice(0, 8)
+    .map((role) => ({
+      name: role.name,
+      color: role.color ? role.hexColor : null,
+    }));
+}
+
+/** Hidden entirely unless the member left the birthday block visible. */
+function birthdayFor(guildId, userId, stats) {
+  if (!stats.showBirthday) return null;
+
+  const birthday = getBirthday(guildId, userId);
+  if (!birthday) return null;
+
+  const settings = getGuildSettings(guildId);
+
+  return {
+    month: birthday.month,
+    day: birthday.day,
+    year: birthday.year ?? null,
+    timezone: birthday.timezone ?? settings.timezone ?? config.timezone,
+  };
+}
 
 function ephemeral(payload) {
   return { ...payload, flags: MessageFlags.Ephemeral };
@@ -96,11 +166,24 @@ export default {
 
     const ids = await memberIds(ctx.guild);
     const stats = profileStats(ctx.guildId, user.id, ids);
+    const activity = memberStats(ctx.guildId, user.id);
+    const status = {
+      presence: presenceFor(member),
+      messages: activity.messages,
+      voiceSeconds: activity.voiceSeconds,
+      lastActiveAt: activity.lastActiveAt,
+      lastMessageAt: activity.lastMessageAt,
+      joinedAt: timestampOf(member?.joinedAt),
+      createdAt: timestampOf(user.createdAt),
+      roles: topRoles(member, ctx.guild),
+      birthday: birthdayFor(ctx.guildId, user.id, stats),
+      birthdayHidden: !stats.showBirthday,
+    };
 
     let file;
 
     try {
-      const buffer = await renderProfileCard({ member: cardMember, stats });
+      const buffer = await renderProfileCard({ member: cardMember, stats, status });
       file = new AttachmentBuilder(buffer, { name: `profile-${user.id}.png` });
     } catch (error) {
       logger.error(`Could not render the card for ${user.id}`, error);

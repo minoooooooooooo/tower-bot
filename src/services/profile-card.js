@@ -1,7 +1,8 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { createCanvas, GlobalFonts, loadImage } from '@napi-rs/canvas';
-import { rootDir } from '../config.js';
+import { config, rootDir } from '../config.js';
+import { effectiveDay, formatListDate, zonedDate } from '../lib/dates.js';
 
 const ASSET_DIR = path.join(rootDir, 'assets', 'profile');
 const FONT_DIR = path.join(ASSET_DIR, 'fonts');
@@ -31,6 +32,21 @@ const PANELS = {
 
 const NUMBER_FONT_SIZE = 58;
 const ARABIC = /[\u0600-\u06ff\u0750-\u077f\u08a0-\u08ff]/;
+
+// The lower-left of the template is open cloud artwork, not a UI panel. The
+// status block paints its own translucent card so the values stay readable.
+const STATUS_PANEL = { x: 82, y: 300, width: 496, height: 700, radius: 34 };
+const STATUS_LEFT = 116;
+const STATUS_RIGHT = 544;
+const STATUS_WIDTH = STATUS_RIGHT - STATUS_LEFT;
+
+const PRESENCE = {
+  online: { label: 'Online', color: '#3ba55d' },
+  idle: { label: 'Idle', color: '#faa81a' },
+  dnd: { label: 'Do Not Disturb', color: '#ed4245' },
+  offline: { label: 'Offline', color: '#8b909a' },
+  streaming: { label: 'Streaming', color: '#a970ff' },
+};
 
 let templatePromise = null;
 
@@ -247,13 +263,408 @@ function drawXpBar(ctx, progress) {
   ctx.fillText(`${progress} / 100`, TRACK.x + TRACK.width, TRACK.y - 18);
 }
 
+/** "05 Nov 2026" in the bot's time zone. */
+function formatCardDate(ms) {
+  if (!ms) return '—';
+
+  const { year, month, day } = zonedDate(new Date(ms), config.timezone);
+  return formatListDate(year, month, day);
+}
+
+/** "12 min ago", "3 days ago", or the date when it is older than a month. */
+function formatAgo(ms, now = Date.now()) {
+  if (!ms) return 'No activity yet';
+
+  const diff = Math.max(0, now - ms);
+  const minutes = Math.floor(diff / 60_000);
+
+  if (minutes < 1) return 'Just now';
+  if (minutes < 60) return `${minutes} min ago`;
+
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days} day${days === 1 ? '' : 's'} ago`;
+
+  if (days < 30) {
+    const weeks = Math.floor(days / 7);
+    return `${weeks} week${weeks === 1 ? '' : 's'} ago`;
+  }
+
+  return formatCardDate(ms);
+}
+
+/** Voice totals stay short enough for a card tile. */
+function formatCardVoice(seconds) {
+  const total = Math.max(0, Math.round(Number(seconds) || 0));
+
+  if (total < 60) return `${total}s`;
+
+  const days = Math.floor(total / 86_400);
+  const hours = Math.floor((total % 86_400) / 3_600);
+  const minutes = Math.floor((total % 3_600) / 60);
+
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+  return `${minutes}m`;
+}
+
+/** Age today, not the age the member turns at their next birthday. */
+function currentAge(year, month, day, timeZone, now = new Date()) {
+  const today = zonedDate(now, timeZone);
+  let age = today.year - year;
+  const birthdayDay = effectiveDay(today.year, month, day);
+
+  if (today.month < month || (today.month === month && today.day < birthdayDay)) {
+    age -= 1;
+  }
+
+  return Math.max(0, age);
+}
+
+/** Lifts a very dark role colour so its dot is visible on the dark panel. */
+function accentColor(color) {
+  if (typeof color !== 'string') return '#a9adb8';
+
+  const hex = color.replace('#', '');
+  if (!/^[0-9a-f]{6}$/i.test(hex)) return '#a9adb8';
+
+  const [r, g, b] = [0, 2, 4].map((index) => Number.parseInt(hex.slice(index, index + 2), 16));
+  const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+
+  if (luminance >= 0.32) return color;
+
+  const lift = (value) => Math.round(value + (255 - value) * 0.45);
+  return `rgb(${lift(r)}, ${lift(g)}, ${lift(b)})`;
+}
+
+function drawStatusDivider(ctx, y) {
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
+  ctx.fillRect(STATUS_LEFT, y, STATUS_WIDTH, 1);
+}
+
+function drawStatTile(ctx, { x, y }, label, value) {
+  const width = (STATUS_WIDTH - 14) / 2;
+  const height = 106;
+
+  ctx.save();
+  roundedRect(ctx, { x, y, width, height, radius: 16 });
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.06)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.10)';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.restore();
+
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.52)';
+  ctx.font = fontOf(18, 700, label);
+  ctx.fillText(label, x + 18, y + 34);
+
+  const fitted = fitText(ctx, value, {
+    size: 44,
+    weight: 800,
+    maxWidth: width - 36,
+    minSize: 22,
+  });
+
+  ctx.fillStyle = '#ffffff';
+  ctx.font = fontOf(fitted.size, 800, fitted.text);
+  ctx.fillText(fitted.text, x + 18, y + 84);
+}
+
+function drawRolePill(ctx, role, x, y, maxWidth) {
+  const name = fitText(ctx, role.name, {
+    size: 20,
+    weight: 600,
+    maxWidth: maxWidth - 44,
+    minSize: 14,
+  });
+  const width = Math.min(maxWidth, Math.ceil(name.width) + 44);
+
+  ctx.save();
+  roundedRect(ctx, { x, y, width, height: 34, radius: 17 });
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.07)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.10)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.restore();
+
+  ctx.beginPath();
+  ctx.arc(x + 17, y + 17, 5, 0, Math.PI * 2);
+  ctx.fillStyle = accentColor(role.color);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#ffffff';
+  ctx.font = fontOf(name.size, 600, name.text);
+  ctx.fillText(name.text, x + 30, y + 18);
+  ctx.textBaseline = 'alphabetic';
+
+  return width;
+}
+
+/**
+ * The member-status block in the empty lower-left area: presence, activity,
+ * totals, dates, roles, and the opt-in birthday line. Every value is optional;
+ * the layout keeps fixed anchors so the card does not jump between members.
+ */
+function drawStatusPanel(ctx, status) {
+  const now = Date.now();
+  const presenceStatus = PRESENCE[status.presence?.status] ? status.presence.status : 'offline';
+  const streaming = Boolean(status.presence?.streaming);
+  const presence = PRESENCE[streaming ? 'streaming' : presenceStatus];
+  const active = presenceStatus !== 'offline';
+  const lastSeen = active
+    ? 'Active now'
+    : formatAgo(status.lastActiveAt ?? status.lastMessageAt, now);
+
+  ctx.save();
+  const gradient = ctx.createLinearGradient(
+    0,
+    STATUS_PANEL.y,
+    0,
+    STATUS_PANEL.y + STATUS_PANEL.height,
+  );
+  gradient.addColorStop(0, 'rgba(12, 12, 18, 0.88)');
+  gradient.addColorStop(1, 'rgba(12, 12, 18, 0.76)');
+  roundedRect(ctx, STATUS_PANEL);
+  ctx.fillStyle = gradient;
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.16)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.restore();
+
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.48)';
+  ctx.font = fontOf(19, 700, 'MEMBER STATUS');
+  ctx.fillText('MEMBER STATUS', STATUS_LEFT, 346);
+
+  // Last seen shares the presence line, right-aligned.
+  ctx.textAlign = 'right';
+  ctx.font = fontOf(20, 600, lastSeen);
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
+  ctx.fillText(lastSeen, STATUS_RIGHT, 398);
+  const lastSeenWidth = ctx.measureText(lastSeen).width;
+
+  const label = fitText(ctx, presence.label, {
+    size: 46,
+    weight: 700,
+    maxWidth: STATUS_WIDTH - lastSeenWidth - 34,
+    minSize: 26,
+  });
+
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#ffffff';
+  ctx.font = fontOf(label.size, 700, label.text);
+  ctx.fillText(label.text, STATUS_LEFT + 28, 402);
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(STATUS_LEFT + 9, 389, 9, 0, Math.PI * 2);
+  ctx.fillStyle = presence.color;
+  ctx.shadowColor = presence.color;
+  ctx.shadowBlur = 14;
+  ctx.fill();
+  ctx.restore();
+
+  if (status.presence?.customStatus) {
+    const custom = fitText(ctx, status.presence.customStatus, {
+      size: 25,
+      weight: 500,
+      maxWidth: STATUS_WIDTH,
+      minSize: 16,
+    });
+
+    ctx.textAlign = 'left';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.78)';
+    ctx.font = fontOf(custom.size, 500, custom.text);
+    ctx.fillText(custom.text, STATUS_LEFT, 440);
+  }
+
+  if (status.presence?.activity) {
+    const activity = fitText(ctx, status.presence.activity, {
+      size: 23,
+      weight: 500,
+      maxWidth: STATUS_WIDTH,
+      minSize: 15,
+    });
+
+    ctx.textAlign = 'left';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
+    ctx.font = fontOf(activity.size, 500, activity.text);
+    ctx.fillText(activity.text, STATUS_LEFT, 470);
+  }
+
+  drawStatusDivider(ctx, 492);
+
+  const tileY = 512;
+  const tileWidth = (STATUS_WIDTH - 14) / 2;
+
+  drawStatTile(ctx, { x: STATUS_LEFT, y: tileY }, 'MESSAGES', formatNumber(status.messages));
+  drawStatTile(
+    ctx,
+    { x: STATUS_LEFT + tileWidth + 14, y: tileY },
+    'VOICE TIME',
+    formatCardVoice(status.voiceSeconds),
+  );
+
+  let rowY = 664;
+
+  for (const [labelText, value] of [
+    ['JOINED', formatCardDate(status.joinedAt)],
+    ['ACCOUNT CREATED', formatCardDate(status.createdAt)],
+  ]) {
+    ctx.textAlign = 'left';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+    ctx.font = fontOf(19, 700, labelText);
+    ctx.fillText(labelText, STATUS_LEFT, rowY);
+
+    const fitted = fitText(ctx, value, {
+      size: 29,
+      weight: 600,
+      maxWidth: STATUS_WIDTH - 154,
+      minSize: 18,
+    });
+
+    ctx.textAlign = 'right';
+    ctx.fillStyle = '#ffffff';
+    ctx.font = fontOf(fitted.size, 600, fitted.text);
+    ctx.fillText(fitted.text, STATUS_RIGHT, rowY);
+    rowY += 50;
+  }
+
+  const roles = Array.isArray(status.roles) ? status.roles : [];
+  const birthday = status.birthday ?? null;
+  const hasBirthday = Boolean(birthday?.month);
+  // A birthday block always closes the panel, so the card never ends in a void.
+  // The placeholder reports the member's own visibility choice without leaking
+  // the date itself.
+  const blockTop = hasBirthday ? 874 : 916;
+  const rolesTop = 756;
+  const rolesBottom = blockTop - 16;
+
+  // Measure the pills first so a short roles list can be centred in the space
+  // instead of leaving a hole above the birthday block.
+  const positions = [];
+  let measureX = STATUS_LEFT;
+  let measureRow = 0;
+
+  for (const role of roles) {
+    if (positions.length >= 8) break;
+
+    ctx.font = fontOf(20, 600, role.name);
+    const width = Math.min(STATUS_WIDTH, ctx.measureText(role.name).width + 44);
+
+    if (measureX > STATUS_LEFT && measureX + width > STATUS_RIGHT) {
+      measureX = STATUS_LEFT;
+      measureRow += 1;
+    }
+
+    positions.push({ role, x: measureX, row: measureRow });
+    measureX += width + 10;
+  }
+
+  const maxRows = Math.max(1, Math.floor((rolesBottom - rolesTop - 14) / 42));
+  const rows = Math.min(
+    positions.length ? Math.max(...positions.map((position) => position.row)) + 1 : 0,
+    maxRows,
+  );
+  const rolesHeight = rows > 0 ? 14 + rows * 42 : 48;
+  const rolesStart = rolesTop + Math.max(0, (rolesBottom - rolesTop - rolesHeight) / 2);
+
+  ctx.textAlign = 'left';
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+  ctx.font = fontOf(19, 700, 'TOP ROLES');
+  ctx.fillText('TOP ROLES', STATUS_LEFT, rolesStart + 6);
+
+  let drawn = 0;
+
+  for (const { role, x, row } of positions) {
+    if (row >= rows) break;
+    drawRolePill(ctx, role, x, rolesStart + 22 + row * 42, STATUS_WIDTH);
+    drawn += 1;
+  }
+
+  if (drawn === 0) {
+    ctx.textAlign = 'left';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.42)';
+    ctx.font = fontOf(20, 500, 'No roles');
+    ctx.fillText('No roles', STATUS_LEFT, rolesStart + 40);
+  }
+
+  drawStatusDivider(ctx, blockTop);
+
+  ctx.textAlign = 'left';
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+  ctx.font = fontOf(18, 700, 'BIRTHDAY');
+  ctx.fillText('BIRTHDAY', STATUS_LEFT, blockTop + 24);
+
+  if (!hasBirthday) {
+    const placeholder = status.birthdayHidden ? 'Hidden by member' : 'Not shared';
+
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.42)';
+    ctx.font = fontOf(22, 500, placeholder);
+    ctx.fillText(placeholder, STATUS_LEFT, blockTop + 58);
+    return;
+  }
+
+  const date = formatListDate(birthday.year ?? null, birthday.month, birthday.day);
+  const age =
+    birthday.year && birthday.timezone
+      ? currentAge(birthday.year, birthday.month, birthday.day, birthday.timezone, now)
+      : null;
+  const dateText = fitText(ctx, date, {
+    size: 30,
+    weight: 700,
+    maxWidth: age === null ? STATUS_WIDTH : STATUS_WIDTH - 108,
+    minSize: 20,
+  });
+
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#ffffff';
+  ctx.font = fontOf(dateText.size, 700, dateText.text);
+  ctx.fillText(dateText.text, STATUS_LEFT, blockTop + 58);
+
+  if (age !== null) {
+    ctx.textAlign = 'right';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+    ctx.font = fontOf(21, 600, `${age} years`);
+    ctx.fillText(`${age} years`, STATUS_RIGHT, blockTop + 58);
+  }
+
+  if (birthday.timezone) {
+    const zone = fitText(ctx, birthday.timezone, {
+      size: 20,
+      weight: 500,
+      maxWidth: STATUS_WIDTH,
+      minSize: 14,
+    });
+
+    ctx.textAlign = 'left';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.46)';
+    ctx.font = fontOf(zone.size, 500, zone.text);
+    ctx.fillText(zone.text, STATUS_LEFT, blockTop + 88);
+  }
+}
+
 /**
  * Renders the profile card and returns a PNG buffer.
  *
  * `stats` comes from profile-store.profileStats and already contains the
- * derived rank, level, XP and punishment values.
+ * derived rank, level, XP and punishment values. `status` is optional so older
+ * callers keep working; when present it fills the lower-left member panel.
  */
-export async function renderProfileCard({ member, stats }) {
+export async function renderProfileCard({ member, stats, status = null }) {
   ensureFonts();
 
   const [template, avatar] = await Promise.all([
@@ -277,6 +688,8 @@ export async function renderProfileCard({ member, stats }) {
   drawPanelValue(ctx, PANELS.punishments, formatNumber(stats.punishments));
   drawPanelValue(ctx, PANELS.behavior, formatNumber(stats.goodBehavior));
   drawXpBar(ctx, stats.progress);
+
+  if (status) drawStatusPanel(ctx, status);
 
   return canvas.toBuffer('image/png');
 }

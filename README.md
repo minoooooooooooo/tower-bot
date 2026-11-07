@@ -19,7 +19,7 @@ A Discord bot with **both slash (`/ping`) and prefix (`:-ping`) commands**, buil
 
 1. Open <https://discord.com/developers/applications> and click **New Application**.
 2. Go to **Bot** and click **Reset Token** → **Copy**. This is your `DISCORD_TOKEN`.
-3. On the same **Bot** page, scroll to **Privileged Gateway Intents** and enable **Message Content Intent** (prefix commands) **and Server Members Intent** (welcome cards — without it the bot refuses to log in after the next update).
+3. On the same **Bot** page, scroll to **Privileged Gateway Intents** and enable **Message Content Intent** (prefix commands), **Server Members Intent** (welcome cards) **and Presence Intent** (live status on profile cards). Without all three the bot refuses to log in after the next update.
 4. Go to **General Information** and copy the **Application ID**. This is your `CLIENT_ID`.
 
 ### 2. Invite the bot
@@ -75,7 +75,7 @@ Both run `src/boot.js`, which checks the Node version before loading the bot and
 | `/lastseen [user]` | `:-lastactive`, `:-lastactivity`, `:-seen`, `:-last` | When a member was last active, with first message and join date |
 | `/backfill [start\|status\|audit\|cancel]` | `:-importactivity`, `:-historyimport` | Import older message history into activity stats (owner-only) |
 | `/avatar [user]` | `:-av`, `:-pfp` | Show a member's global and per-server avatar |
-| `/profile [user]` | `:-card`, `:-profilecard` | Generated profile card with title, rank, level, points and XP |
+| `/profile [user]` | `:-card`, `:-profilecard` | Generated profile card: status, role and point panels |
 | `/banner [user]` | `:-userbanner` | Show a member's profile banner |
 | `/server-avatar [server]` | `:-serverav`, `:-servericon`, `:-sicon` | Show a server icon, including another server the bot is in |
 | `/server-banner [server]` | `:-serverbanner`, `:-sbanner` | Show a server banner, including another server the bot is in |
@@ -127,6 +127,21 @@ Both run `src/boot.js`, which checks the Node version before loading the bot and
 | Good behavior | Manual points added or subtracted by staff |
 
 XP is `floor((nightmare + vex) / 5)`.
+
+### Status panel
+
+The lower-left panel is filled from live data:
+
+| Field | Source |
+|---|---|
+| Presence | Online / idle / Do Not Disturb / offline dot, custom status and current activity. Requires Discord's **Presence Intent** |
+| Messages, Voice time | All-time activity totals from the same store as `/top` |
+| Joined, Account created | Discord's member join date and account creation date |
+| Last seen | Most recent message or voice activity |
+| Top roles | The member's highest roles, without `@everyone` |
+| Birthday, age, time zone | The saved birthday, current age when a birth year exists, and the member's effective time zone |
+
+The birthday block is opt-in per member and per server. It is shown by default; hide or restore it with `/birthday show visible:false` / `visible:true` (prefix: `:-birthday show off` / `on`). Hiding it hides the date, age and time zone together. If the block is hidden or no birthday is saved, the panel says so instead of leaving a hole.
 
 ### Automatic punishment points
 
@@ -457,12 +472,13 @@ Give **either** `every` **or** `time` — never both, never neither. Prefix form
 
 ## Birthdays
 
-One command, ten subcommands — each works as a slash command and with the prefix:
+One command, eleven subcommands — each works as a slash command and with the prefix:
 
 | Subcommand | Who | What it does |
 |---|---|---|
 | `/birthday set <month> <day> [year] [user]` | everyone | Save or update your birthday (admins: set someone else's) |
 | `/birthday remove` | everyone | Delete your birthday |
+| `/birthday show [visible]` | everyone | Show or hide the birthday, age and time zone block on your profile card |
 | `/birthday list` | everyone | All birthdays, sorted by next occurrence, flagging members with no time zone |
 | `/birthday today` | everyone | Who is celebrating today |
 | `/birthday next [user]` | everyone | Countdown for you or someone else |
@@ -480,6 +496,7 @@ Prefix examples:
 :-bd set 2 29 1996
 :-bday set @someone 5 14 1996
 :-bday next @someone
+:-birthday show off
 :-birthday role @Birthday
 :-birthday channel #birthdays
 :-birthday message Happy birthday, {user}! You are {age}! | https://example.com/cake.gif
@@ -516,6 +533,10 @@ Each member gets their own time zone. A birthday rolls over at midnight **in tha
 The fallback for members without an override is the server default, set with `/birthday timezone default:true Europe/Berlin` (prefix: `:-birthday timezone --default Europe/Berlin`). If that is unset too, the `TIMEZONE` environment value is used.
 
 A time zone can only be saved after a birthday exists — set the birthday first. `/birthday list` and `/birthday today` evaluate each row in its own zone and mark members whose zone differs from the server default.
+
+### Birthday privacy on the card
+
+Each member controls their own birthday block. The card shows the date, current age and effective time zone by default; `/birthday show visible:false` (prefix `:-birthday show off`) hides all three together, and `/birthday show visible:true` brings them back. The setting is stored per member per server and can be changed before a birthday is saved. Staff cannot toggle it for someone else.
 
 ### Birthday greetings
 
@@ -702,7 +723,7 @@ See [`docs/adding-commands.md`](docs/adding-commands.md).
 
 ## Troubleshooting
 
-**`Used disallowed intents` on startup** — enable **Message Content Intent** in the Developer Portal (Bot → Privileged Gateway Intents), then restart.
+**`Used disallowed intents` on startup** — enable **Message Content Intent**, **Server Members Intent** and **Presence Intent** in the Developer Portal (Bot → Privileged Gateway Intents), then restart.
 
 **`Invalid token`** — re-copy the token; it resets if you press Reset Token again.
 

@@ -29,6 +29,7 @@ const EMPTY_PROFILE = Object.freeze({
   vex: 0,
   punishMini: 0,
   goodBehavior: 0,
+  showBirthday: true,
   createdAt: null,
   updatedAt: null,
 });
@@ -46,6 +47,7 @@ function toProfile(row) {
     vex: row.vex,
     punishMini: row.punish_mini,
     goodBehavior: row.good_behavior,
+    showBirthday: row.show_birthday !== 0,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -55,7 +57,8 @@ function toProfile(row) {
 export function getProfile(guildId, userId) {
   const row = getDb()
     .prepare(
-      `SELECT title, nightmare, vex, punish_mini, good_behavior, created_at, updated_at
+      `SELECT title, nightmare, vex, punish_mini, good_behavior, show_birthday,
+              created_at, updated_at
          FROM profiles WHERE guild_id = ? AND user_id = ?`,
     )
     .get(guildId, userId);
@@ -137,6 +140,31 @@ export function setProfileTitle(guildId, userId, title) {
     db.prepare(
       'UPDATE profiles SET title = ?, updated_at = ? WHERE guild_id = ? AND user_id = ?',
     ).run(cleaned, now, guildId, userId);
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+
+  return getProfile(guildId, userId);
+}
+
+/**
+ * Shows or hides the birthday, age and time zone block on the member's card.
+ * The preference lives on the profile row so it survives a birthday change and
+ * can be set before a birthday exists.
+ */
+export function setBirthdayVisible(guildId, userId, visible) {
+  const now = Date.now();
+  const db = getDb();
+
+  db.exec('BEGIN');
+
+  try {
+    upsertProfile(db, guildId, userId, now);
+    db.prepare(
+      'UPDATE profiles SET show_birthday = ?, updated_at = ? WHERE guild_id = ? AND user_id = ?',
+    ).run(visible ? 1 : 0, now, guildId, userId);
     db.exec('COMMIT');
   } catch (error) {
     db.exec('ROLLBACK');

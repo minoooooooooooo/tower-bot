@@ -23,6 +23,7 @@ import {
 import { COLORS, embed, errorEmbed, successEmbed } from '../../lib/embeds.js';
 import * as store from '../../services/birthday-store.js';
 import { removeBirthdayRole } from '../../services/birthday-roles.js';
+import { getProfile, setBirthdayVisible } from '../../services/profile-store.js';
 import {
   DEFAULT_MESSAGE,
   PLACEHOLDERS,
@@ -55,6 +56,8 @@ const SUBCOMMAND_ALIASES = {
   chan: 'channel',
   test: 'send',
   try: 'send',
+  visibility: 'show',
+  privacy: 'show',
 };
 
 const MAX_FIELD_LENGTH = 1000;
@@ -315,6 +318,70 @@ async function handleRemove(ctx) {
           isSelf ? 'Birthday removed' : `Birthday removed for ${who}`,
           isSelf ? 'Your birthday was deleted.' : 'Their saved birthday was deleted.',
         ),
+      ],
+    }),
+  );
+}
+
+const SHOW_VALUES = {
+  on: true,
+  true: true,
+  show: true,
+  visible: true,
+  yes: true,
+  '1': true,
+  off: false,
+  false: false,
+  hide: false,
+  hidden: false,
+  no: false,
+  '0': false,
+};
+
+function showArgument(ctx) {
+  if (ctx.isSlash) return ctx.getBoolean('visible');
+
+  const raw = String(ctx.args[1] ?? '').trim().toLowerCase();
+  return Object.hasOwn(SHOW_VALUES, raw) ? SHOW_VALUES[raw] : undefined;
+}
+
+/**
+ * Per-member privacy switch for the birthday, age and time zone block on the
+ * profile card. Members control their own row; staff cannot toggle it for them.
+ */
+async function handleShow(ctx) {
+  const next = showArgument(ctx);
+  const before = getProfile(ctx.guildId, ctx.user.id).showBirthday;
+  const visible =
+    next === undefined
+      ? before
+      : setBirthdayVisible(ctx.guildId, ctx.user.id, next).showBirthday;
+  const hasBirthday = Boolean(store.getBirthday(ctx.guildId, ctx.user.id));
+  const lines = [
+    visible
+      ? 'Your birthday, age and time zone are shown on your profile card.'
+      : 'Your birthday, age and time zone are hidden from your profile card.',
+  ];
+
+  if (!hasBirthday) {
+    lines.push('You have not registered a birthday yet; this applies when you add one.');
+  } else if (!visible) {
+    lines.push('Set it with `/birthday show visible:true` whenever you want it back.');
+  }
+
+  const title =
+    next === undefined
+      ? 'Birthday visibility'
+      : visible
+        ? 'Birthday block shown'
+        : 'Birthday block hidden';
+
+  await ctx.reply(
+    ephemeral({
+      embeds: [
+        next === undefined
+          ? embed({ title, description: lines.join('\n'), color: COLORS.muted })
+          : successEmbed(title, lines.join('\n')),
       ],
     }),
   );
@@ -1264,6 +1331,7 @@ function overviewEmbed(ctx) {
     description: [
       '`/birthday set <month> <day> [year] [user]` — save a birthday (admins: others)',
       '`/birthday remove [user]` - delete a birthday (admins: others)',
+      '`/birthday show [visible]` — show or hide the birthday block on your card',
       '`/birthday list` - everyone, nearest first or January to December',
       '`/birthday today` — who is celebrating today',
       '`/birthday next [user]` — countdown for you or someone else',
@@ -1340,6 +1408,17 @@ export default {
           option
             .setName('user')
             .setDescription("Admin: remove someone else's birthday (Manage Server)")
+            .setRequired(false),
+        ),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName('show')
+        .setDescription('Show or hide your birthday, age and time zone on your profile card')
+        .addBooleanOption((option) =>
+          option
+            .setName('visible')
+            .setDescription('Show the block on your card (leave empty to see the current setting)')
             .setRequired(false),
         ),
     )
@@ -1471,6 +1550,8 @@ export default {
         return handleSet(ctx);
       case 'remove':
         return handleRemove(ctx);
+      case 'show':
+        return handleShow(ctx);
       case 'list':
         return handleList(ctx, client);
       case 'today':

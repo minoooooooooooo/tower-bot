@@ -401,6 +401,7 @@ const SCHEMA = `
     vex          INTEGER NOT NULL DEFAULT 0,
     punish_mini  INTEGER NOT NULL DEFAULT 0,
     good_behavior INTEGER NOT NULL DEFAULT 0,
+    show_birthday INTEGER NOT NULL DEFAULT 1,
     created_at   INTEGER NOT NULL,
     updated_at   INTEGER NOT NULL,
     PRIMARY KEY (guild_id, user_id)
@@ -443,6 +444,7 @@ const COLUMN_MIGRATIONS = [
   ['activity_meta', 'messages_since', 'INTEGER'],
   ['activity_meta', 'voice_since', 'INTEGER'],
   ['command_aliases', 'channel_mode', 'TEXT'],
+  ['profiles', 'show_birthday', 'INTEGER NOT NULL DEFAULT 1'],
 ];
 
 function applyMigrations(db) {

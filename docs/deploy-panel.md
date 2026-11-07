@@ -281,7 +281,7 @@ time zone setting — not the bot itself, which redeploys from GitHub in a minut
 | `Cannot find module '@napi-rs/canvas'` after an update | the restart did not run an install, so the new dependency is missing | run the startup command once (or reinstall dependencies in the panel) and restart; `/profile` needs the prebuilt canvas binary |
 | `/profile` fails with `ENOENT ... assets/profile/card.png` | zip built before 2026-11-06, or `assets/` was not uploaded | rebuild with `package.bat` and extract `assets/` next to `src/` |
 | `TokenInvalid` | Wrong or truncated token | Re-copy from Developer Portal → Bot → Reset Token |
-| `Used disallowed intents` | Message Content Intent off | Developer Portal → Bot → Privileged Gateway Intents → enable **Message Content Intent** |
+| `Used disallowed intents` | Message Content, Server Members or Presence Intent off | Developer Portal → Bot → Privileged Gateway Intents → enable **Message Content Intent**, **Server Members Intent** and **Presence Intent** |
 | Prefix commands do nothing, slash works | Message Content Intent still off, or wrong `PREFIX` | Check the intent first; then confirm `PREFIX=:-` |
 | `/clear` says missing permissions | Bot lacks Manage Messages | Give the bot role **Manage Messages** + **Read Message History** |
 | Birthday role never granted | Role above the bot's role, or no Manage Roles | Drag the bot's role above the birthday role |
