@@ -33,12 +33,18 @@ const PANELS = {
 const NUMBER_FONT_SIZE = 58;
 const ARABIC = /[\u0600-\u06ff\u0750-\u077f\u08a0-\u08ff]/;
 
-// The lower-left of the template is open cloud artwork, not a UI panel. The
-// status block paints its own translucent card so the values stay readable.
-const STATUS_PANEL = { x: 82, y: 300, width: 496, height: 700, radius: 34 };
+// The lower-left of the template is open cloud artwork with no UI panel, so the
+// status block sits directly on the art. Text carries a soft dark halo and the
+// tiles are light glass, which stays legible over clouds and rainbow alike.
 const STATUS_LEFT = 116;
 const STATUS_RIGHT = 544;
 const STATUS_WIDTH = STATUS_RIGHT - STATUS_LEFT;
+
+const STATUS_INK = '#ffffff';
+const STATUS_LABEL = 'rgba(255, 255, 255, 0.8)';
+const STATUS_DIM = 'rgba(255, 255, 255, 0.68)';
+const STATUS_GLASS = 'rgba(255, 255, 255, 0.13)';
+const STATUS_EDGE = 'rgba(255, 255, 255, 0.36)';
 
 const PRESENCE = {
   online: { label: 'Online', color: '#3ba55d' },
@@ -339,8 +345,28 @@ function accentColor(color) {
   return `rgb(${lift(r)}, ${lift(g)}, ${lift(b)})`;
 }
 
+/** White text with a soft dark halo, so it reads on the clouds and the rainbow. */
+function drawInkText(
+  ctx,
+  value,
+  x,
+  y,
+  { size, weight, color = STATUS_INK, align = 'left', baseline = 'alphabetic' },
+) {
+  ctx.save();
+  ctx.textAlign = align;
+  ctx.textBaseline = baseline;
+  ctx.fillStyle = color;
+  ctx.font = fontOf(size, weight, value);
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.55)';
+  ctx.shadowBlur = 10;
+  ctx.shadowOffsetY = 1;
+  ctx.fillText(value, x, y);
+  ctx.restore();
+}
+
 function drawStatusDivider(ctx, y) {
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
   ctx.fillRect(STATUS_LEFT, y, STATUS_WIDTH, 1);
 }
 
@@ -350,18 +376,14 @@ function drawStatTile(ctx, { x, y }, label, value) {
 
   ctx.save();
   roundedRect(ctx, { x, y, width, height, radius: 16 });
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.06)';
+  ctx.fillStyle = STATUS_GLASS;
   ctx.fill();
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.10)';
+  ctx.strokeStyle = STATUS_EDGE;
   ctx.lineWidth = 1.5;
   ctx.stroke();
   ctx.restore();
 
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'alphabetic';
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.52)';
-  ctx.font = fontOf(18, 700, label);
-  ctx.fillText(label, x + 18, y + 34);
+  drawInkText(ctx, label, x + 18, y + 34, { size: 18, weight: 700, color: STATUS_LABEL });
 
   const fitted = fitText(ctx, value, {
     size: 44,
@@ -370,9 +392,7 @@ function drawStatTile(ctx, { x, y }, label, value) {
     minSize: 22,
   });
 
-  ctx.fillStyle = '#ffffff';
-  ctx.font = fontOf(fitted.size, 800, fitted.text);
-  ctx.fillText(fitted.text, x + 18, y + 84);
+  drawInkText(ctx, fitted.text, x + 18, y + 84, { size: fitted.size, weight: 800 });
 }
 
 function drawRolePill(ctx, role, x, y, maxWidth) {
@@ -386,27 +406,28 @@ function drawRolePill(ctx, role, x, y, maxWidth) {
 
   ctx.save();
   roundedRect(ctx, { x, y, width, height: 34, radius: 17 });
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.07)';
+  ctx.fillStyle = STATUS_GLASS;
   ctx.fill();
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.10)';
+  ctx.strokeStyle = STATUS_EDGE;
   ctx.lineWidth = 1;
   ctx.stroke();
   ctx.restore();
 
+  ctx.save();
   ctx.beginPath();
   ctx.arc(x + 17, y + 17, 5, 0, Math.PI * 2);
   ctx.fillStyle = accentColor(role.color);
   ctx.fill();
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.75)';
   ctx.lineWidth = 1;
   ctx.stroke();
+  ctx.restore();
 
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'middle';
-  ctx.fillStyle = '#ffffff';
-  ctx.font = fontOf(name.size, 600, name.text);
-  ctx.fillText(name.text, x + 30, y + 18);
-  ctx.textBaseline = 'alphabetic';
+  drawInkText(ctx, name.text, x + 30, y + 18, {
+    size: name.size,
+    weight: 600,
+    baseline: 'middle',
+  });
 
   return width;
 }
@@ -426,34 +447,20 @@ function drawStatusPanel(ctx, status) {
     ? 'Active now'
     : formatAgo(status.lastActiveAt ?? status.lastMessageAt, now);
 
-  ctx.save();
-  const gradient = ctx.createLinearGradient(
-    0,
-    STATUS_PANEL.y,
-    0,
-    STATUS_PANEL.y + STATUS_PANEL.height,
-  );
-  gradient.addColorStop(0, 'rgba(12, 12, 18, 0.88)');
-  gradient.addColorStop(1, 'rgba(12, 12, 18, 0.76)');
-  roundedRect(ctx, STATUS_PANEL);
-  ctx.fillStyle = gradient;
-  ctx.fill();
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.16)';
-  ctx.lineWidth = 2;
-  ctx.stroke();
-  ctx.restore();
-
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'alphabetic';
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.48)';
-  ctx.font = fontOf(19, 700, 'MEMBER STATUS');
-  ctx.fillText('MEMBER STATUS', STATUS_LEFT, 346);
+  drawInkText(ctx, 'MEMBER STATUS', STATUS_LEFT, 346, {
+    size: 19,
+    weight: 700,
+    color: STATUS_LABEL,
+  });
 
   // Last seen shares the presence line, right-aligned.
-  ctx.textAlign = 'right';
+  drawInkText(ctx, lastSeen, STATUS_RIGHT, 398, {
+    size: 20,
+    weight: 600,
+    color: 'rgba(255, 255, 255, 0.72)',
+    align: 'right',
+  });
   ctx.font = fontOf(20, 600, lastSeen);
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
-  ctx.fillText(lastSeen, STATUS_RIGHT, 398);
   const lastSeenWidth = ctx.measureText(lastSeen).width;
 
   const label = fitText(ctx, presence.label, {
@@ -463,10 +470,7 @@ function drawStatusPanel(ctx, status) {
     minSize: 26,
   });
 
-  ctx.textAlign = 'left';
-  ctx.fillStyle = '#ffffff';
-  ctx.font = fontOf(label.size, 700, label.text);
-  ctx.fillText(label.text, STATUS_LEFT + 28, 402);
+  drawInkText(ctx, label.text, STATUS_LEFT + 28, 402, { size: label.size, weight: 700 });
 
   ctx.save();
   ctx.beginPath();
@@ -475,6 +479,9 @@ function drawStatusPanel(ctx, status) {
   ctx.shadowColor = presence.color;
   ctx.shadowBlur = 14;
   ctx.fill();
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
   ctx.restore();
 
   if (status.presence?.customStatus) {
@@ -485,10 +492,11 @@ function drawStatusPanel(ctx, status) {
       minSize: 16,
     });
 
-    ctx.textAlign = 'left';
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.78)';
-    ctx.font = fontOf(custom.size, 500, custom.text);
-    ctx.fillText(custom.text, STATUS_LEFT, 440);
+    drawInkText(ctx, custom.text, STATUS_LEFT, 440, {
+      size: custom.size,
+      weight: 500,
+      color: 'rgba(255, 255, 255, 0.9)',
+    });
   }
 
   if (status.presence?.activity) {
@@ -499,10 +507,11 @@ function drawStatusPanel(ctx, status) {
       minSize: 15,
     });
 
-    ctx.textAlign = 'left';
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
-    ctx.font = fontOf(activity.size, 500, activity.text);
-    ctx.fillText(activity.text, STATUS_LEFT, 470);
+    drawInkText(ctx, activity.text, STATUS_LEFT, 470, {
+      size: activity.size,
+      weight: 500,
+      color: STATUS_DIM,
+    });
   }
 
   drawStatusDivider(ctx, 492);
@@ -524,10 +533,11 @@ function drawStatusPanel(ctx, status) {
     ['JOINED', formatCardDate(status.joinedAt)],
     ['ACCOUNT CREATED', formatCardDate(status.createdAt)],
   ]) {
-    ctx.textAlign = 'left';
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-    ctx.font = fontOf(19, 700, labelText);
-    ctx.fillText(labelText, STATUS_LEFT, rowY);
+    drawInkText(ctx, labelText, STATUS_LEFT, rowY, {
+      size: 19,
+      weight: 700,
+      color: STATUS_LABEL,
+    });
 
     const fitted = fitText(ctx, value, {
       size: 29,
@@ -536,10 +546,11 @@ function drawStatusPanel(ctx, status) {
       minSize: 18,
     });
 
-    ctx.textAlign = 'right';
-    ctx.fillStyle = '#ffffff';
-    ctx.font = fontOf(fitted.size, 600, fitted.text);
-    ctx.fillText(fitted.text, STATUS_RIGHT, rowY);
+    drawInkText(ctx, fitted.text, STATUS_RIGHT, rowY, {
+      size: fitted.size,
+      weight: 600,
+      align: 'right',
+    });
     rowY += 50;
   }
 
@@ -582,10 +593,11 @@ function drawStatusPanel(ctx, status) {
   const rolesHeight = rows > 0 ? 14 + rows * 42 : 48;
   const rolesStart = rolesTop + Math.max(0, (rolesBottom - rolesTop - rolesHeight) / 2);
 
-  ctx.textAlign = 'left';
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-  ctx.font = fontOf(19, 700, 'TOP ROLES');
-  ctx.fillText('TOP ROLES', STATUS_LEFT, rolesStart + 6);
+  drawInkText(ctx, 'TOP ROLES', STATUS_LEFT, rolesStart + 6, {
+    size: 19,
+    weight: 700,
+    color: STATUS_LABEL,
+  });
 
   let drawn = 0;
 
@@ -596,25 +608,29 @@ function drawStatusPanel(ctx, status) {
   }
 
   if (drawn === 0) {
-    ctx.textAlign = 'left';
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.42)';
-    ctx.font = fontOf(20, 500, 'No roles');
-    ctx.fillText('No roles', STATUS_LEFT, rolesStart + 40);
+    drawInkText(ctx, 'No roles', STATUS_LEFT, rolesStart + 40, {
+      size: 20,
+      weight: 500,
+      color: STATUS_DIM,
+    });
   }
 
   drawStatusDivider(ctx, blockTop);
 
-  ctx.textAlign = 'left';
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-  ctx.font = fontOf(18, 700, 'BIRTHDAY');
-  ctx.fillText('BIRTHDAY', STATUS_LEFT, blockTop + 24);
+  drawInkText(ctx, 'BIRTHDAY', STATUS_LEFT, blockTop + 24, {
+    size: 18,
+    weight: 700,
+    color: STATUS_LABEL,
+  });
 
   if (!hasBirthday) {
     const placeholder = status.birthdayHidden ? 'Hidden by member' : 'Not shared';
 
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.42)';
-    ctx.font = fontOf(22, 500, placeholder);
-    ctx.fillText(placeholder, STATUS_LEFT, blockTop + 58);
+    drawInkText(ctx, placeholder, STATUS_LEFT, blockTop + 58, {
+      size: 22,
+      weight: 500,
+      color: STATUS_DIM,
+    });
     return;
   }
 
@@ -630,16 +646,18 @@ function drawStatusPanel(ctx, status) {
     minSize: 20,
   });
 
-  ctx.textAlign = 'left';
-  ctx.fillStyle = '#ffffff';
-  ctx.font = fontOf(dateText.size, 700, dateText.text);
-  ctx.fillText(dateText.text, STATUS_LEFT, blockTop + 58);
+  drawInkText(ctx, dateText.text, STATUS_LEFT, blockTop + 58, {
+    size: dateText.size,
+    weight: 700,
+  });
 
   if (age !== null) {
-    ctx.textAlign = 'right';
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-    ctx.font = fontOf(21, 600, `${age} years`);
-    ctx.fillText(`${age} years`, STATUS_RIGHT, blockTop + 58);
+    drawInkText(ctx, `${age} years`, STATUS_RIGHT, blockTop + 58, {
+      size: 21,
+      weight: 600,
+      color: STATUS_LABEL,
+      align: 'right',
+    });
   }
 
   if (birthday.timezone) {
@@ -650,10 +668,11 @@ function drawStatusPanel(ctx, status) {
       minSize: 14,
     });
 
-    ctx.textAlign = 'left';
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.46)';
-    ctx.font = fontOf(zone.size, 500, zone.text);
-    ctx.fillText(zone.text, STATUS_LEFT, blockTop + 88);
+    drawInkText(ctx, zone.text, STATUS_LEFT, blockTop + 88, {
+      size: zone.size,
+      weight: 500,
+      color: STATUS_DIM,
+    });
   }
 }
 

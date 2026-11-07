@@ -130,7 +130,7 @@ XP is `floor((nightmare + vex) / 5)`.
 
 ### Status panel
 
-The lower-left panel is filled from live data:
+The lower-left of the card is filled from live data, drawn straight onto the artwork — no extra panel, so the clouds and colours stay visible:
 
 | Field | Source |
 |---|---|
