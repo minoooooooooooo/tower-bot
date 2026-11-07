@@ -90,6 +90,8 @@ Both run `src/boot.js`, which checks the Node version before loading the bot and
 | `/ban <@user\|id> [duration] [reason]` | — | Ban permanently or until the timer ends; an id works when the user is not in the server |
 | `/unban <@user\|id> [reason]` | — | Remove a ban |
 | `/perm grant\|revoke <@role> <command>` | `:-perms`, `:-commandperm` | Let a role run a command without its Discord permission |
+| `/nickname [user] [name]` | `:-nick` | Change your own nickname; **Manage Nicknames** to rename someone else; empty or `reset` clears |
+| `/role toggle\|add\|remove <@role> [user]` | `:-roles` | Add, remove or toggle a role for you or a member; `bulk` covers every human or bot (**Manage Roles**) |
 | `/profile-edit <@member> ...` | `:-editprofile`, `:-profile-points` | Set the title and add or subtract profile points (Manage Server, grantable) |
 | `/exile <@member> [level] [reason]` | `:-jail`, `:-prison` | Give a member an exile role and hide the server from them |
 | `/exile-release <@member> [reason]` | `:-unjail`, `:-unexile` | Remove a member's exile role |
@@ -102,6 +104,23 @@ Both run `src/boot.js`, which checks the Node version before loading the bot and
 | `/glossary <subcommand>` | `:-jargon` | Terms and jargon the summarizer should understand |
 | `/autoreport <subcommand>` | `:-schedule`, `:-digest` | Post a channel summary automatically, on an interval or at a fixed daily time |
 | `/alias <subcommand>` | `:-shortcut`, `:-aliases` | Run a command by typing a word, with no prefix; restrict it to channels |
+
+## Nicknames and roles
+
+`/nickname [user] [name]` (prefix `:-nick`) renames you. Naming someone else needs **Manage Nicknames**, and the bot needs that permission plus a role above theirs. Leaving the name out — or typing `reset`, `clear`, `remove` or `none` — clears the nickname instead. Discord never lets anyone rename the server owner, and the bot cannot rename itself.
+
+`/role` (prefix `:-roles`) needs **Manage Roles** for every use, including on yourself. Prefix forms:
+
+```
+:-role @Role            toggle it on yourself
+:-role +@Role           add it if missing
+:-role -@Role           remove it if present
+:-role @member +@Role   add it to one member
+:-role all +@Role       every human member
+:-role bots -@Role      every bot
+```
+
+`add` and `remove` are no-ops when the member already has, or lacks, the role. `+ @Role` and `@Role +` work too, as do the words `add` and `remove`. Bulk runs skip members at or above the bot's highest role and stop at 500 members per run, reporting added, removed, unchanged, skipped and failed counts.
 
 ## Profile lookups
 
