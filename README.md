@@ -122,6 +122,8 @@ Both run `src/boot.js`, which checks the Node version before loading the bot and
 
 `add` and `remove` are no-ops when the member already has, or lacks, the role. `+ @Role` and `@Role +` work too, as do the words `add` and `remove`. Bulk runs skip members at or above the bot's highest role and stop at 500 members per run, reporting added, removed, unchanged, skipped and failed counts.
 
+Role names are searched, not just matched exactly: `:-role سكان` finds **سكان البرج**, ignoring case, Arabic diacritics and alef/ya/ta-marbuta variants. A name that only starts with the typed word beats one that merely contains it, so `run` finds **Rune** before **The Rune**. If the word fits more than one role equally well (`رون` → **رون الاستدعاء**, **رون العش**, **رون العد**), the bot refuses and lists the candidates instead of guessing — type more of the name or mention the role.
+
 ## Profile lookups
 
 `/avatar`, `/banner`, `/server-avatar` and `/server-banner` all work on someone else:

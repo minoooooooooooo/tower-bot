@@ -6,7 +6,7 @@ import {
 } from 'discord.js';
 import { COLORS, embed, errorEmbed, successEmbed } from '../../lib/embeds.js';
 import { createLogger } from '../../lib/logger.js';
-import { parseReference, resolveMember, resolveRole } from '../../lib/resolve.js';
+import { findRoleMatches, parseReference, resolveMember, resolveRole } from '../../lib/resolve.js';
 
 const logger = createLogger('role');
 
@@ -344,6 +344,27 @@ async function runBulk(ctx, target, role, action) {
   });
 }
 
+/** Escapes the typed word so bold/italic characters cannot break the reply. */
+function display(text) {
+  return String(text ?? '').replace(/([\\`*_~|>])/g, '\\$1');
+}
+
+function ambiguousRoleDescription(text, matches) {
+  const shown = matches.slice(0, 10);
+  const lines = shown.map((role) => `• **${role.name}**`);
+
+  if (matches.length > shown.length) {
+    lines.push(`…and **${matches.length - shown.length}** more.`);
+  }
+
+  return [
+    `**${display(text)}** matches **${matches.length}** roles:`,
+    ...lines,
+    '',
+    'Type more of the name, or mention the role.',
+  ].join('\n');
+}
+
 async function executePrefix(ctx) {
   if (ctx.args.length === 0) {
     await ctx.reply(
@@ -359,11 +380,39 @@ async function executePrefix(ctx) {
     return;
   }
 
-  const role = await resolveRole(ctx.guild, text).catch(() => null);
+  // Mentions and ids are exact by nature. A plain word is searched: exact name
+  // first, then names that start with or contain it, so "سكان" finds
+  // "سكان البرج" but "رون" refuses when it fits several roles.
+  const ref = parseReference(text);
+  const matches = ref ? [] : findRoleMatches(ctx.guild, text);
+  let role = null;
+
+  if (ref) {
+    role = await resolveRole(ctx.guild, text).catch(() => null);
+  } else if (matches.length === 1) {
+    role = matches[0];
+  }
+
+  if (!role) {
+    if (matches.length > 1) {
+      await fail(ctx, 'Ambiguous role', ambiguousRoleDescription(text, matches));
+      return;
+    }
+
+    await fail(
+      ctx,
+      'Unknown role',
+      ref
+        ? 'Pick a role — mention it (`@Role`), paste its id, or type its exact name.'
+        : `No role name contains **${display(text)}**. Check the spelling, mention the role, or paste its id.`,
+    );
+    return;
+  }
+
   const problem = roleProblem(ctx.guild, role);
 
   if (problem) {
-    await fail(ctx, role ? 'Cannot use that role' : 'Unknown role', problem);
+    await fail(ctx, 'Cannot use that role', problem);
     return;
   }
 

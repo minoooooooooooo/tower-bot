@@ -1,3 +1,5 @@
+import { normalizeForMatch } from './text.js';
+
 const REFERENCE = /^<(@[!&]?|#)([^>\s]+)>$/;
 const RAW_ID = /^\d{17,20}$/;
 
@@ -39,6 +41,43 @@ export async function resolveRole(guild, token) {
   return (
     guild.roles.cache.find((role) => role.name.toLowerCase() === name) ?? null
   );
+}
+
+/**
+ * Finds roles whose name matches a typed word. Exact names win; otherwise
+ * names that start with the word, then names that only contain it. Every role
+ * at the best match level is returned, so the caller can refuse a word that
+ * fits several roles instead of picking one at random.
+ */
+export function findRoleMatches(guild, token) {
+  const needle = normalizeForMatch(String(token ?? '').replace(/^@/, ''));
+
+  if (!needle) return [];
+
+  const scored = [];
+
+  for (const role of guild.roles?.cache?.values?.() ?? []) {
+    const name = normalizeForMatch(role.name);
+
+    if (!name) continue;
+
+    let score = 0;
+
+    if (name === needle) score = 3;
+    else if (name.startsWith(needle)) score = 2;
+    else if (name.includes(needle)) score = 1;
+
+    if (score) scored.push({ role, score });
+  }
+
+  if (scored.length === 0) return [];
+
+  const best = Math.max(...scored.map((entry) => entry.score));
+
+  return scored
+    .filter((entry) => entry.score === best)
+    .map((entry) => entry.role)
+    .sort((a, b) => (b.position ?? 0) - (a.position ?? 0));
 }
 
 export async function resolveChannel(guild, token) {
