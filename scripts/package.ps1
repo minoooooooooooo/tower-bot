@@ -41,9 +41,33 @@ if ($IncludeGit) { $include += '.git' }
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
+# Embed the version the zip was built from. A panel that extracts the zip over
+# an old checkout keeps a stale .git, so `git rev-parse` there reports the last
+# pulled commit instead of the uploaded files. The marker travels with the zip
+# and build-info.js reads it before falling back to git.
+$buildCommit = 'unknown'
+$buildDate = ''
+try {
+  $buildCommit = (& git -C $root rev-parse --short HEAD).Trim()
+  if ((& git -C $root status --porcelain)) { $buildCommit = "$buildCommit-dirty" }
+  $buildDate = (& git -C $root log -1 --format=%cs).Trim()
+} catch {
+  Write-Warning 'Could not read the git commit; the build marker will say unknown.'
+}
+
+$buildJson = [ordered]@{
+  commit  = $buildCommit
+  date    = $buildDate
+  builtAt = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+} | ConvertTo-Json -Compress
+
 $archive = [System.IO.Compression.ZipFile]::Open($zip, 'Create')
 
 try {
+  $marker = $archive.CreateEntry('build.json', [System.IO.Compression.CompressionLevel]::Optimal)
+  $writer = New-Object System.IO.StreamWriter($marker.Open())
+  try { $writer.Write($buildJson) } finally { $writer.Dispose() }
+
   foreach ($item in $include) {
     $source = Join-Path $root $item
     if (-not (Test-Path $source)) { continue }

@@ -21,6 +21,7 @@ data/
 
 # Build output
 dist/
+build.json
 
 # Editor
 .vscode/
