@@ -10,6 +10,7 @@ import { displayNameOf, targetUser } from '../../lib/targets.js';
 import { config } from '../../config.js';
 import { memberStats } from '../../services/activity-store.js';
 import { getBirthday, getGuildSettings } from '../../services/birthday-store.js';
+import { linkedPoints } from '../../services/ebot-vex.js';
 import { renderProfileCard } from '../../services/profile-card.js';
 import {
   ensureExileBackfill,
@@ -164,8 +165,13 @@ export default {
       // A failed import must not stop the card from rendering.
     }
 
-    const ids = await memberIds(ctx.guild);
-    const stats = profileStats(ctx.guildId, user.id, ids);
+    // Points from the linked bots: Vex from E Bot 1, nightmare points from
+    // Al-Kabus. Both are optional and resolve to null when not configured.
+    const [ids, linked] = await Promise.all([
+      memberIds(ctx.guild),
+      linkedPoints(client, ctx.guildId),
+    ]);
+    const stats = profileStats(ctx.guildId, user.id, ids, linked);
     const activity = memberStats(ctx.guildId, user.id);
     const status = {
       presence: presenceFor(member),

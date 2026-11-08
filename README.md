@@ -142,14 +142,34 @@ Role names are searched, not just matched exactly: `:-role سكان` finds **س�
 | Field | How it is worked out |
 |---|---|
 | Title | Set by staff; empty shows **No Title** (max 32 characters) |
-| Rank | Nightmare + vex among current members. Ties share a rank; 0 points has no rank; members who left are not ranked |
+| Rank | Nightmare + vex among current members, including linked-bot points. Ties share a rank; 0 points has no rank; members who left are not ranked |
 | Level | `floor(xp / 100) + 1` |
 | XP bar | `xp % 100`, painted over the template track, from `0 / 100` to `99 / 100` |
-| Nightmare, Vex | Manual points added or subtracted by staff |
+| Nightmare, Vex | Staff points, plus the linked-bot balances when those are configured |
 | Punishments | `floor(punishment mini points / 7)` |
 | Good behavior | Manual points added or subtracted by staff |
 
 XP is `floor((nightmare + vex) / 5)`.
+
+### Linked points from other bots
+
+Two optional links add points the bot does not own, without sharing a database or opening a port. Each source bot keeps **one message with a JSON attachment** in a private channel and edits it when the numbers change:
+
+| Source | File | `.env` |
+|---|---|---|
+| E Bot 1 | `vex-balances.json` | `EBOT_VEX_CHANNEL_ID`, `EBOT_BOT_ID` |
+| Al-Kabus | `nightmare-balances.json` | `NIGHTMARE_CHANNEL_ID` (defaults to the vex channel), `NIGHTMARE_BOT_ID` |
+
+The file looks like `{ "guildId": "…", "balances": { "<userId>": 30 } }`. Only a message written by the configured bot id is trusted, a `guildId` for another server adds nothing, and the result is cached for a minute. Any failure — bot not linked, no file yet, channel not visible — leaves the card with the locally stored numbers. The bot needs **View Channel** and **Read Message History** in that channel. Linked points are added on top of staff points and count toward rank, XP and level, so the card and the ranking agree.
+
+Configure them in `.env`:
+
+```env
+EBOT_VEX_CHANNEL_ID=1568630994725249114
+EBOT_BOT_ID=1549216732017598564
+# NIGHTMARE_CHANNEL_ID=
+# NIGHTMARE_BOT_ID=
+```
 
 ### Status panel
 

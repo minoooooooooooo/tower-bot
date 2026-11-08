@@ -316,11 +316,23 @@ export function displayedPunishments(profile) {
 }
 
 /**
+ * Points another bot adds on top of the stored ones:
+ * `{ vex, nightmare }` maps of userId → points (either may be missing).
+ */
+function linkedScore(linked, userId) {
+  return (linked?.vex?.[userId] ?? 0) + (linked?.nightmare?.[userId] ?? 0);
+}
+
+/**
  * Rank by nightmare + vex among the members who are still in the server. Ties
  * share a rank (there is no tie-breaker), and a score of zero has no rank at
  * all — the card leaves that field empty.
+ *
+ * `linked` (optional) is `{ vex, nightmare }` from the linked bots (E Bot 1
+ * and Al-Kabus); when given, every member's score includes them so the
+ * ranking matches the numbers on the cards.
  */
-export function rankFor(guildId, userId, memberIds, score) {
+export function rankFor(guildId, userId, memberIds, score, linked = null) {
   if (!score) return null;
 
   const present = new Set(memberIds);
@@ -328,25 +340,53 @@ export function rankFor(guildId, userId, memberIds, score) {
   // Members who left keep their points, but they are not in the ranking.
   if (!present.has(userId)) return null;
 
-  const higher = getDb()
-    .prepare(
-      `SELECT user_id FROM profiles
-        WHERE guild_id = ? AND (nightmare + vex) > ?`,
-    )
-    .all(guildId, score);
+  // Without linked bots the query can stay in SQL.
+  if (!linked?.vex && !linked?.nightmare) {
+    const higher = getDb()
+      .prepare(
+        `SELECT user_id FROM profiles
+          WHERE guild_id = ? AND (nightmare + vex) > ?`,
+      )
+      .all(guildId, score);
+
+    let above = 0;
+
+    for (const row of higher) {
+      if (present.has(row.user_id)) above += 1;
+    }
+
+    return above + 1;
+  }
+
+  const local = new Map(
+    getDb()
+      .prepare(`SELECT user_id, nightmare + vex AS score FROM profiles WHERE guild_id = ?`)
+      .all(guildId)
+      .map((row) => [row.user_id, Number(row.score) || 0]),
+  );
 
   let above = 0;
 
-  for (const row of higher) {
-    if (present.has(row.user_id)) above += 1;
+  for (const id of present) {
+    if (id === userId) continue;
+    if ((local.get(id) ?? 0) + linkedScore(linked, id) > score) above += 1;
   }
 
   return above + 1;
 }
 
-/** Everything the card needs for one member. */
-export function profileStats(guildId, userId, memberIds) {
-  const profile = getProfile(guildId, userId);
+/**
+ * Everything the card needs for one member. `linked` is the optional
+ * `{ vex, nightmare }` from E Bot 1 and Al-Kabus, added on top of what staff
+ * entered.
+ */
+export function profileStats(guildId, userId, memberIds, linked = null) {
+  const stored = getProfile(guildId, userId);
+  const profile = {
+    ...stored,
+    vex: stored.vex + (linked?.vex?.[userId] ?? 0),
+    nightmare: stored.nightmare + (linked?.nightmare?.[userId] ?? 0),
+  };
   const score = profile.nightmare + profile.vex;
   const xp = xpFor(profile);
 
@@ -357,6 +397,6 @@ export function profileStats(guildId, userId, memberIds) {
     level: levelFor(xp),
     progress: progressFor(xp),
     punishments: displayedPunishments(profile),
-    rank: rankFor(guildId, userId, memberIds, score),
+    rank: rankFor(guildId, userId, memberIds, score, linked),
   };
 }
