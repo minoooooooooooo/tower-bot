@@ -36,8 +36,6 @@ $include = @(
   'docs'
 )
 
-if ($IncludeGit) { $include += '.git' }
-
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
@@ -68,27 +66,45 @@ try {
   $writer = New-Object System.IO.StreamWriter($marker.Open())
   try { $writer.Write($buildJson) } finally { $writer.Dispose() }
 
-  foreach ($item in $include) {
-    $source = Join-Path $root $item
-    if (-not (Test-Path $source)) { continue }
+  $addFile = {
+    param($file)
 
-    $files = if (Test-Path $source -PathType Leaf) {
-      @(Get-Item $source)
-    } else {
-      @(Get-ChildItem $source -Recurse -File)
+    # Relative to the project root, with POSIX separators so Linux/macOS
+    # unzip and every hosting panel create real directories.
+    $entryName = $file.FullName.Substring($root.Length + 1).Replace('\', '/')
+
+    [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+      $archive,
+      $file.FullName,
+      $entryName,
+      [System.IO.Compression.CompressionLevel]::Optimal
+    ) | Out-Null
+  }
+
+  if ($IncludeGit) {
+    # A git-mode zip must leave a clean checkout, otherwise `git pull` can
+    # refuse to fast-forward over files the minimal runtime list omitted
+    # (for example .gitignore). Ship every tracked file, then .git itself.
+    foreach ($relative in (& git -C $root ls-files)) {
+      $file = Get-Item (Join-Path $root $relative) -ErrorAction SilentlyContinue
+      if ($file) { & $addFile $file }
     }
 
-    foreach ($file in $files) {
-      # Relative to the project root, with POSIX separators so Linux/macOS
-      # unzip and every hosting panel create real directories.
-      $entryName = $file.FullName.Substring($root.Length + 1).Replace('\', '/')
+    foreach ($file in Get-ChildItem (Join-Path $root '.git') -Recurse -File) {
+      & $addFile $file
+    }
+  } else {
+    foreach ($item in $include) {
+      $source = Join-Path $root $item
+      if (-not (Test-Path $source)) { continue }
 
-      [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
-        $archive,
-        $file.FullName,
-        $entryName,
-        [System.IO.Compression.CompressionLevel]::Optimal
-      ) | Out-Null
+      $files = if (Test-Path $source -PathType Leaf) {
+        @(Get-Item $source)
+      } else {
+        @(Get-ChildItem $source -Recurse -File)
+      }
+
+      foreach ($file in $files) { & $addFile $file }
     }
   }
 }
