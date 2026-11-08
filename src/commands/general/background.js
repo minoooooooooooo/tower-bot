@@ -190,16 +190,14 @@ async function handleSet(ctx, client, query) {
   const level = await levelOf(ctx, client, ctx.user.id);
 
   if (!raw) {
-    await ctx.reply(
-      ephemeral({
-        embeds: [
-          errorEmbed(
-            'Choose a design',
-            `Use \`${ctx.isSlash ? '/background set design:' : ':-background set '}<name or level>\`, for example \`15\`, \`Tide\`, \`default\` or \`custom\`.`,
-          ),
-        ],
-      }),
-    );
+    await respond(ctx, {
+      embeds: [
+        errorEmbed(
+          'Choose a design',
+          `Use \`${ctx.isSlash ? '/background set design:' : ':-background set '}<name or level>\`, for example \`15\`, \`Tide\`, \`default\` or \`custom\`.`,
+        ),
+      ],
+    });
     return;
   }
 
@@ -277,24 +275,22 @@ async function handleCustom(ctx, client, attachment) {
   const unlocked = level >= CUSTOM_LEVEL || hasCustom;
 
   if (!attachment) {
-    await ctx.reply(
-      ephemeral({
-        embeds: [
-          unlocked
-            ? infoEmbed(
-                'Custom wallpaper',
-                hasCustom
-                  ? 'Attach a new image to replace your wallpaper. It is cropped to the card size automatically.'
-                  : 'Attach a PNG, JPEG, WebP or GIF image. It is cropped to the card size automatically.',
-              )
-            : errorEmbed(
-                'Still locked',
-                `Custom wallpapers unlock at level **${CUSTOM_LEVEL}** ` +
-                  `(${formatPoints(pointsForLevel(CUSTOM_LEVEL))} points). You are level ${level}.`,
-              ),
-        ],
-      }),
-    );
+    await respond(ctx, {
+      embeds: [
+        unlocked
+          ? infoEmbed(
+              'Custom wallpaper',
+              hasCustom
+                ? 'Attach a new image to replace your wallpaper. It is cropped to the card size automatically.'
+                : 'Attach a PNG, JPEG, WebP or GIF image. It is cropped to the card size automatically.',
+            )
+          : errorEmbed(
+              'Still locked',
+              `Custom wallpapers unlock at level **${CUSTOM_LEVEL}** ` +
+                `(${formatPoints(pointsForLevel(CUSTOM_LEVEL))} points). You are level ${level}.`,
+            ),
+      ],
+    });
     return;
   }
 
