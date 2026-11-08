@@ -44,6 +44,7 @@ const EMPTY_PROFILE = Object.freeze({
   punishMini: 0,
   goodBehavior: 0,
   showBirthday: true,
+  background: null,
   createdAt: null,
   updatedAt: null,
 });
@@ -62,6 +63,7 @@ function toProfile(row) {
     punishMini: row.punish_mini,
     goodBehavior: row.good_behavior,
     showBirthday: row.show_birthday !== 0,
+    background: row.background ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -72,7 +74,7 @@ export function getProfile(guildId, userId) {
   const row = getDb()
     .prepare(
       `SELECT title, nightmare, vex, punish_mini, good_behavior, show_birthday,
-              created_at, updated_at
+              background, created_at, updated_at
          FROM profiles WHERE guild_id = ? AND user_id = ?`,
     )
     .get(guildId, userId);
@@ -179,6 +181,34 @@ export function setBirthdayVisible(guildId, userId, visible) {
     db.prepare(
       'UPDATE profiles SET show_birthday = ?, updated_at = ? WHERE guild_id = ? AND user_id = ?',
     ).run(visible ? 1 : 0, now, guildId, userId);
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+
+  return getProfile(guildId, userId);
+}
+
+/**
+ * Stores the chosen card background. `null` means the classic template; a
+ * design id (for example `tier-15`) or `custom` selects an unlocked option.
+ * The command validates the unlock before calling this.
+ */
+export function setProfileBackground(guildId, userId, background) {
+  const value = background === null || background === undefined
+    ? null
+    : String(background).trim().slice(0, 40) || null;
+  const now = Date.now();
+  const db = getDb();
+
+  db.exec('BEGIN');
+
+  try {
+    upsertProfile(db, guildId, userId, now);
+    db.prepare(
+      'UPDATE profiles SET background = ?, updated_at = ? WHERE guild_id = ? AND user_id = ?',
+    ).run(value, now, guildId, userId);
     db.exec('COMMIT');
   } catch (error) {
     db.exec('ROLLBACK');
@@ -323,6 +353,23 @@ function linkedScore(linked, userId) {
   return (linked?.vex?.[userId] ?? 0) + (linked?.nightmare?.[userId] ?? 0);
 }
 
+/** Stored points plus whatever the linked bots currently report. */
+function withLinkedPoints(profile, linked, userId) {
+  return {
+    ...profile,
+    vex: profile.vex + (linked?.vex?.[userId] ?? 0),
+    nightmare: profile.nightmare + (linked?.nightmare?.[userId] ?? 0),
+  };
+}
+
+/**
+ * The member's level only, for commands that do not need the card or the rank.
+ * Linked points count here exactly as they do on the card.
+ */
+export function profileLevel(guildId, userId, linked = null) {
+  return levelFor(xpFor(withLinkedPoints(getProfile(guildId, userId), linked, userId)));
+}
+
 /**
  * Rank by nightmare + vex among the members who are still in the server. Ties
  * share a rank (there is no tie-breaker), and a score of zero has no rank at
@@ -382,11 +429,7 @@ export function rankFor(guildId, userId, memberIds, score, linked = null) {
  */
 export function profileStats(guildId, userId, memberIds, linked = null) {
   const stored = getProfile(guildId, userId);
-  const profile = {
-    ...stored,
-    vex: stored.vex + (linked?.vex?.[userId] ?? 0),
-    nightmare: stored.nightmare + (linked?.nightmare?.[userId] ?? 0),
-  };
+  const profile = withLinkedPoints(stored, linked, userId);
   const score = profile.nightmare + profile.vex;
   const xp = xpFor(profile);
 

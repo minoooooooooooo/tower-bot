@@ -11,6 +11,11 @@ import { config } from '../../config.js';
 import { memberStats } from '../../services/activity-store.js';
 import { getBirthday, getGuildSettings } from '../../services/birthday-store.js';
 import { linkedPoints } from '../../services/ebot-vex.js';
+import {
+  customWallpaperPath,
+  hasCustomWallpaper,
+  resolveBackground,
+} from '../../services/profile-backgrounds.js';
 import { renderProfileCard } from '../../services/profile-card.js';
 import {
   ensureExileBackfill,
@@ -189,7 +194,19 @@ export default {
     let file;
 
     try {
-      const buffer = await renderProfileCard({ member: cardMember, stats, status });
+      const hasCustom = hasCustomWallpaper(ctx.guildId, user.id);
+      const background = resolveBackground({
+        selected: stats.background,
+        level: stats.level,
+        hasCustom,
+        customPath: hasCustom ? customWallpaperPath(ctx.guildId, user.id) : null,
+      });
+      const buffer = await renderProfileCard({
+        member: cardMember,
+        stats,
+        status,
+        background,
+      });
       file = new AttachmentBuilder(buffer, { name: `profile-${user.id}.png` });
     } catch (error) {
       logger.error(`Could not render the card for ${user.id}`, error);

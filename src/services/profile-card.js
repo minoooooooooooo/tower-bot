@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { createCanvas, GlobalFonts, loadImage } from '@napi-rs/canvas';
@@ -32,6 +33,25 @@ const PANELS = {
 
 const NUMBER_FONT_SIZE = 58;
 const ARABIC = /[\u0600-\u06ff\u0750-\u077f\u08a0-\u08ff]/;
+
+// A custom wallpaper replaces the whole artwork, so its glass panels are drawn
+// here instead of coming from the template. The rectangles mirror the baked
+// ones closely enough that the layout does not move between backgrounds.
+const CUSTOM_LAYOUT = {
+  avatar: { x: 80, y: 92, width: 520, height: 1030, radius: 34 },
+  title: { x: 622, y: 92, width: 1163, height: 158, radius: 30 },
+  xp: { x: 622, y: 892, width: 1163, height: 216, radius: 30 },
+};
+
+const PANEL_LABELS = {
+  title: 'TITLE',
+  rank: 'RANK',
+  level: 'LEVEL',
+  vex: 'VEX POINT',
+  nightmare: 'NIGHTMARE POINTS',
+  punishments: 'PUNISHMENTS',
+  behavior: 'GOOD BEHAVIOR',
+};
 
 // The lower-left of the template is open cloud artwork with no UI panel, so the
 // status block sits directly on the art. Text carries a soft dark halo and the
@@ -145,6 +165,164 @@ async function loadTemplate() {
   return templatePromise;
 }
 
+/**
+ * Real tier artwork is optional. A deployment can drop
+ * `assets/profile/backgrounds/tier-05.png` next to the template and it wins
+ * over the generated colour treatment; missing files are cached as null so the
+ * common path only checks the filesystem once.
+ */
+const tierArtPromises = new Map();
+
+async function loadTierArt(id) {
+  if (tierArtPromises.has(id)) return tierArtPromises.get(id);
+
+  const file = path.join(ASSET_DIR, 'backgrounds', `${id}.png`);
+
+  if (!existsSync(file)) {
+    tierArtPromises.set(id, Promise.resolve(null));
+    return null;
+  }
+
+  const promise = readFile(file)
+    .then((buffer) => loadImage(buffer))
+    .catch(() => {
+      // A broken file should not disable the card; clear the cache so a fixed
+      // file is picked up without a restart.
+      tierArtPromises.delete(id);
+      return null;
+    });
+
+  tierArtPromises.set(id, promise);
+  return promise;
+}
+
+/** Paints a theme over the template while preserving every panel and label. */
+function applyTheme(ctx, theme) {
+  if (!theme) return;
+
+  ctx.save();
+
+  const gradient = ctx.createLinearGradient(0, 0, CARD_WIDTH, CARD_HEIGHT);
+  gradient.addColorStop(0, theme.from);
+  gradient.addColorStop(1, theme.to);
+
+  // "color" keeps the luminance of the artwork, so the texture and the white
+  // labels survive while the palette becomes the tier's own.
+  ctx.globalCompositeOperation = 'color';
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, CARD_WIDTH, CARD_HEIGHT);
+
+  ctx.globalCompositeOperation = 'source-over';
+
+  const vignette = ctx.createRadialGradient(
+    CARD_WIDTH / 2,
+    CARD_HEIGHT / 2,
+    CARD_HEIGHT * 0.2,
+    CARD_WIDTH / 2,
+    CARD_HEIGHT / 2,
+    CARD_HEIGHT * 0.85,
+  );
+  vignette.addColorStop(0, 'rgba(0, 0, 0, 0)');
+  vignette.addColorStop(1, 'rgba(0, 0, 0, 0.42)');
+  ctx.fillStyle = vignette;
+  ctx.fillRect(0, 0, CARD_WIDTH, CARD_HEIGHT);
+
+  ctx.restore();
+}
+
+function drawGlassPanel(ctx, panel) {
+  const radius = panel.radius ?? 24;
+
+  ctx.save();
+  roundedRect(ctx, { ...panel, radius });
+  ctx.fillStyle = 'rgba(14, 16, 22, 0.58)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.16)';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawPanelLabel(ctx, panel, label) {
+  ctx.save();
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.72)';
+  ctx.font = fontOf(26, 600, label);
+  ctx.fillText(label, panel.x + 44, panel.y + 56);
+  ctx.restore();
+}
+
+/**
+ * The custom-wallpaper base: cover-crop the uploaded image, lay a soft scrim
+ * over it and rebuild the glass panels so the card stays readable over any
+ * picture.
+ */
+function drawCustomBase(ctx, image) {
+  const scale = Math.max(CARD_WIDTH / image.width, CARD_HEIGHT / image.height);
+  const width = image.width * scale;
+  const height = image.height * scale;
+
+  ctx.fillStyle = '#101218';
+  ctx.fillRect(0, 0, CARD_WIDTH, CARD_HEIGHT);
+  ctx.drawImage(
+    image,
+    (CARD_WIDTH - width) / 2,
+    (CARD_HEIGHT - height) / 2,
+    width,
+    height,
+  );
+
+  // Flatten bright wallpapers just enough for white panel text and the status
+  // block to keep their contrast.
+  ctx.fillStyle = 'rgba(8, 10, 16, 0.3)';
+  ctx.fillRect(0, 0, CARD_WIDTH, CARD_HEIGHT);
+
+  const vignette = ctx.createRadialGradient(
+    CARD_WIDTH / 2,
+    CARD_HEIGHT / 2,
+    CARD_HEIGHT * 0.22,
+    CARD_WIDTH / 2,
+    CARD_HEIGHT / 2,
+    CARD_HEIGHT * 0.88,
+  );
+  vignette.addColorStop(0, 'rgba(0, 0, 0, 0.05)');
+  vignette.addColorStop(1, 'rgba(0, 0, 0, 0.55)');
+  ctx.fillStyle = vignette;
+  ctx.fillRect(0, 0, CARD_WIDTH, CARD_HEIGHT);
+
+  drawGlassPanel(ctx, CUSTOM_LAYOUT.avatar);
+  drawGlassPanel(ctx, CUSTOM_LAYOUT.title);
+  drawGlassPanel(ctx, CUSTOM_LAYOUT.xp);
+
+  for (const [key, panel] of Object.entries(PANELS)) {
+    drawGlassPanel(ctx, panel);
+    drawPanelLabel(ctx, panel, PANEL_LABELS[key]);
+  }
+
+  drawPanelLabel(ctx, CUSTOM_LAYOUT.title, PANEL_LABELS.title);
+  drawPanelLabel(ctx, CUSTOM_LAYOUT.xp, 'XP');
+}
+
+/** Picks the authored art, the uploaded wallpaper or the generated template. */
+async function backgroundImageFor(background) {
+  if (background?.kind === 'custom' && background.path) {
+    try {
+      return { image: await loadImage(await readFile(background.path)), custom: true };
+    } catch {
+      // A deleted or unreadable upload falls back to the classic card.
+    }
+  }
+
+  if (background?.kind === 'tier' && background.id) {
+    const art = await loadTierArt(background.id);
+
+    if (art) return { image: art, custom: false, authored: true };
+  }
+
+  return { image: await loadTemplate(), custom: false, authored: false };
+}
+
 async function loadAvatar(url) {
   if (!url) return null;
 
@@ -242,7 +420,7 @@ function drawPanelValue(ctx, panel, value) {
   ctx.fillText(text, panel.x + panel.width - 44, panel.y + panel.height - 34);
 }
 
-function drawXpBar(ctx, progress) {
+function drawXpBar(ctx, progress, accent = FILL_COLOR) {
   const ratio = Math.max(0, Math.min(1, Number(progress) / 100));
 
   ctx.save();
@@ -255,7 +433,7 @@ function drawXpBar(ctx, progress) {
   ctx.fillRect(TRACK.x, TRACK.y, TRACK.width, TRACK.height);
 
   if (ratio > 0) {
-    ctx.fillStyle = FILL_COLOR;
+    ctx.fillStyle = accent;
     ctx.fillRect(TRACK.x, TRACK.y, Math.max(TRACK.radius, TRACK.width * ratio), TRACK.height);
   }
 
@@ -682,19 +860,28 @@ function drawStatusPanel(ctx, status) {
  * `stats` comes from profile-store.profileStats and already contains the
  * derived rank, level, XP and punishment values. `status` is optional so older
  * callers keep working; when present it fills the lower-left member panel.
+ * `background` is the descriptor from profile-backgrounds.resolveBackground:
+ * a tier treatment, a custom wallpaper, or the classic template.
  */
-export async function renderProfileCard({ member, stats, status = null }) {
+export async function renderProfileCard({ member, stats, status = null, background = null }) {
   ensureFonts();
 
-  const [template, avatar] = await Promise.all([
-    loadTemplate(),
+  const [{ image, custom, authored }, avatar] = await Promise.all([
+    backgroundImageFor(background),
     loadAvatar(member.avatarUrl),
   ]);
 
   const canvas = createCanvas(CARD_WIDTH, CARD_HEIGHT);
   const ctx = canvas.getContext('2d');
 
-  ctx.drawImage(template, 0, 0, CARD_WIDTH, CARD_HEIGHT);
+  if (custom) {
+    drawCustomBase(ctx, image);
+  } else {
+    ctx.drawImage(image, 0, 0, CARD_WIDTH, CARD_HEIGHT);
+
+    // Authored tier art already carries its own palette.
+    if (!authored) applyTheme(ctx, background?.theme);
+  }
 
   drawAvatar(ctx, avatar, member);
   drawName(ctx, member);
@@ -706,7 +893,7 @@ export async function renderProfileCard({ member, stats, status = null }) {
   drawPanelValue(ctx, PANELS.nightmare, formatNumber(stats.nightmare));
   drawPanelValue(ctx, PANELS.punishments, formatNumber(stats.punishments));
   drawPanelValue(ctx, PANELS.behavior, formatNumber(stats.goodBehavior));
-  drawXpBar(ctx, stats.progress);
+  drawXpBar(ctx, stats.progress, background?.theme?.accent ?? FILL_COLOR);
 
   if (status) drawStatusPanel(ctx, status);
 

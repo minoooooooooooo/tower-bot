@@ -76,6 +76,7 @@ Both run `src/boot.js`, which checks the Node version before loading the bot and
 | `/backfill [start\|status\|audit\|cancel]` | `:-importactivity`, `:-historyimport` | Import older message history into activity stats (owner-only) |
 | `/avatar [user]` | `:-av`, `:-pfp` | Show a member's global and per-server avatar |
 | `/profile [user]` | `:-card`, `:-profilecard` | Generated profile card: status, role and point panels |
+| `/background <subcommand>` | `:-bg`, `:-theme`, `:-wallpaper` | Pick an unlocked card design or upload a custom wallpaper |
 | `/banner [user]` | `:-userbanner` | Show a member's profile banner |
 | `/server-avatar [server]` | `:-serverav`, `:-servericon`, `:-sicon` | Show a server icon, including another server the bot is in |
 | `/server-banner [server]` | `:-serverbanner`, `:-sbanner` | Show a server banner, including another server the bot is in |
@@ -150,6 +151,37 @@ Role names are searched, not just matched exactly: `:-role سكان` finds **س�
 | Good behavior | Manual points added or subtracted by staff |
 
 XP is `floor((nightmare + vex) / 5)`.
+
+### Backgrounds
+
+Every five levels unlocks one card design. The designs belong to the member: `/background` lists the ladder, marks what is unlocked, and `set` chooses one. The classic artwork is always available. Falling below a design's level hides it again, so the card falls back to Classic without deleting the saved pick.
+
+| Level | Design | Points needed |
+|---|---|---|
+| 5 | Ember | 2,000 |
+| 10 | Verdant | 4,500 |
+| 15 | Tide | 7,000 |
+| 20 | Amethyst | 9,500 |
+| 25 | Rose | 12,000 |
+| 30 | Solar | 14,500 |
+| 35 | Frost | 17,000 |
+| 40 | Void | 19,500 |
+| 45 | Prismatic | 22,000 |
+| 50 | Celestial + custom wallpaper | 24,500 |
+
+The tiers are colour treatments of the same 1868×1200 artwork, so the panels, labels and XP track never move. To use real art instead, drop `assets/profile/backgrounds/tier-05.png` (and so on) with the same layout; the renderer prefers the file over the generated treatment. The lower-left area must stay fairly open because the status block draws light glass text directly on it.
+
+At **level 50** a member can upload a custom wallpaper. The image is downloaded, checked, cover-cropped to 1868×1200 and re-encoded as a JPEG under `data/profile-backgrounds/<guild>/<user>.jpg` (PNG, JPEG, WebP and GIF are accepted; 10 MB limit, 400×300 minimum). Re-encoding strips metadata and bounds file size. A custom wallpaper stays selectable once it exists, even if points are later corrected downward. `reset` removes the file and returns the card to Classic.
+
+```
+:-background                 list the ladder and your unlocks
+:-background set 15          choose Tide
+:-background set Tide        the name works too
+:-background custom          attach an image to upload or replace it
+:-background reset           back to Classic and delete the upload
+```
+
+`/background reset user:@member` (Manage Server) clears someone else's wallpaper. `.env` needs nothing; wallpapers live under `data/`, so include that folder when moving servers or redeploying.
 
 ### Linked points from other bots
 
