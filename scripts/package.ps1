@@ -62,9 +62,13 @@ $buildJson = [ordered]@{
 $archive = [System.IO.Compression.ZipFile]::Open($zip, 'Create')
 
 try {
-  $marker = $archive.CreateEntry('build.json', [System.IO.Compression.CompressionLevel]::Optimal)
-  $writer = New-Object System.IO.StreamWriter($marker.Open())
-  try { $writer.Write($buildJson) } finally { $writer.Dispose() }
+  # A git-mode zip carries a real `.git`, so the checkout itself is the build
+  # marker. Shipping build.json there would only go stale on the first pull.
+  if (-not $IncludeGit) {
+    $marker = $archive.CreateEntry('build.json', [System.IO.Compression.CompressionLevel]::Optimal)
+    $writer = New-Object System.IO.StreamWriter($marker.Open())
+    try { $writer.Write($buildJson) } finally { $writer.Dispose() }
+  }
 
   $addFile = {
     param($file)

@@ -40,25 +40,24 @@ function marker() {
 
 /**
  * The commit the process is actually running, so a deployment can be checked
- * from chat instead of guessing from the panel. A packaged upload is read from
- * `build.json`; a git checkout is asked directly; a copy with neither reports
- * `unknown` and never fails boot.
+ * from chat instead of guessing from the panel.
+ *
+ * A git checkout is asked first: in git mode the startup `git pull` moves
+ * `.git` forward while an old `build.json` from a one-off zip upload stays
+ * behind, so the checkout is the accurate source. `build.json` is the fallback
+ * for hosts that run from a plain zip with no `.git` at all.
  */
 export function buildInfo() {
   if (cached) return cached;
 
-  cached = marker();
-
-  if (!cached) {
-    try {
-      cached = {
-        commit: git(['rev-parse', '--short', 'HEAD']),
-        date: git(['log', '-1', '--format=%cs']),
-      };
-    } catch (error) {
-      logger.debug(`Could not read the git build: ${error.message}`);
-      cached = { commit: null, date: null };
-    }
+  try {
+    cached = {
+      commit: git(['rev-parse', '--short', 'HEAD']),
+      date: git(['log', '-1', '--format=%cs']),
+    };
+  } catch (error) {
+    logger.debug(`Could not read the git build: ${error.message}`);
+    cached = marker() ?? { commit: null, date: null };
   }
 
   return cached;
