@@ -68,7 +68,7 @@ Both run `src/boot.js`, which checks the Node version before loading the bot and
 | `/botinfo` | `:-info`, `:-stats` | Uptime, servers, memory, versions |
 | `/color [primary] [secondary]` | `:-colour` | Recolor or clear the highest role that only you have |
 | `/colors` | `:-colours`, `:-palette` | List every color name in Arabic and English |
-| `/top [messages\|voice] [all\|7d\|30d] [limit]` | `:-leaderboard`, `:-ranking`, `:-rank` | Rank members by messages or voice time |
+| `/top [messages\|voice] [all\|7d\|30d] [per page]` | `:-leaderboard`, `:-ranking`, `:-rank` | Rank members by messages or voice time, 10 per page with paging buttons |
 | `/topchannels [all\|7d\|30d] [limit]` | `:-channels`, `:-top-channels` | Rank text channels by messages sent |
 | `/compare <@member> <@member> [all\|7d\|30d]` | `:-versus`, `:-vs` | Compare two members’ messages and voice time |
 | `/serverstats` | `:-activity`, `:-serveractivity`, `:-sstats` | Server activity totals, top member and top channel |
@@ -104,6 +104,8 @@ Both run `src/boot.js`, which checks the Node version before loading the bot and
 | `/glossary <subcommand>` | `:-jargon` | Terms and jargon the summarizer should understand |
 | `/autoreport <subcommand>` | `:-schedule`, `:-digest` | Post a channel summary automatically, on an interval or at a fixed daily time |
 | `/alias <subcommand>` | `:-shortcut`, `:-aliases` | Run a command by typing a word, with no prefix; restrict it to channels |
+
+Slash commands show Discord's native "thinking…" state. Prefix commands show **bot is typing…** in the channel while they fetch, render or write. A command that is refused by the guild check, the owner check, permissions or its cooldown does none of that, so a refusal never looks like work in progress.
 
 ## Nicknames and roles
 
@@ -171,11 +173,11 @@ Every punishment the bot actually applies adds raw mini points; a refused or fai
 | Action | Raw points |
 |---|---|
 | Mute, timeout, kick, ban | +1 each |
-| Exile | +4 |
+| Exile | Follows the level: `main` 0, levels 1–9 their number, level 10 = 70 (ten punishments) |
 
-Repeating a punishment while it is still active counts once: a mute when the Muted role is already there, a timeout while one is running, a ban for someone already banned, and a level change on an active exile add nothing. A fresh punishment after release or expiry counts again.
+Repeating a punishment while it is still active counts once: a mute when the Muted role is already there, a timeout while one is running, and a ban for someone already banned add nothing. An exile's points follow the highest level it reached: raising the level adds only the difference, while lowering it or repeating it adds nothing. A fresh punishment after release or expiry counts again.
 
-Existing exile rows are imported once per guild, at four points each, the first time `/profile`, `/profile-edit` or `/exile` runs. Mutes, timeouts, kicks and bans have no history table, so they start at zero.
+Existing exile rows are imported once per guild at their own level's value (`main` 0, levels 1–9 their number, level 10 = ten punishments), the first time `/profile`, `/profile-edit` or `/exile` runs. Mutes, timeouts, kicks and bans have no history table, so they start at zero.
 
 ### Editing
 
@@ -201,7 +203,7 @@ The bot counts **messages** and **voice time** per member and per channel, then 
 - **Windows** are `all` (default), `7d` and `30d`. Days are bucketed in the bot's `TIMEZONE`. `:-top` also accepts the shorter words `week` and `month`, and Arabic `رسائل`/`صوت`/`اسبوع`/`شهر`.
 - **Voice sessions survive restarts.** A graceful shutdown closes them; after a crash they are closed at the last five-minute heartbeat, so at most five minutes can be overcounted. Downtime while the bot is offline is not counted.
 - The numbers live only in the server's own SQLite file (`data/bot.db`). There is no external service.
-- `/top` and `/topchannels` show the top 10 by default (max 25); `/compare` shows messages, voice time and last activity side by side.
+- `/top` shows 10 members per page and pages through the rest with **First / Previous / Next / Last** buttons, so ranks 11–20, 21–30 and beyond are reachable. Choose the page size with `per_page` on slash or a number in prefix (`:-top 25`), from 1 to 25. `/topchannels` shows the top 10 (max 25); `/compare` shows messages, voice time and last activity side by side.
 - **Readable even with Arabic names.** Rankings use a fixed `01` rank column and left-to-right pins, so a display name cannot reorder the rows; the footer dates the tracking start instead of printing a raw timestamp.
 - **`/lastseen [user]`** shows one member's last activity, last message, message count, voice time, first message and join date. It defaults to you when no member is given.
 

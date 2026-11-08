@@ -9,11 +9,25 @@ export const PUNISHMENT_WEIGHTS = {
   timeout: 1,
   kick: 1,
   ban: 1,
-  exile: 4,
 };
 
 /** Seven raw points make one displayed punishment. */
 export const PUNISHMENT_POINTS_PER_UNIT = 7;
+
+/**
+ * Mini points an exile level is worth. `main` is a holding level and scores
+ * nothing; levels 1–9 score their number; level 10 scores ten whole
+ * punishments (10 × 7 mini points).
+ */
+export function exilePointsFor(level) {
+  if (level === 'main') return 0;
+
+  const number = Number.parseInt(level, 10);
+
+  if (!Number.isInteger(number) || number < 1 || number > 10) return 0;
+
+  return number === 10 ? 10 * PUNISHMENT_POINTS_PER_UNIT : number;
+}
 
 /** XP is one point for every five nightmare + vex points. */
 export const POINTS_PER_XP = 5;
@@ -196,9 +210,31 @@ export function recordPunishment(guildId, userId, kind) {
 }
 
 /**
- * Imports the existing exile history once per guild: every exile row is a
- * fresh exile, so it is worth four raw points. Mutes, timeouts, kicks and bans
- * have no history table, which is why only exiles can be recovered.
+ * Awards the increase when an exile is created or escalated. The points follow
+ * the highest level the exile reached: raising 3 → 6 adds 3, lowering 6 → 3
+ * adds nothing, and repeating the same level adds nothing. `main` is worth 0,
+ * so a main exile only scores once it is forwarded to a numbered level.
+ */
+export function recordExilePoints(guildId, userId, previousLevel, level) {
+  const delta = exilePointsFor(level) - exilePointsFor(previousLevel);
+
+  if (delta <= 0) return null;
+
+  try {
+    return addProfilePoints(guildId, userId, { punishMini: delta });
+  } catch (error) {
+    // The exile already happened; a database problem must not turn a
+    // successful moderation action into a failed command.
+    logger.warn(`Could not record exile points for ${userId}: ${error.message}`);
+    return null;
+  }
+}
+
+/**
+ * Imports the existing exile history once per guild. Each row is worth its
+ * level's value at the time it was recorded; `main` rows are worth nothing.
+ * Mutes, timeouts, kicks and bans have no history table, which is why only
+ * exiles can be recovered.
  *
  * Callers that create a new exile must call this first, otherwise the new row
  * would be counted by the import and again by the live hook.
@@ -217,7 +253,7 @@ export function ensureExileBackfill(guildId) {
   }
 
   const now = Date.now();
-  let users = 0;
+  const users = new Set();
 
   db.exec('BEGIN');
 
@@ -232,21 +268,26 @@ export function ensureExileBackfill(guildId) {
 
     const rows = db
       .prepare(
-        `SELECT user_id, COUNT(*) AS total FROM exiles
-          WHERE guild_id = ? GROUP BY user_id`,
+        `SELECT user_id, level, COUNT(*) AS total FROM exiles
+          WHERE guild_id = ? GROUP BY user_id, level`,
       )
       .all(guildId);
 
     for (const row of rows) {
+      users.add(row.user_id);
+
+      const points = row.total * exilePointsFor(row.level);
+
+      if (points <= 0) continue;
+
       upsertProfile(db, guildId, row.user_id, now);
       db.prepare(
         `UPDATE profiles
             SET punish_mini = punish_mini + ?, updated_at = ?
           WHERE guild_id = ? AND user_id = ?`,
-      ).run(row.total * PUNISHMENT_WEIGHTS.exile, now, guildId, row.user_id);
+      ).run(points, now, guildId, row.user_id);
     }
 
-    users = rows.length;
     db.exec('COMMIT');
   } catch (error) {
     db.exec('ROLLBACK');
@@ -254,7 +295,7 @@ export function ensureExileBackfill(guildId) {
   }
 
   seededGuilds.add(guildId);
-  return users;
+  return users.size;
 }
 
 export function xpFor(profile) {

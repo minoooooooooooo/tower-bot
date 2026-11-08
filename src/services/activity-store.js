@@ -226,10 +226,14 @@ export function finishAllVoiceSessions(at = Date.now(), guildId = null) {
 }
 
 /** All-time ranking, or the sum of the daily buckets for a period. */
-export function topMembers(guildId, { metric = 'messages', since = null, limit = 10 } = {}) {
+export function topMembers(
+  guildId,
+  { metric = 'messages', since = null, limit = 10, offset = 0 } = {},
+) {
   const db = getDb();
   const column = metric === 'voice' ? 'voice_seconds' : 'messages';
   const capped = Math.max(1, Math.min(25, Number(limit) || 10));
+  const skip = Math.max(0, Math.floor(Number(offset) || 0));
 
   if (!since) {
     return db
@@ -238,9 +242,9 @@ export function topMembers(guildId, { metric = 'messages', since = null, limit =
          FROM activity_members
          WHERE guild_id = ? AND ${column} > 0
          ORDER BY ${column} DESC, user_id ASC
-         LIMIT ?`,
+         LIMIT ? OFFSET ?`,
       )
-      .all(guildId, capped);
+      .all(guildId, capped, skip);
   }
 
   return db
@@ -253,9 +257,44 @@ export function topMembers(guildId, { metric = 'messages', since = null, limit =
        GROUP BY user_id
        HAVING SUM(${column}) > 0
        ORDER BY SUM(${column}) DESC, user_id ASC
-       LIMIT ?`,
+       LIMIT ? OFFSET ?`,
     )
-    .all(guildId, since, capped);
+    .all(guildId, since, capped, skip);
+}
+
+/**
+ * How many members have a positive total for the metric, so a pager can size
+ * itself without loading every row.
+ */
+export function countTopMembers(guildId, { metric = 'messages', since = null } = {}) {
+  const db = getDb();
+  const column = metric === 'voice' ? 'voice_seconds' : 'messages';
+
+  if (!since) {
+    return (
+      db
+        .prepare(
+          `SELECT COUNT(*) AS total
+           FROM activity_members
+           WHERE guild_id = ? AND ${column} > 0`,
+        )
+        .get(guildId)?.total ?? 0
+    );
+  }
+
+  return (
+    db
+      .prepare(
+        `SELECT COUNT(*) AS total FROM (
+           SELECT user_id
+           FROM activity_member_days
+           WHERE guild_id = ? AND day >= ?
+           GROUP BY user_id
+           HAVING SUM(${column}) > 0
+         )`,
+      )
+      .get(guildId, since)?.total ?? 0
+  );
 }
 
 export function topChannels(guildId, { since = null, limit = 10 } = {}) {

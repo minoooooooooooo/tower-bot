@@ -127,6 +127,20 @@ export class CommandContext {
   }
 
   /**
+   * Show "bot is typing…" in the invoking channel. Prefix only: slash commands
+   * get Discord's native "thinking…" state from `defer()`.
+   */
+  async typing() {
+    if (!this.message) return;
+
+    try {
+      await this.channel?.sendTyping?.();
+    } catch {
+      // A missing permission or a deleted channel must not block the command.
+    }
+  }
+
+  /**
    * Marks this execution as not having done its job, so the shared pipeline
    * releases the cooldown it reserved for the run. Use it for validation
    * errors and for failures that changed nothing.

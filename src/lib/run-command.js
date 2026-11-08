@@ -116,6 +116,9 @@ export async function runCommand(command, ctx) {
   };
 
   try {
+    // Prefix commands have no "thinking…" state of their own, so show the
+    // typing indicator while the command fetches, renders or writes.
+    await ctx.typing();
     await command.execute(ctx, ctx.client);
 
     if (ctx.failed) releaseCooldown();

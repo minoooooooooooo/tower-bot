@@ -27,7 +27,7 @@ import {
   normalizeLevel,
   updateActiveExile,
 } from '../../services/exile-store.js';
-import { ensureExileBackfill, recordPunishment } from '../../services/profile-store.js';
+import { ensureExileBackfill, recordExilePoints } from '../../services/profile-store.js';
 
 function ephemeral(payload) {
   return { ...payload, flags: MessageFlags.Ephemeral };
@@ -349,10 +349,13 @@ export default {
         reason: auditReason,
         createdBy: ctx.user.id,
       });
+    }
 
-      // A level change on an active exile is the same punishment; only a
-      // fresh exile (after release) is worth points.
-      recordPunishment(ctx.guildId, member.id, 'exile');
+    // Main is only a holding level; the points land when the exile is
+    // forwarded to a numbered level. Escalating 3 → 6 adds the difference,
+    // so the total follows the highest level reached.
+    if (!sameLevel) {
+      recordExilePoints(ctx.guildId, member.id, active?.level ?? 'main', level);
     }
 
     if (!sameLevel) {
