@@ -65,7 +65,7 @@ Both run `src/boot.js`, which checks the Node version before loading the bot and
 |---|---|---|
 | `/ping` | `:-pong` | WebSocket + roundtrip latency |
 | `/help [command]` | `:-commands`, `:-h` | Command list or details for one command |
-| `/botinfo` | `:-info`, `:-stats` | Uptime, servers, memory, versions |
+| `/botinfo` | `:-info`, `:-stats` | Uptime, servers, memory, versions, and the deployed commit |
 | `/color [primary] [secondary]` | `:-colour` | Recolor or clear the highest role that only you have |
 | `/colors` | `:-colours`, `:-palette` | List every color name in Arabic and English |
 | `/top [messages\|voice] [all\|7d\|30d] [per page]` | `:-leaderboard`, `:-ranking`, `:-rank` | Rank members by messages or voice time, 10 per page with paging buttons |
@@ -755,6 +755,10 @@ See [`docs/adding-commands.md`](docs/adding-commands.md).
 **`npm.ps1 cannot be loaded`** — this machine blocks PowerShell scripts. Use the `.bat` files instead of `npm run`; they call the portable Node directly.
 
 **Bot offline after reboot** — running on this PC only works while the PC is on and awake. See hosting notes below.
+
+**A change isn't live after a restart** — run `/botinfo` (or `:-info`) and read the **Build** field. It shows the git commit the process is actually running, e.g. `` `1a2b3c4` · 2026-11-08 ``. If it is still the old commit, the panel's pull did not happen: check the console for the `git pull` line, that `.git` exists in the bot folder, and that `AUTO_UPDATE=1` is set. The same line appears in the boot log as `Build 1a2b3c4 (2026-11-08)`.
+
+**Prefix command shows no "bot is typing…"** — the indicator is prefix-only (slash commands use Discord's native "thinking…" state) and Discord clears it the moment the reply is posted, so instant commands may never paint it. `:-profile` renders a card for a second or more and should show it. Confirm the build first with `/botinfo`: an old commit has no typing call at all. If the build is current and the bot still cannot type, the console logs `[context] Could not show the typing indicator: …` with Discord's reason (usually a missing **Send Messages** permission in that channel).
 
 ## Hosting
 

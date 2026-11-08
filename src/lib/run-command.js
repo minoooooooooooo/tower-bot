@@ -115,10 +115,19 @@ export async function runCommand(command, ctx) {
     if (cooldownKey) cooldowns.delete(cooldownKey);
   };
 
+  let typingTimer = null;
+
   try {
     // Prefix commands have no "thinking…" state of their own, so show the
-    // typing indicator while the command fetches, renders or writes.
-    await ctx.typing();
+    // typing indicator while the command fetches, renders or writes. Discord
+    // drops the indicator after ten seconds, so re-send it for slow work such
+    // as an AI summary.
+    if (ctx.isPrefix) {
+      await ctx.typing();
+      typingTimer = setInterval(() => ctx.typing(), 8000);
+      typingTimer.unref?.();
+    }
+
     await command.execute(ctx, ctx.client);
 
     if (ctx.failed) releaseCooldown();
@@ -147,5 +156,7 @@ export async function runCommand(command, ctx) {
     } catch {
       // Ignore secondary failures.
     }
+  } finally {
+    if (typingTimer) clearInterval(typingTimer);
   }
 }

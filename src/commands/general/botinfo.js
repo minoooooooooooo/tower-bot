@@ -1,4 +1,5 @@
 import { SlashCommandBuilder, version as discordVersion } from 'discord.js';
+import { buildInfo } from '../../lib/build-info.js';
 import { embed } from '../../lib/embeds.js';
 
 function formatUptime(ms) {
@@ -28,6 +29,7 @@ export default {
   async execute(ctx, client) {
     const memory = process.memoryUsage();
     const heapUsed = (memory.heapUsed / 1024 / 1024).toFixed(1);
+    const build = buildInfo();
 
     await ctx.reply({
       embeds: [
@@ -41,6 +43,13 @@ export default {
             { name: 'Memory', value: `${heapUsed} MB`, inline: true },
             { name: 'Node.js', value: process.version, inline: true },
             { name: 'discord.js', value: `v${discordVersion}`, inline: true },
+            {
+              name: 'Build',
+              value: build.commit
+                ? `\`${build.commit}\`${build.date ? ` · ${build.date}` : ''}`
+                : 'unknown',
+              inline: true,
+            },
           ],
         }),
       ],

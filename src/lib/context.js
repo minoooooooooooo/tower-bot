@@ -1,4 +1,7 @@
 import { MessageFlags } from 'discord.js';
+import { createLogger } from './logger.js';
+
+const logger = createLogger('context');
 
 function toPayload(payload) {
   if (typeof payload === 'string') return { content: payload };
@@ -135,8 +138,11 @@ export class CommandContext {
 
     try {
       await this.channel?.sendTyping?.();
-    } catch {
-      // A missing permission or a deleted channel must not block the command.
+    } catch (error) {
+      // A missing permission or a deleted channel must not block the command,
+      // but the reason belongs in the log: a silent failure looks exactly like
+      // an indicator that never rendered.
+      logger.warn(`Could not show the typing indicator: ${error.message}`);
     }
   }
 

@@ -1,6 +1,7 @@
 import { ActivityType } from 'discord.js';
 import { config } from '../config.js';
 import { registerCommands } from '../handlers/command-registry.js';
+import { buildLabel } from '../lib/build-info.js';
 import { createLogger } from '../lib/logger.js';
 import { startBirthdayScheduler } from '../services/birthday-scheduler.js';
 import { startSummaryScheduler } from '../services/summary-scheduler.js';
@@ -18,6 +19,7 @@ export default {
   async execute(client) {
     logger.info(`Logged in as ${client.user.tag} (${client.user.id})`);
     logger.info(`Serving ${client.guilds.cache.size} server(s)`);
+    logger.info(buildLabel());
 
     client.user.setPresence({
       status: 'online',
