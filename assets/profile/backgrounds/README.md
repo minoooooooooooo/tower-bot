@@ -2,7 +2,9 @@
 
 The ladder lives in [`backgrounds.json`](backgrounds.json). Each design is drawn
 from `../card.png` (1868 × 1200) and tinted with its `theme`; real artwork is
-optional and replaces the treatment for that id.
+optional and replaces the treatment for that id. The ten tier pictures currently
+ship in this folder as `tier-05.jpg` … and `tier-50.png`, and every tier is set
+to `"artMode": "wallpaper"`.
 
 ## The two art modes
 

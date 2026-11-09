@@ -171,14 +171,16 @@ A new free design unlocks every five levels and **equips itself automatically** 
 
 The ladder is data, not code: edit [`assets/profile/backgrounds/backgrounds.json`](assets/profile/backgrounds/backgrounds.json) and push, or create `data/backgrounds.json` on the host (it overrides the bundled file) and restart. Each entry has `id`, `name`, `level`, an optional `price`, an optional `auto`, an optional `artMode`, and a `theme` (`from`, `to`, `accent`). To move Ember to level 3, change its `level` to `3`. To add a purchasable design, give it `"price": 250` and `"auto": false`; it unlocks at its level but never equips itself, and `/background set` refuses it until a purchase system exists.
 
-The tiers are colour treatments of the same 1868×1200 artwork, so the panels, labels and XP track never move. Real art is optional and goes in `assets/profile/backgrounds/<id>.png` (`.jpg`/`.webp` also work). Two modes:
+Each tier now ships with its own picture in `assets/profile/backgrounds/` (`tier-05` … `tier-50`), so the ten designs already look different. The bot draws the panels, labels and XP track over the picture, which keeps their positions fixed. If a tier file is ever missing, the bot falls back to tinting `card.png` with that tier's `theme`.
 
-- `"artMode": "template"` (default) — you supply the **whole card** with the panels, labels and XP track, exactly where `card.png` has them.
-- `"artMode": "wallpaper"` — you supply only the **raw picture**; the bot cover-crops it and draws the glass panels, labels and XP track itself.
+Artwork files are named `<id>.png`, `.jpg`, `.jpeg` or `.webp`. Two modes:
+
+- `"artMode": "wallpaper"` — supply only the **raw picture**; the bot cover-crops it and draws the glass panels, labels and XP track itself. The bundled tiers use this.
+- `"artMode": "template"` — supply the **whole card** with the panels, labels and XP track, exactly where `card.png` has them.
 
 A member's custom upload is always treated as a raw picture. `assets/profile/backgrounds/README.md` has the exact positions and rules.
 
-At **level 50** a member can upload a custom wallpaper. Set a different minimum with `BACKGROUND_CUSTOM_LEVEL=5` in `.env` (restart required). The image is downloaded, checked, cover-cropped to 1868×1200 and re-encoded as a JPEG under `data/profile-backgrounds/<guild>/<user>.jpg` (PNG, JPEG, WebP and GIF are accepted; 10 MB limit, 400×300 minimum). Re-encoding strips metadata and bounds file size. A custom wallpaper stays selectable once it exists, even if points are later corrected downward. `reset` removes the file and returns the card to Classic.
+At **level 50** the Celestial design still equips automatically like every other tier; the member can then upload a custom wallpaper to replace it, and `/background set custom` switches back later. Set a different minimum with `BACKGROUND_CUSTOM_LEVEL=5` in `.env` (restart required). The image is downloaded, checked, cover-cropped to 1868×1200 and re-encoded as a JPEG under `data/profile-backgrounds/<guild>/<user>.jpg` (PNG, JPEG, WebP and GIF are accepted; 10 MB limit, 400×300 minimum). Re-encoding strips metadata and bounds file size. A custom wallpaper stays selectable once it exists, even if points are later corrected downward. `reset` removes the file and returns the card to Classic.
 
 `BACKGROUND_AUTO_EQUIP=0` disables automatic equipping without changing anything else.
 
