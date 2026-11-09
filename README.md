@@ -154,7 +154,7 @@ XP is `floor((nightmare + vex) / 5)`.
 
 ### Backgrounds
 
-Every five levels unlocks one card design. The designs belong to the member: `/background` lists the ladder, marks what is unlocked, and `set` chooses one. The classic artwork is always available. Falling below a design's level hides it again, so the card falls back to Classic without deleting the saved pick.
+A new free design unlocks every five levels and **equips itself automatically** when the member reaches its level. The member can still switch to any unlocked design with `/background set`; the next free unlock replaces a lower automatic pick. The classic artwork is always available.
 
 | Level | Design | Points needed |
 |---|---|---|
@@ -169,9 +169,18 @@ Every five levels unlocks one card design. The designs belong to the member: `/b
 | 45 | Prismatic | 22,000 |
 | 50 | Celestial + custom wallpaper | 24,500 |
 
-The tiers are colour treatments of the same 1868×1200 artwork, so the panels, labels and XP track never move. To use real art instead, drop `assets/profile/backgrounds/tier-05.png` (and so on) with the same layout; the renderer prefers the file over the generated treatment. The lower-left area must stay fairly open because the status block draws light glass text directly on it.
+The ladder is data, not code: edit [`assets/profile/backgrounds/backgrounds.json`](assets/profile/backgrounds/backgrounds.json) and push, or create `data/backgrounds.json` on the host (it overrides the bundled file) and restart. Each entry has `id`, `name`, `level`, an optional `price`, an optional `auto`, an optional `artMode`, and a `theme` (`from`, `to`, `accent`). To move Ember to level 3, change its `level` to `3`. To add a purchasable design, give it `"price": 250` and `"auto": false`; it unlocks at its level but never equips itself, and `/background set` refuses it until a purchase system exists.
 
-At **level 50** a member can upload a custom wallpaper. The image is downloaded, checked, cover-cropped to 1868×1200 and re-encoded as a JPEG under `data/profile-backgrounds/<guild>/<user>.jpg` (PNG, JPEG, WebP and GIF are accepted; 10 MB limit, 400×300 minimum). Re-encoding strips metadata and bounds file size. A custom wallpaper stays selectable once it exists, even if points are later corrected downward. `reset` removes the file and returns the card to Classic.
+The tiers are colour treatments of the same 1868×1200 artwork, so the panels, labels and XP track never move. Real art is optional and goes in `assets/profile/backgrounds/<id>.png` (`.jpg`/`.webp` also work). Two modes:
+
+- `"artMode": "template"` (default) — you supply the **whole card** with the panels, labels and XP track, exactly where `card.png` has them.
+- `"artMode": "wallpaper"` — you supply only the **raw picture**; the bot cover-crops it and draws the glass panels, labels and XP track itself.
+
+A member's custom upload is always treated as a raw picture. `assets/profile/backgrounds/README.md` has the exact positions and rules.
+
+At **level 50** a member can upload a custom wallpaper. Set a different minimum with `BACKGROUND_CUSTOM_LEVEL=5` in `.env` (restart required). The image is downloaded, checked, cover-cropped to 1868×1200 and re-encoded as a JPEG under `data/profile-backgrounds/<guild>/<user>.jpg` (PNG, JPEG, WebP and GIF are accepted; 10 MB limit, 400×300 minimum). Re-encoding strips metadata and bounds file size. A custom wallpaper stays selectable once it exists, even if points are later corrected downward. `reset` removes the file and returns the card to Classic.
+
+`BACKGROUND_AUTO_EQUIP=0` disables automatic equipping without changing anything else.
 
 ```
 :-background                 list the ladder and your unlocks
@@ -181,7 +190,7 @@ At **level 50** a member can upload a custom wallpaper. The image is downloaded,
 :-background reset           back to Classic and delete the upload
 ```
 
-`/background reset user:@member` (Manage Server) clears someone else's wallpaper. `.env` needs nothing; wallpapers live under `data/`, so include that folder when moving servers or redeploying.
+`/background reset user:@member` (Manage Server) clears someone else's wallpaper. Wallpapers live under `data/`, so include that folder when moving servers or redeploying.
 
 ### Linked points from other bots
 

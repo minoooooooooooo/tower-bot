@@ -167,18 +167,29 @@ async function loadTemplate() {
 
 /**
  * Real tier artwork is optional. A deployment can drop
- * `assets/profile/backgrounds/tier-05.png` next to the template and it wins
- * over the generated colour treatment; missing files are cached as null so the
- * common path only checks the filesystem once.
+ * `assets/profile/backgrounds/<id>.png` (or .jpg/.jpeg/.webp) next to the
+ * template and it wins over the generated colour treatment; missing files are
+ * cached as null so the common path only checks the filesystem once.
  */
+const TIER_ART_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp'];
 const tierArtPromises = new Map();
+
+function tierArtFile(id) {
+  for (const extension of TIER_ART_EXTENSIONS) {
+    const file = path.join(ASSET_DIR, 'backgrounds', `${id}.${extension}`);
+
+    if (existsSync(file)) return file;
+  }
+
+  return null;
+}
 
 async function loadTierArt(id) {
   if (tierArtPromises.has(id)) return tierArtPromises.get(id);
 
-  const file = path.join(ASSET_DIR, 'backgrounds', `${id}.png`);
+  const file = tierArtFile(id);
 
-  if (!existsSync(file)) {
+  if (!file) {
     tierArtPromises.set(id, Promise.resolve(null));
     return null;
   }
@@ -317,7 +328,13 @@ async function backgroundImageFor(background) {
   if (background?.kind === 'tier' && background.id) {
     const art = await loadTierArt(background.id);
 
-    if (art) return { image: art, custom: false, authored: true };
+    if (art) {
+      // `wallpaper` art is a raw picture: drawCustomBase adds the glass panels
+      // and labels. `template` art already contains the full card UI.
+      const wallpaper = background.artMode === 'wallpaper';
+
+      return { image: art, custom: wallpaper, authored: !wallpaper };
+    }
   }
 
   return { image: await loadTemplate(), custom: false, authored: false };

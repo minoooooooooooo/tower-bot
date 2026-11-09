@@ -1,0 +1,81 @@
+{
+  "customLevel": 50,
+  "autoEquip": true,
+  "backgrounds": [
+    {
+      "id": "default",
+      "name": "Classic",
+      "level": 1
+    },
+    {
+      "id": "tier-05",
+      "name": "Ember",
+      "level": 5,
+      "price": 0,
+      "theme": { "from": "#ff7a1a", "to": "#ffd166", "accent": "#ffb347" }
+    },
+    {
+      "id": "tier-10",
+      "name": "Verdant",
+      "level": 10,
+      "price": 0,
+      "theme": { "from": "#1f9d55", "to": "#a8e063", "accent": "#7ee787" }
+    },
+    {
+      "id": "tier-15",
+      "name": "Tide",
+      "level": 15,
+      "price": 0,
+      "theme": { "from": "#1e6fff", "to": "#38e8d0", "accent": "#62d9ff" }
+    },
+    {
+      "id": "tier-20",
+      "name": "Amethyst",
+      "level": 20,
+      "price": 0,
+      "theme": { "from": "#8a3ffc", "to": "#e879f9", "accent": "#c084fc" }
+    },
+    {
+      "id": "tier-25",
+      "name": "Rose",
+      "level": 25,
+      "price": 0,
+      "theme": { "from": "#e11d48", "to": "#ff8fab", "accent": "#ff7aa8" }
+    },
+    {
+      "id": "tier-30",
+      "name": "Solar",
+      "level": 30,
+      "price": 0,
+      "theme": { "from": "#f59e0b", "to": "#fff176", "accent": "#ffd166" }
+    },
+    {
+      "id": "tier-35",
+      "name": "Frost",
+      "level": 35,
+      "price": 0,
+      "theme": { "from": "#38bdf8", "to": "#e0f2fe", "accent": "#9fe8ff" }
+    },
+    {
+      "id": "tier-40",
+      "name": "Void",
+      "level": 40,
+      "price": 0,
+      "theme": { "from": "#4c1d95", "to": "#a78bfa", "accent": "#a78bfa" }
+    },
+    {
+      "id": "tier-45",
+      "name": "Prismatic",
+      "level": 45,
+      "price": 0,
+      "theme": { "from": "#ff0080", "to": "#00e5ff", "accent": "#f0abfc" }
+    },
+    {
+      "id": "tier-50",
+      "name": "Celestial",
+      "level": 50,
+      "price": 0,
+      "theme": { "from": "#ffcc33", "to": "#ffe9a8", "accent": "#ffe066" }
+    }
+  ]
+}

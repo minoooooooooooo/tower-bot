@@ -23,6 +23,7 @@ import {
   pointsForLevel,
   resolveBackground,
   saveCustomWallpaper,
+  syncAutoBackground,
   unlockedBackgrounds,
 } from '../../services/profile-backgrounds.js';
 import {
@@ -126,8 +127,9 @@ function listEmbed(ctx, level, stored, hasCustom) {
     const lock = unlocked.has(background.id)
       ? ''
       : ` · ${formatPoints(pointsForLevel(background.level))} points`;
+    const price = background.price > 0 ? ` · ${formatPoints(background.price)} points to buy` : '';
 
-    return `${mark} **${background.name}** — ${levelText}${lock}`;
+    return `${mark} **${background.name}** — ${levelText}${lock}${price}`;
   });
 
   const customMark = stored.background === CUSTOM_ID ? '➡️' : hasCustom || level >= CUSTOM_LEVEL ? '✅' : '🔒';
@@ -151,7 +153,7 @@ function listEmbed(ctx, level, stored, hasCustom) {
   return embed({
     title: 'Profile backgrounds',
     description:
-      `You are **level ${level}**. A new design unlocks every 5 levels, and the classic card is always available.` +
+      `You are **level ${level}**. The newest free design equips automatically, and you can switch to any unlocked design. The classic card is always available.` +
       selectedNote,
     color: COLORS.primary,
     fields: [
@@ -178,8 +180,12 @@ function listEmbed(ctx, level, stored, hasCustom) {
 
 async function handleList(ctx, client) {
   const level = await levelOf(ctx, client, ctx.user.id);
-  const stored = getProfile(ctx.guildId, ctx.user.id);
   const hasCustom = hasCustomWallpaper(ctx.guildId, ctx.user.id);
+  const stored = getProfile(ctx.guildId, ctx.user.id);
+
+  // Apply the newest free design before showing the ladder, so a member who
+  // just crossed a level sees the same pick their card will use.
+  stored.background = syncAutoBackground(ctx.guildId, ctx.user.id, level, { hasCustom });
 
   const payload = { embeds: [listEmbed(ctx, level, stored, hasCustom)] };
   await respond(ctx, payload);
@@ -204,7 +210,9 @@ async function handleSet(ctx, client, query) {
   const word = raw.toLowerCase();
 
   if (DEFAULT_WORDS.has(word)) {
-    setProfileBackground(ctx.guildId, ctx.user.id, null);
+    // Store `default` rather than clearing the column: an explicit Classic
+    // choice must not be overwritten by the next automatic unlock.
+    setProfileBackground(ctx.guildId, ctx.user.id, 'default');
     await respond(ctx, {
       embeds: [successEmbed('Background changed', 'Your card is back to **Classic**.')],
     });
@@ -252,6 +260,19 @@ async function handleSet(ctx, client, query) {
           'Still locked',
           `**${background.name}** unlocks at level **${background.level}** ` +
             `(${formatPoints(pointsForLevel(background.level))} points). You are level ${level}.`,
+        ),
+      ],
+    });
+    return;
+  }
+
+  if (background.price > 0) {
+    await respond(ctx, {
+      embeds: [
+        errorEmbed(
+          'Not available yet',
+          `**${background.name}** is part of the purchase collection. ` +
+            'Buying designs is not enabled yet.',
         ),
       ],
     });
@@ -375,7 +396,8 @@ async function handleReset(ctx, client) {
     }
   }
 
-  setProfileBackground(ctx.guildId, target.id, null);
+  // `default` is explicit, not null: auto-equip must not undo a reset.
+  setProfileBackground(ctx.guildId, target.id, 'default');
   await deleteCustomWallpaper(ctx.guildId, target.id);
 
   await respond(ctx, {

@@ -15,6 +15,7 @@ import {
   customWallpaperPath,
   hasCustomWallpaper,
   resolveBackground,
+  syncAutoBackground,
 } from '../../services/profile-backgrounds.js';
 import { renderProfileCard } from '../../services/profile-card.js';
 import {
@@ -195,8 +196,12 @@ export default {
 
     try {
       const hasCustom = hasCustomWallpaper(ctx.guildId, user.id);
+
+      // A new free design equips itself as soon as the member reaches its
+      // level. Doing it here covers every point source, including linked bots.
+      const selected = syncAutoBackground(ctx.guildId, user.id, stats.level, { hasCustom });
       const background = resolveBackground({
-        selected: stats.background,
+        selected,
         level: stats.level,
         hasCustom,
         customPath: hasCustom ? customWallpaperPath(ctx.guildId, user.id) : null,

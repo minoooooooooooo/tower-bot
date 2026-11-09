@@ -39,10 +39,10 @@ $include = @(
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
-# Embed the version the zip was built from. A panel that extracts the zip over
-# an old checkout keeps a stale .git, so `git rev-parse` there reports the last
-# pulled commit instead of the uploaded files. The marker travels with the zip
-# and build-info.js reads it before falling back to git.
+# Embed the version the zip was built from. A plain zip host has no `.git`, so
+# the marker is the only commit-audit trail; build-info.js falls back to it when
+# `git rev-parse` is unavailable. A git-mode zip omits it because the checkout
+# moves with every pull and would leave the marker stale.
 $buildCommit = 'unknown'
 $buildDate = ''
 try {
