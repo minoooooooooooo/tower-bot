@@ -1,4 +1,5 @@
 import { removeChannelFromExceptions } from '../services/exile-store.js';
+import { markTicketDeletedByChannel } from '../services/ticket-store.js';
 import { removeIgnoredChannel } from '../services/watch-store.js';
 import { invalidateWatchCache } from '../services/watch.js';
 
@@ -13,6 +14,7 @@ export default {
     if (!channel?.guild) return;
 
     removeChannelFromExceptions(channel.guild.id, channel.id);
+    markTicketDeletedByChannel(channel.guild.id, channel.id);
 
     if (removeIgnoredChannel(channel.guild.id, channel.id) > 0) {
       invalidateWatchCache(channel.guild.id);

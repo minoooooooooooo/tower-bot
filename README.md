@@ -85,6 +85,7 @@ Both run `src/boot.js`, which checks the Node version before loading the bot and
 | `/server-banner [server]` | `:-serverbanner`, `:-sbanner` | Show a server banner, including another server the bot is in |
 | `/birthday <subcommand>` | `:-bd`, `:-bday` | Birthday registry, countdowns, automatic birthday role and greetings |
 | `/welcome <subcommand>` | `:-greet` | Welcome cards for new members: six styles, random or rotating, editable text |
+| `/ticket <subcommand>` | `:-tickets`, `:-ticket-tool`, `:-support` | Ticket Tool-style panels, private ticket channels, claiming, closing and HTML transcripts |
 | `/clear <amount> [user]` | `:-purge`, `:-prune` | Delete recent messages, optionally only from one member |
 | `/mute <@member> [duration] [reason]` | `:-mute-member` | Add the Muted role, optionally for a limited time |
 | `/unmute <@member> [reason]` | — | Remove the Muted role |
@@ -286,6 +287,21 @@ The bot counts **messages** and **voice time** per member and per channel, then 
 - **Deleted and renamed emojis stay readable.** Usage is stored by emoji id, and the newest known name is kept beside it. A deleted or foreign emoji prints as `` `name` *(not in server)* ``; a current one prints as the real emoji.
 - **History can be imported once.** `/emojibackfill start` (owner-only) walks each text channel backwards from the moment live emoji counting began, so nothing is counted twice. It runs in the background, saves a per-channel cursor after every 100-message page, survives restarts, and skips bots, system messages and threads. `/emojibackfill status` shows progress and `/emojibackfill cancel` stops cleanly. This is separate from `/backfill`, which imports activity stats.
 - The counts live in the same `data/bot.db` file (`emoji_usage`, `emoji_catalog`, `emoji_meta`, `emoji_backfill`), one row per emoji and day.
+
+## Tickets
+
+`/ticket` (prefix `:-ticket`, aliases `tickets`, `ticket-tool`, `support`) is a small Ticket Tool-style system built into the bot. A member presses a panel button and gets a private channel in the configured category; the support team can claim it, and closing writes an HTML transcript.
+
+- **One panel per type.** `/ticket panel type:<key> channel:#tickets` posts that type's embed and button. Re-posting edits the stored message instead of leaving two live panels behind.
+- **The complaint panel is separate.** `/ticket complaint channel:#complaints` posts **Complaint Against Administration** with three buttons of its own: **complaint against sub-mod**, **complaint against mod** and **complaint against owner**. Each is a normal ticket type, so each gets its own category and its own ping roles.
+- **Four types are created once per server:** `general`, `complaint-submod`, `complaint-mod` and `complaint-owner`. They are only skeletons until an admin sets a category. Deleting one with `/ticket reset` is permanent; the defaults are not recreated after a restart.
+- **Setup per type:** `/ticket setup type:general category:#tickets support_roles:@Support ping_roles:@Mods log_channel:#ticket-logs panel_channel:#tickets welcome:"..." name_template:"ticket-{number}" max_open:1 emoji:🎫 color:#5865f2 close_action:delete`. Prefix accepts `key=value` tokens, with quotes for spaces: `:-ticket setup general category=#tickets ping=@Mods max=2`.
+- **Placeholders:** channel names understand `{number}`, `{user}`, `{username}` and `{type}`; welcome text understands `{mention}`, `{user}`, `{username}`, `{server}`, `{type}` and `{number}`. Unicode names (including Arabic) are kept as channel names.
+- **Member commands:** `/ticket close [reason]`, `/ticket claim` (support team, claim or unclaim), `/ticket transcript`, and for staff `/ticket add`, `/ticket remove` and `/ticket rename`. The ticket channel also has **Claim** and **Close** buttons; closing opens a small modal for an optional reason.
+- **Closing:** the transcript is written first. If a log channel exists and the type is set to `delete`, the channel is removed; otherwise it is renamed `closed-…`, the opener loses Send Messages, and the channel gets **Reopen**, **Transcript** and **Delete** buttons. A ticket is only deleted after its transcript reached the log, so history is never lost silently.
+- **Transcripts** are self-contained HTML files attached to the log channel; without a log channel, `/ticket transcript` sends the file directly to the opener or staff member.
+- The bot needs **Manage Channels**, **Manage Messages**, plus **View Channel**, **Send Messages**, **Embed Links**, **Read Message History** and **Attach Files** in the panel, category and log channels. Complaints are not anonymous: the opener is recorded on the ticket, so staff can follow up.
+- Configuration lives in `data/bot.db` (`ticket_settings`, `ticket_types`, `tickets`). The panel message ids are stored too, so a restart does not lose them.
 
 ## Moderation
 

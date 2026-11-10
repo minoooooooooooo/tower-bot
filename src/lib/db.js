@@ -485,6 +485,76 @@ const SCHEMA = `
     updated_at INTEGER NOT NULL,
     PRIMARY KEY (guild_id, channel_id)
   );
+
+  -- Shared ticket settings: where closed transcripts go and the copy of the
+  -- separate "Complaint Against Administration" panel.
+  CREATE TABLE IF NOT EXISTS ticket_settings (
+    guild_id               TEXT PRIMARY KEY,
+    log_channel_id         TEXT,
+    complaint_channel_id   TEXT,
+    complaint_message_id   TEXT,
+    complaint_title        TEXT,
+    complaint_description  TEXT,
+    complaint_color        INTEGER,
+    defaults_seeded        INTEGER NOT NULL DEFAULT 0,
+    updated_at             INTEGER NOT NULL
+  );
+
+  -- One row per ticket type. A type owns its category, support and ping roles,
+  -- panel message and channel-name template, so two types can behave
+  -- independently on the same server.
+  CREATE TABLE IF NOT EXISTS ticket_types (
+    guild_id         TEXT    NOT NULL,
+    key              TEXT    NOT NULL,
+    label            TEXT    NOT NULL,
+    description      TEXT,
+    emoji            TEXT,
+    kind             TEXT    NOT NULL DEFAULT 'standard',
+    category_id      TEXT,
+    support_role_ids TEXT,
+    ping_role_ids    TEXT,
+    log_channel_id   TEXT,
+    panel_channel_id TEXT,
+    panel_message_id TEXT,
+    welcome_message  TEXT,
+    name_template    TEXT,
+    max_open         INTEGER NOT NULL DEFAULT 1,
+    color            INTEGER,
+    close_action     TEXT    NOT NULL DEFAULT 'delete',
+    position         INTEGER NOT NULL DEFAULT 0,
+    created_at       INTEGER NOT NULL,
+    updated_at       INTEGER NOT NULL,
+    PRIMARY KEY (guild_id, key)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_ticket_types_order
+    ON ticket_types (guild_id, position, key);
+
+  -- One row per ticket. The channel id is how buttons and commands find the
+  -- owning ticket after a restart; status is open, closed (archived) or deleted.
+  CREATE TABLE IF NOT EXISTS tickets (
+    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    guild_id              TEXT    NOT NULL,
+    channel_id            TEXT,
+    number                INTEGER NOT NULL,
+    type_key              TEXT    NOT NULL,
+    opener_id             TEXT    NOT NULL,
+    opener_tag            TEXT,
+    status                TEXT    NOT NULL DEFAULT 'open',
+    claimed_by            TEXT,
+    created_at            INTEGER NOT NULL,
+    closed_by             TEXT,
+    closed_at             INTEGER,
+    close_reason          TEXT,
+    transcript_message_id TEXT,
+    UNIQUE (guild_id, number)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_tickets_channel
+    ON tickets (guild_id, channel_id);
+
+  CREATE INDEX IF NOT EXISTS idx_tickets_status
+    ON tickets (guild_id, status, created_at DESC);
 `;
 
 // Columns added after the first release. `CREATE TABLE IF NOT EXISTS` does not
@@ -497,6 +567,7 @@ const COLUMN_MIGRATIONS = [
   ['welcome_settings', 'gif_url', 'TEXT'],
   ['activity_meta', 'messages_since', 'INTEGER'],
   ['activity_meta', 'voice_since', 'INTEGER'],
+  ['ticket_settings', 'defaults_seeded', 'INTEGER NOT NULL DEFAULT 0'],
   ['command_aliases', 'channel_mode', 'TEXT'],
   ['profiles', 'show_birthday', 'INTEGER NOT NULL DEFAULT 1'],
   ['profiles', 'background', 'TEXT'],

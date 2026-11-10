@@ -2,6 +2,11 @@ import { CommandContext } from '../lib/context.js';
 import { createLogger } from '../lib/logger.js';
 import { runCommand } from '../lib/run-command.js';
 import { EXPORT_BUTTON_PREFIX, handleExportInteraction } from '../services/report-runner.js';
+import {
+  TICKET_PREFIX,
+  handleTicketButton,
+  handleTicketModal,
+} from '../services/ticket.js';
 
 const logger = createLogger('interaction');
 
@@ -14,6 +19,12 @@ export default {
           await handleExportInteraction(interaction);
         } catch (error) {
           logger.error(`Report export button failed for "${interaction.customId}"`, error);
+        }
+      } else if (String(interaction.customId).startsWith(TICKET_PREFIX)) {
+        try {
+          await handleTicketButton(interaction);
+        } catch (error) {
+          logger.error(`Ticket button failed for "${interaction.customId}"`, error);
         }
       }
 
@@ -35,6 +46,16 @@ export default {
     }
 
     if (interaction.isModalSubmit()) {
+      if (String(interaction.customId).startsWith(TICKET_PREFIX)) {
+        try {
+          await handleTicketModal(interaction);
+        } catch (error) {
+          logger.error(`Ticket modal failed for "${interaction.customId}"`, error);
+        }
+
+        return;
+      }
+
       const [commandName] = interaction.customId.split(':');
       const command = client.commands.get(commandName);
 
