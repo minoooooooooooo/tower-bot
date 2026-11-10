@@ -75,6 +75,8 @@ Both run `src/boot.js`, which checks the Node version before loading the bot and
 | `/serverstats` | `:-activity`, `:-serveractivity`, `:-sstats` | Server activity totals, top member and top channel |
 | `/lastseen [user]` | `:-lastactive`, `:-lastactivity`, `:-seen`, `:-last` | When a member was last active, with first message and join date |
 | `/backfill [start\|status\|audit\|cancel]` | `:-importactivity`, `:-historyimport` | Import older message history into activity stats (owner-only) |
+| `/topemojis [most\|least] [today\|7d\|30d\|all] [per page]` | `:-emojis`, `:-emoji`, `:-emojistats`, `:-topemoji` | Rank this server's custom emojis by in-message and standalone uses, with paging buttons |
+| `/emojibackfill [start\|status\|cancel]` | `:-importemojis`, `:-emojihistory` | Import older messages into the emoji stats (owner-only) |
 | `/avatar [user]` | `:-av`, `:-pfp` | Show a member's global and per-server avatar |
 | `/profile [user]` | `:-card`, `:-profilecard` | Generated profile card: status, role and point panels |
 | `/background <subcommand>` | `:-bg`, `:-theme`, `:-wallpaper` | Pick an unlocked card design or upload a custom wallpaper |
@@ -272,6 +274,18 @@ The bot counts **messages** and **voice time** per member and per channel, then 
 - `/top` shows 10 members per page and pages through the rest with **First / Previous / Next / Last** buttons, so ranks 11–20, 21–30 and beyond are reachable. Choose the page size with `per_page` on slash or a number in prefix (`:-top 25`), from 1 to 25. `/topchannels` shows the top 10 (max 25); `/compare` shows messages, voice time and last activity side by side.
 - **Readable even with Arabic names.** Rankings use a fixed `01` rank column and left-to-right pins, so a display name cannot reorder the rows; the footer dates the tracking start instead of printing a raw timestamp.
 - **`/lastseen [user]`** shows one member's last activity, last message, message count, voice time, first message and join date. It defaults to you when no member is given.
+
+## Emoji stats
+
+`/topemojis` (prefix `:-topemojis`, aliases `emojis`, `emoji`, `emojistats`, `topemoji`) ranks the server's **custom** emojis, the way `/top` ranks members. Unicode emojis are not counted: custom emojis have a stable id, so the ranking survives renames.
+
+- **Two kinds of use.** A message that contains nothing but custom-emoji tokens (and whitespace) counts as **standalone**; an emoji inside ordinary text counts as **in-message**. A message is never split, so its custom emojis are all one kind, and the two counts always add up to the number of tokens that were sent. The leaderboard shows the total with the split in brackets.
+- **Windows** are `today` (the current day in `TIMEZONE`), `7d`, `30d` and `all` (default). Prefix also accepts `1d`, `week`, `month` and Arabic `اليوم`/`اسبوع`/`شهر`/`كل`.
+- **Most and least.** `order:least` (prefix `least`, `bottom`, `اقل`) lists the quietest emojis first. The least view merges in every emoji currently in the server, so an emoji nobody used appears with **0** instead of disappearing; the most view only lists emojis that were actually used.
+- **Paging.** 10 per page with **First / Previous / Next / Last** buttons; `per_page` (1–25) on slash or a number in prefix.
+- **Deleted and renamed emojis stay readable.** Usage is stored by emoji id, and the newest known name is kept beside it. A deleted or foreign emoji prints as `` `name` *(not in server)* ``; a current one prints as the real emoji.
+- **History can be imported once.** `/emojibackfill start` (owner-only) walks each text channel backwards from the moment live emoji counting began, so nothing is counted twice. It runs in the background, saves a per-channel cursor after every 100-message page, survives restarts, and skips bots, system messages and threads. `/emojibackfill status` shows progress and `/emojibackfill cancel` stops cleanly. This is separate from `/backfill`, which imports activity stats.
+- The counts live in the same `data/bot.db` file (`emoji_usage`, `emoji_catalog`, `emoji_meta`, `emoji_backfill`), one row per emoji and day.
 
 ## Moderation
 

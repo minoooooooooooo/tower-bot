@@ -6,6 +6,7 @@ import { createLogger } from './lib/logger.js';
 import { reportDiscordReachability } from './lib/net-check.js';
 import { stopActivityTracking } from './services/activity.js';
 import { stopBackfill } from './services/activity-backfill.js';
+import { stopEmojiBackfill } from './services/emoji-backfill.js';
 
 const logger = createLogger('bot');
 
@@ -70,6 +71,12 @@ async function shutdown(signal) {
     stopBackfill();
   } catch {
     // The import is already stopping.
+  }
+
+  try {
+    stopEmojiBackfill();
+  } catch {
+    // The emoji import is already stopping.
   }
 
   try {

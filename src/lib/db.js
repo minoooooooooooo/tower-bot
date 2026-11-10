@@ -432,6 +432,59 @@ const SCHEMA = `
     updated_at INTEGER NOT NULL,
     PRIMARY KEY (guild_id, channel_id)
   );
+
+  -- Custom emoji usage per guild/emoji/day. A message made only of emoji
+  -- increments standalone_count; an emoji inside ordinary text increments
+  -- inline_count. The leaderboard adds both, so the split stays visible.
+  CREATE TABLE IF NOT EXISTS emoji_usage (
+    guild_id         TEXT    NOT NULL,
+    emoji_id         TEXT    NOT NULL,
+    day              TEXT    NOT NULL,
+    inline_count     INTEGER NOT NULL DEFAULT 0,
+    standalone_count INTEGER NOT NULL DEFAULT 0,
+    last_used_at     INTEGER NOT NULL,
+    PRIMARY KEY (guild_id, emoji_id, day)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_emoji_usage_day
+    ON emoji_usage (guild_id, day);
+
+  -- Latest known name/animation for an emoji, kept apart from the daily rows so
+  -- a rename does not rewrite history and a deleted emoji still has a label.
+  CREATE TABLE IF NOT EXISTS emoji_catalog (
+    guild_id      TEXT    NOT NULL,
+    emoji_id      TEXT    NOT NULL,
+    emoji_name    TEXT    NOT NULL,
+    animated      INTEGER NOT NULL DEFAULT 0,
+    first_seen_at INTEGER NOT NULL,
+    last_used_at  INTEGER NOT NULL,
+    PRIMARY KEY (guild_id, emoji_id)
+  );
+
+  -- Emoji counting may start long after activity tracking, so it keeps its own
+  -- live boundary. Backfill only reads older messages, which keeps live and
+  -- imported counts from overlapping.
+  CREATE TABLE IF NOT EXISTS emoji_meta (
+    guild_id         TEXT PRIMARY KEY,
+    tracking_since   INTEGER NOT NULL,
+    backfilled_since INTEGER,
+    updated_at       INTEGER NOT NULL
+  );
+
+  -- Resumable emoji-history import, one row per channel, separate from
+  -- activity_backfill because the cursors and boundaries are independent.
+  CREATE TABLE IF NOT EXISTS emoji_backfill (
+    guild_id   TEXT    NOT NULL,
+    channel_id TEXT    NOT NULL,
+    cursor_id  TEXT,
+    oldest_at  INTEGER,
+    done       INTEGER NOT NULL DEFAULT 0,
+    fetched    INTEGER NOT NULL DEFAULT 0,
+    emoji_uses INTEGER NOT NULL DEFAULT 0,
+    error      TEXT,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (guild_id, channel_id)
+  );
 `;
 
 // Columns added after the first release. `CREATE TABLE IF NOT EXISTS` does not

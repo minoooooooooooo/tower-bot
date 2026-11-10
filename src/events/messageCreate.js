@@ -6,6 +6,7 @@ import { runCommand } from '../lib/run-command.js';
 import { aliasAllowsChannel, getAlias } from '../services/alias-store.js';
 import { runAliasCommand } from '../services/alias-runner.js';
 import { recordMessage } from '../services/activity-store.js';
+import { recordEmojiMessage } from '../services/emoji-store.js';
 import { handleKeywordAlerts } from '../services/watch.js';
 
 const logger = createLogger('prefix');
@@ -35,6 +36,19 @@ export default {
         });
       } catch (error) {
         logger.error('Activity tracking failed', error);
+      }
+
+      // Custom emojis are counted from the message content that Discord already
+      // delivered. A message made only of emoji is stored as standalone; one
+      // with any other text stores every token as an in-message use.
+      try {
+        recordEmojiMessage({
+          guildId: message.guildId,
+          content: message.content,
+          at: message.createdTimestamp,
+        });
+      } catch (error) {
+        logger.error('Emoji tracking failed', error);
       }
     }
 
