@@ -170,8 +170,9 @@ export default {
     ),
 
   name: 'rank',
-  // `rank` is already a prefix alias of /top, so this command deliberately
-  // does not claim it: `:-rank` keeps running /top. Use `:-levels` or `:-ranks`.
+  // /top still declares a "rank" alias, but the loader makes a real command
+  // name win, so `:-rank` reaches this command. These extra words are for
+  // discoverability; `:-rank` itself is covered by the command name.
   aliases: ['levels', 'levelboard', 'ranks'],
   description: 'Rank members by level, Vex and Nightmare points',
   category: 'Profile',

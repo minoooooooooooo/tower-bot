@@ -75,7 +75,11 @@ export default {
       }
 
       const usage = command.usage ?? command.name;
-      const names = [...(command.aliases ?? [])];
+      // Only list built-in aliases that actually resolve here; a real command
+      // name wins over another command's alias (for example /top's old "rank").
+      const names = (command.aliases ?? []).filter(
+        (alias) => client.aliases.get(alias.toLowerCase()) === command.name,
+      );
 
       // Custom aliases live in SQLite, not in the command module, so they are
       // merged here to make `help <command>` the one place that lists them.

@@ -78,6 +78,16 @@ export async function loadCommands(dir) {
   }
 
   log.info(`Loaded ${commands.size} command(s)`);
+
+  // A real command name always beats another command's alias. Without this,
+  // /top's "rank" alias would swallow `:-rank` even though /rank exists.
+  for (const [alias, target] of aliases) {
+    if (commands.has(alias) && target !== alias) {
+      aliases.set(alias, alias);
+      log.debug(`Alias "${alias}" points at its own command, not "${target}"`);
+    }
+  }
+
   return { commands, aliases };
 }
 
