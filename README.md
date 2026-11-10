@@ -69,6 +69,7 @@ Both run `src/boot.js`, which checks the Node version before loading the bot and
 | `/color [primary] [secondary]` | `:-colour` | Recolor or clear the highest role that only you have |
 | `/colors` | `:-colours`, `:-palette` | List every color name in Arabic and English |
 | `/top [messages\|voice] [all\|7d\|30d] [per page]` | `:-leaderboard`, `:-ranking`, `:-rank` | Rank members by messages or voice time, 10 per page with paging buttons |
+| `/rank [per page]` | `:-levels`, `:-levelboard`, `:-ranks` | Rank members by level, Vex points and Nightmare points, 10 per page (`:-rank` still means `/top`) |
 | `/topchannels [all\|7d\|30d] [limit]` | `:-channels`, `:-top-channels` | Rank text channels by messages sent |
 | `/compare <@member> <@member> [all\|7d\|30d]` | `:-versus`, `:-vs` | Compare two members’ messages and voice time |
 | `/serverstats` | `:-activity`, `:-serveractivity`, `:-sstats` | Server activity totals, top member and top channel |
@@ -139,6 +140,8 @@ Role names are searched, not just matched exactly: `:-role سكان` finds **س�
 ## Profile cards
 
 `/profile` (prefix `:-profile`, aliases `:-card` and `:-profilecard`) renders a 1868×1200 PNG for you or the member you mention. The reply is the image alone — no embed text. Members who have left still render their stored numbers, but their rank is empty. Arabic nicknames are shaped and drawn right to left with the bundled Noto Sans Arabic; the labels on the card stay English.
+
+`/rank` (prefix `:-levels`, `:-levelboard`, `:-ranks`) is the level leaderboard: member, level, Vex points and Nightmare points, ordered by level and then total points. It pages 10 members at a time with the same buttons as `/top`. The `:-rank` prefix alias deliberately stays with `/top`, so `:-rank` keeps meaning the activity ranking.
 
 | Field | How it is worked out |
 |---|---|

@@ -371,6 +371,65 @@ export function profileLevel(guildId, userId, linked = null) {
 }
 
 /**
+ * Every current member with points, ordered for `/rank`: level descending,
+ * then total points descending. Members without a profile row are included when
+ * the linked bots report points for them, and members who left are skipped.
+ *
+ * `linked` is the optional `{ vex, nightmare }` map from E Bot 1 and Al-Kabus,
+ * added on top of the stored points exactly as the profile card does.
+ */
+export function rankedProfiles(guildId, memberIds, linked = null) {
+  const present = new Set(memberIds);
+  const local = new Map(
+    getDb()
+      .prepare('SELECT user_id, nightmare, vex FROM profiles WHERE guild_id = ?')
+      .all(guildId)
+      .map((row) => [
+        row.user_id,
+        { nightmare: Number(row.nightmare) || 0, vex: Number(row.vex) || 0 },
+      ]),
+  );
+
+  const ids = new Set(local.keys());
+
+  for (const points of [linked?.vex, linked?.nightmare]) {
+    for (const id of Object.keys(points ?? {})) ids.add(id);
+  }
+
+  const rows = [];
+
+  for (const id of ids) {
+    if (!present.has(id)) continue;
+
+    const stored = local.get(id);
+    const nightmare = (stored?.nightmare ?? 0) + (linked?.nightmare?.[id] ?? 0);
+    const vex = (stored?.vex ?? 0) + (linked?.vex?.[id] ?? 0);
+    const score = nightmare + vex;
+
+    // A zero-score member is level 1 with nothing to show; the card gives them
+    // no rank either, so they stay out of the list.
+    if (score <= 0) continue;
+
+    const xp = xpFor({ nightmare, vex });
+
+    rows.push({
+      userId: id,
+      nightmare,
+      vex,
+      score,
+      level: levelFor(xp),
+      progress: progressFor(xp),
+    });
+  }
+
+  rows.sort(
+    (a, b) => b.level - a.level || b.score - a.score || a.userId.localeCompare(b.userId),
+  );
+
+  return rows;
+}
+
+/**
  * Rank by nightmare + vex among the members who are still in the server. Ties
  * share a rank (there is no tie-breaker), and a score of zero has no rank at
  * all — the card leaves that field empty.
