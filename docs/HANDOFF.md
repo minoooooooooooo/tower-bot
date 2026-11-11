@@ -72,7 +72,7 @@ Oracle Cloud is kept as the card-verification alternative in
 | `/emojibackfill [start\|status\|cancel]` | `importemojis`, `emojihistory` | Import older messages into the emoji stats (owner-only) |
 | `/birthday <sub>` | `bd`, `bday`, `birthdays` | 11 subcommands, see below |
 | `/welcome <sub>` | `greet` | 8 subcommands, six card styles with editable text |
-| `/ticket <sub>` | `tickets`, `ticket-tool`, `support` | One fully customizable panel with your own buttons, private channels, claim/close and HTML transcripts |
+| `/ticket <sub>` | `tickets`, `ticket-tool`, `support` | Named customizable panels with your own buttons, private channels, claim/close and HTML transcripts |
 | `/clear <amount> [user]` | `purge`, `prune` | Bulk-delete recent messages, optionally from one member |
 | `/avatar [user]` | `av`, `pfp` | Global + per-server avatar |
 | `/profile [user]` | `card`, `profilecard` | Generated PNG card: title, rank, level, points, XP |
@@ -369,30 +369,44 @@ Behavior that must be preserved:
 ### Ticket package
 
 `/ticket` (prefix `:-ticket`, aliases `tickets`/`ticket-tool`/`support`), with
-the `button` group (`add`, `edit`, `remove`), plus `panel`, `list`, `buttons`,
-`log`, `close`, `claim`, `add`, `remove`, `rename` and `transcript`.
+the `button` group (`add`, `edit`, `remove`), the `panel` group (`add`, `edit`,
+`post`, `list`, `remove`), plus `list`, `buttons`, `log`, `close`, `claim`,
+`add`, `remove`, `rename` and `transcript`.
 
-There is **one panel and no predefined types**. The admin creates every button.
-The previous four seeded types (`general`, `complaint-submod`, `complaint-mod`,
-`complaint-owner`) are deleted once on upgrade by `legacy_cleared`; after that
-nothing is recreated.
+There are **named panels and no predefined types**. The admin creates every panel
+and every button. The previous four seeded types (`general`, `complaint-submod`,
+`complaint-mod`, `complaint-owner`) are deleted once on upgrade by
+`legacy_cleared`; after that nothing is recreated.
 
 Behavior that must be preserved:
 
-- **The panel embed is fully configurable.** `ticket_settings` stores
-  `panel_title`, `panel_description`, `panel_color`, `panel_footer`,
-  `panel_image`, `panel_thumbnail`, `panel_channel_id` and `panel_message_id`.
-  Re-posting edits the stored message and removes a panel left in another
-  channel.
+- **Every panel owns its embed and message.** `ticket_panels` stores `key`,
+  `label`, `channel_id`, `message_id`, `title`, `description`, `color`, `footer`,
+  `image`, `thumbnail` and `position`. Re-posting edits the stored message and
+  removes a copy left in another channel. `listTicketPanels` is ordered by
+  `position`, then key; a server is capped at 10 panels.
+- **Every button belongs to exactly one panel** (`ticket_types.panel_key`,
+  default `main`). `listTicketTypes(guildId, panelKey)` filters the panel, and
+  `buildPanel` only renders that panel's buttons. Moving a button to another
+  panel appends it there instead of keeping its old position.
 - **Each button owns its whole ticket:** label, emoji, button text, button style,
   category, support roles, ping roles, log channel, welcome text, channel-name
   template, max open, embed colour and close action. Rows live in `ticket_types`
-  (the table name is historical; one row = one panel button).
-- **Buttons are ordered by `position`, then key**, and the panel supports the
+  (the table name is historical; one row = one button).
+- **Buttons are ordered by `position`, then key**, and each panel supports the
   Discord limit of 25 buttons (five per row).
 - **Button appearance:** `button_style` is `primary`/`secondary`/`success`/
   `danger`; missing means Primary. `button_label` overrides `label`, and `emoji`
-  is the icon. A complaint panel is just three danger-styled buttons.
+  is the icon. A complaint panel is just three danger-styled buttons on their own
+  panel.
+- **Upgrade path:** the first time a guild is touched, `migrateTicketPanels`
+  copies the old `ticket_settings` panel columns into a `main` panel, assigns
+  every existing button to it and sets `panels_migrated`. The older
+  single-panel columns stay in `ticket_settings` but are no longer read.
+- **Any button change refreshes every posted panel** through `refreshPanels`, so
+  admins do not repost them by hand. `publishPanel(guild, channel, panelKey,
+  patch)` still accepts `publishPanel(guild, channel, patch)` as shorthand for
+  `main`.
 - **Custom ids:** `ticket:open:<key>`, `ticket:claim:<channelId>`,
   `ticket:close:<channelId>`, `ticket:transcript:<channelId>`,
   `ticket:reopen:<channelId>` and `ticket:delete:<channelId>`.
@@ -413,9 +427,11 @@ Behavior that must be preserved:
 - **Placeholders:** channel names and welcome text survive Unicode/Arabic names;
   names support `{number}`, `{user}`, `{username}`, `{type}`, and welcome text
   additionally supports `{mention}` and `{server}`.
-- **Storage:** `ticket_settings` (log channel and the one panel), `ticket_types`
-  (one row per button) and `tickets` (one row per channel, status
-  `open`/`closed`/`deleted`, opener, claimer, close reason, transcript message).
+- **Storage:** `ticket_panels` (one row per panel and its posted message),
+  `ticket_types` (one row per button, `panel_key`), `ticket_settings` (log
+  channel plus the legacy single-panel columns and migration flags) and
+  `tickets` (one row per channel, status `open`/`closed`/`deleted`, opener,
+  claimer, close reason, transcript message).
   All live in the same `data/bot.db`.
 
 ### Exile package
@@ -682,8 +698,8 @@ Behavior that must be preserved:
 - [ ] Run `/backfill start` once, watch `/backfill status` until it finishes, then check `/serverstats` shows an older **Messages since** date and the same **Voice since** date, and the message totals stop changing after a second start. Use `/backfill cancel` once mid-run and confirm the next start resumes instead of double-counting; a restart during the import should resume the same way.
 - [ ] Run `/backfill audit` after the import and compare its **Human · importable** field with **Imported by backfill**; they should match. Use the **Bots / webhooks** and **Live window · human** fields to explain any gap against Discord search.
 - [ ] Test emoji stats: use a few custom emojis in ordinary text and in emoji-only messages, then run `/topemojis` and `/topemojis order:least period:7d`; confirm the standalone and in-message counts add up, an unused emoji appears with 0 in the least view, the pager reaches page 2, and `:-emojis least week` works. Run `/emojibackfill start`, watch `/emojibackfill status` until complete, then confirm `/topemojis period:all` totals stop changing on a second start. Cancel one run mid-way and confirm the next start resumes without double-counting.
-- [ ] **Set up tickets:** create a `#tickets` category, a `#ticket-logs` channel, and optionally one category per complaint rank. Run `/ticket button add key:support label:Support category:#tickets support_roles:@Support ping_roles:@Mods log_channel:#ticket-logs emoji:🎫 style:primary`, then add `complaint-submod`, `complaint-mod` and `complaint-owner` with their own categories, ping roles and `style:danger`. Run `/ticket panel channel:#tickets title:"Need help?" description:"Choose an option" color:#5865f2 footer:"We reply fast"`.
-- [ ] Confirm the panel matches the custom title, description, color, footer, image/thumbnail and button labels/styles. Press each button on an alt and confirm it opens in that button's own category and pings only its roles. Claim, close with a reason, and verify the transcript HTML lands in the log channel and the channel is deleted; test a button without a log to confirm it archives instead, then Reopen it. Try a second ticket of the same button to confirm `max_open` refuses it. Run `/ticket button edit` and confirm the posted panel refreshes in place, then `/ticket button remove` on a scratch key and confirm the default types removed on upgrade are not recreated after a restart.
+- [ ] **Set up tickets:** create a `#tickets` category, a `#ticket-logs` channel, a `#tickets` panel channel, optionally a `#complaints` panel channel, and optionally one category per complaint rank. Run `/ticket panel add key:support label:"Support desk" channel:#tickets title:"Need help?" description:"Choose an option" color:#5865f2 footer:"We reply fast"`. Then run `/ticket panel add key:complaints label:Complaints channel:#complaints title:"Complaint against administration" color:#ed4245`, and add buttons to it with `/ticket button add key:complaint-submod label:"Complaint against sub-mod" panel:complaints category:#complaints-submod ping_roles:@Admins emoji:🛡️ style:danger`, plus `complaint-mod` and `complaint-owner`. Add the normal support button with `/ticket button add key:help label:Help panel:support category:#tickets support_roles:@Support ping_roles:@Mods log_channel:#ticket-logs emoji:🎫 style:primary`.
+- [ ] Confirm each panel shows only its own buttons and its own title, description, color, footer and image/thumbnail, and `/ticket panel list` shows both panels plus their buttons. Press a button from each panel on an alt and confirm it opens in that button's own category and pings only its roles. Claim, close with a reason, and verify the transcript HTML lands in the log channel and the channel is deleted; test a button without a log to confirm it archives instead, then Reopen it. Try a second ticket of the same button to confirm `max_open` refuses it. Run `/ticket button edit key:help panel:complaints` and confirm both posted panels refresh and the button moves; move it back. Run `/ticket panel edit key:complaints title:"..."` and confirm that panel refreshes in place. Delete a scratch panel with `/ticket panel remove key:... confirm:true` and confirm its buttons go with it while the other panel stays. Confirm the default types removed on upgrade are not recreated after a restart.
 - [x] **Last-activity command** (`/lastseen`) — last active, last message, message count, voice time, first message and join date.
 - [x] **Profile cards** (`/profile`, `/profile-edit`) — 2026-11-06. Avatar, title, rank, level, nightmare/vex, punishments, good behavior and XP bar on the supplied artwork.
 - [x] **Member status panel** (`/profile`) — 2026-11-07. Lower-left panel: presence dot/custom status/activity, message and voice totals, joined/account dates, last seen, top-role pills, and the opt-in birthday/age/time-zone block. `/birthday show` controls the block per member.
@@ -724,7 +740,7 @@ Behavior that must be preserved:
 - Color integration test with fake guild/member/role objects (224 checks): hex/name parsing (`#rgb`, `#rrggbb`, `0x`, bare, names, invalid, prototype keys), Arabic input (names, hamza/diacritic/tatweel variants, `ال` prefix, feminine forms, Arabic-Indic and Persian digits, unknown words), black being stored as `#000001` instead of clearing, no built-in Arabic command alias (so a guild `لون` alias keeps working), the `/colors` palette (every listed Arabic and English name parses to its listed hex, Arabic title, four groups, slash/prefix/`:-color list`/bare `/color` entry points, cooldown release), highest-exclusive-role selection (shared roles skipped, integration roles skipped, stale-cache counts, no personal role), hierarchy/Manage Roles refusals with the fallback to the highest *editable* personal role (and the skipped role reported), the cache fallback when member counts fail, slash and prefix success payloads, audit reason, `tertiaryColor: null`, unchanged-color short circuit, holographic conversion, API failure reporting, missing/invalid argument replies, partial updates (primary only, secondary only, prefix `-` placeholder, a lone second color refused), clear (`clear` and `مسح` in prefix, in the primary field and in the `clear:true` boolean, with diacritics ignored, no-op "Already clear", colors+clear conflict, too many prefix values), the 10-second cooldown, cooldown release (`ctx.failed`) on every failure path, and `runCommand` regression checks proving a failed or throwing run is retryable immediately while a successful run still answers "Slow down".
 - Activity integration test on a temp DB (254 checks): message totals/daily buckets/channel totals, first/last timestamps, all-time and 7d/30d windows, member and channel rankings, per-channel voice seconds, server totals and tracking start, unknown-member/empty-guild zeroes, voice join/leave/move, AFK exclusion, bot exclusion, five-minute heartbeat, crash reconciliation (stale session closed at last heartbeat, still-in-voice session reopened, new voice members picked up, AFK/bots skipped), graceful `finishAllVoiceSessions`, message backfill (page aggregation into member/day/channel totals, first/last min-max, cursor, `done`, error rows, coverage dates), the backfill service end to end on fake pages (threads skipped, snowflake boundary, resume cursor, bot/system/newer filtering, idempotent rerun), the dry-run audit (cumulative per-channel counters, human/bot/system/live split, no activity writes, resume cursor, report embed and `Human · importable` comparison), `/backfill` status/start/audit/cancel/complete and owner-only metadata, formatting helpers (rank badges, footer dates), `/top` (slash/prefix, rank badges, LRM-pinned rows, formatted footer with no raw timestamp, limits, empty state, window-empty hint, invalid option), `/topchannels` (limit, rank badge, deleted-channel label, formatted footer, invalid option), `/compare` (slash/prefix, stacked member cards, display-name headers with no raw field-name mentions, English-led leader line, window, same-member/unknown/missing refusals, quiet window), `/serverstats` (totals, top member/channel, separate message and voice coverage dates, empty state), `/lastseen` (slash/prefix, default author, mention and unknown-member resolution, last activity/message, counts, voice time, first message, join date, empty state), no-ping payloads, command metadata, and the 46-command/8-event loader surface.
 - Emoji integration test on a temp DB with fake guild/channel/message objects (110 checks): token parsing (name, id, animation, duplicates, no false tokens), standalone detection (`emoji only`, whitespace, text, plain text), live recording (inline/standalone split, day buckets, rename keeping the newest name, guild isolation, first-use tracking start), `1d`/`7d`/`30d` windows and the period labels, backfill page aggregation (message/emoji counts, oldest boundary, cursor and `done`, cumulative totals), the backfill service (older human messages only, bot/system/newer skipped, resume, failed channel reported without stopping), `/topemojis` (title, most/least order, rank badges, total plus split, zero-use least rows, deleted label, pager states and Next, prefix parsing, unknown option, empty state and the all-time hint, footer coverage), `/emojibackfill` (default status, complete/not-started states, start and completion, already-complete refusal, nothing running), the `messageCreate` live hook, metadata, and the 46-command loader/alias surface.
-- Ticket integration test on a temp DB with fake guild/channel/role/message objects (210 checks): no predefined buttons, legacy default cleanup once (`legacy_cleared`), button CRUD (label, category, support/ping roles, max-open clamp, close-action fallback, emoji, button label/style/color, order, delete), panel settings roundtrip (title, description, color, footer, image, thumbnail, channel/message), ticket numbering and lifecycle (open/claim/close/reopen/delete, counts, channel lookup, manually deleted channels), channel-name and welcome placeholders (including Arabic), button builders (default Primary, custom label/emoji/style), panel building (defaults, seven buttons on two rows, custom embed fields), panel reposting (edit in place, move removes the old message), channel creation (parent category, permission overwrites, ping role, claim/close buttons, open log), max-open, missing-category and unknown-button refusals, HTML transcript escaping and filenames, close safety (logged delete, archive without a log, archive button with a log, reopen), button/modal routing (open, duplicate open, claim/unclaim, close modal with reason, reopen, transcript fallback, delete), the full command surface (`/ticket` group and subcommands, prefix add/edit/remove with `key=value`, slash add, panel design, list, remove refresh, close), and the 46-command loader.
+- Ticket integration test on a temp DB with fake guild/channel/role/message objects (270 checks): no predefined buttons, legacy default cleanup once (`legacy_cleared`), button CRUD (label, category, support/ping roles, max-open clamp, close-action fallback, emoji, button label/style/color, order, delete), panel CRUD (create, label, embed fields, order, move, delete, per-panel button counts), button-to-panel assignment and cross-panel moves, per-panel button filtering (`buildPanel` renders only its own buttons), one-time migration of the old single-panel settings and buttons into `main`, refresh of every posted panel after a button change, ticket numbering and lifecycle (open/claim/close/reopen/delete, counts, channel lookup, manually deleted channels), channel-name and welcome placeholders (including Arabic), button builders (default Primary, custom label/emoji/style), panel building (defaults, seven buttons on two rows, custom embed fields), panel reposting (edit in place, move removes the old message, two panels posted separately), channel creation (parent category, permission overwrites, ping role, claim/close buttons, open log), max-open, missing-category and unknown-button refusals, HTML transcript escaping and filenames, close safety (logged delete, archive without a log, archive button with a log, reopen), button/modal routing (open, duplicate open, claim/unclaim, close modal with reason, reopen, transcript fallback, delete), the full command surface (`/ticket` groups and subcommands, panel add/edit/post/list/remove, prefix `key=value`, slash add and moves, legacy `panel title=...`, list, remove refresh, close), and the 46-command loader.
 - Rank integration test on a temp DB with stubbed linked bots (49 checks): `rankedProfiles` ordering (level desc, then total points, then id), level/XP math, a level-50 member, linked-only members included and linked points added to stored points, zero-score rows and members who left excluded, links omitted falling back to local points; the slash command (title, level/Vex/Nightmare line, 3-per-page slice, footer page count, suppressed mentions, five-button pager with correct disabled states, Next/Last navigation), prefix page size (`:-levels 2`), bad and oversized page arguments, both empty states, and metadata (`levels`/`ranks` resolve to `/rank`, guild-only, Profile category).
 - Leaderboard pagination test on a temp DB (61 checks): `topMembers` offset slices (ranks 11–20, a short last page, negative offset ignored) and `countTopMembers` (all-time, 7-day window, guild scoping, unknown guild); the default 10-row first page and its footer, the five-button pager (First/Previous/Page/Next/Last) with correct disabled states, Next/Previous/First/Last navigation including clamping at both ends, the expiry edit that removes the buttons, page-size numbers and `per_page` on both slash and prefix, clamping at 25, a single page omitting the pager, the empty state, and the slash schema (`per_page` 1–25, no `limit`).
 - Typing indicator test with a fake channel (13 checks): `messageCreate` sends `sendTyping` before the command executes, an unknown command stays silent, a permission refusal and a cooldown refusal show no typing, a thrown `sendTyping` or a channel without the method still runs the command, a bare alias types too, a prefix `ctx.typing()` call reaches its channel, and a slash context is a no-op. `/botinfo`'s Build field is fed by `lib/build-info.js`, which asks the git checkout first, falls back to the packaged `build.json` (tolerating a BOM), and reports `unknown` when neither exists.

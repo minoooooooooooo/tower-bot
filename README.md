@@ -85,7 +85,7 @@ Both run `src/boot.js`, which checks the Node version before loading the bot and
 | `/server-banner [server]` | `:-serverbanner`, `:-sbanner` | Show a server banner, including another server the bot is in |
 | `/birthday <subcommand>` | `:-bd`, `:-bday` | Birthday registry, countdowns, automatic birthday role and greetings |
 | `/welcome <subcommand>` | `:-greet` | Welcome cards for new members: six styles, random or rotating, editable text |
-| `/ticket <subcommand>` | `:-tickets`, `:-ticket-tool`, `:-support` | One fully customizable panel with your own buttons, private channels, claiming, closing and HTML transcripts |
+| `/ticket <subcommand>` | `:-tickets`, `:-ticket-tool`, `:-support` | Named customizable panels with your own buttons, private channels, claiming, closing and HTML transcripts |
 | `/clear <amount> [user]` | `:-purge`, `:-prune` | Delete recent messages, optionally only from one member |
 | `/mute <@member> [duration] [reason]` | `:-mute-member` | Add the Muted role, optionally for a limited time |
 | `/unmute <@member> [reason]` | — | Remove the Muted role |
@@ -290,20 +290,20 @@ The bot counts **messages** and **voice time** per member and per channel, then 
 
 ## Tickets
 
-`/ticket` (prefix `:-ticket`, aliases `tickets`, `ticket-tool`, `support`) is a fully customizable ticket system. There is **one panel**, and you create every button yourself. Nothing is predefined.
+`/ticket` (prefix `:-ticket`, aliases `tickets`, `ticket-tool`, `support`) is a fully customizable ticket system. You create **named panels** with their own embeds, and **buttons** that belong to one panel. Nothing is predefined.
 
-- **The panel embed is yours.** `/ticket panel channel:#tickets title:"Need help?" description:"Choose an option" color:#5865f2 footer:"We reply fast" image:https://… thumbnail:https://…` posts it. Re-running the command edits the stored message instead of leaving two live panels behind. Use `none` to clear a value.
-- **Buttons are created one at a time.** `/ticket button add key:support label:Support category:#tickets emoji:🎫 style:success button_label:"Get help" support_roles:@Support ping_roles:@Mods welcome:"Hi {mention}" name_template:"support-{number}" max_open:1 close_action:delete color:#5865f2`. The `key` is the short id used internally; `label` is the name shown in embeds and lists.
+- **Create a panel:** `/ticket panel add key:support label:"Support desk" channel:#support title:"Need help?" description:"Choose an option" color:#5865f2 footer:"We reply fast" image:https://… thumbnail:https://…`. Each panel is a separate message with its own embed and its own buttons. Use `none` to clear a value. `/ticket panel post key:support` posts or refreshes it, `/ticket panel edit key:support …` changes it, `/ticket panel list` shows every panel, and `/ticket panel remove key:support confirm:true` deletes the panel and its buttons.
+- **Buttons are assigned to a panel.** `/ticket button add key:help label:Help panel:support category:#tickets emoji:🎫 style:success button_label:"Get help" support_roles:@Support ping_roles:@Mods welcome:"Hi {mention}" name_template:"support-{number}" max_open:1 close_action:delete color:#5865f2`. Omitting `panel` puts the button on `main`. Move a button later with `/ticket button edit key:help panel:complaints`. The `key` is the short id used internally; `label` is the name shown in embeds and lists.
 - **Every button can look and behave differently.** `style` is `primary` (blue), `secondary` (gray), `success` (green) or `danger` (red). `button_label` overrides the text on the button, `emoji` sets its icon, and `category`, `ping_roles`, `welcome`, `name_template`, `max_open`, `close_action`, `log_channel` and `color` are per button. Edit later with `/ticket button edit key:support …`, remove with `/ticket button remove key:support confirm:true`.
-- **Up to 25 buttons**, five per row. They are ordered by `position`, then key.
-- **One panel, many routes.** To recreate a complaint panel, add three buttons (for example `complaint-submod`, `complaint-mod`, `complaint-owner`), each with its own category, ping roles and red `danger` style.
-- **Prefix works too:** `:-ticket button add key=support label=Support category=#tickets ping=@Mods style=success` and `:-ticket panel title="Need help?" color=#5865f2`. Use quotes for spaces.
+- **Each panel holds up to 25 buttons**, five per row, ordered by `position` then key. A server can have up to 10 panels. Any button change refreshes every posted panel automatically.
+- **Split your routes.** Put routine support on a `main` panel and complaints on a separate `complaints` panel: add three buttons (`complaint-submod`, `complaint-mod`, `complaint-owner`) to that panel, each with its own category, ping roles and red `danger` style.
+- **Prefix works too:** `:-ticket panel add key=support label="Support desk" title="Need help?" channel=#support`, `:-ticket button add key=support label=Support panel=support category=#tickets ping=@Mods style=success`, and `:-ticket panel edit key=support color=#5865f2`. Use quotes for spaces. `:-ticket panel title="Need help?"` still edits and posts the `main` panel.
 - **Placeholders:** channel names understand `{number}`, `{user}`, `{username}` and `{type}`; welcome text understands `{mention}`, `{user}`, `{username}`, `{server}`, `{type}` and `{number}`. Unicode names (including Arabic) are kept as channel names.
 - **Member commands:** `/ticket close [reason]`, `/ticket claim` (support team, claim or unclaim), `/ticket transcript`, and for staff `/ticket add`, `/ticket remove` and `/ticket rename`. The ticket channel also has **Claim** and **Close** buttons; closing opens a small modal for an optional reason.
 - **Closing:** the transcript is written first. If a log channel exists and the button is set to `delete`, the channel is removed; otherwise it is renamed `closed-…`, the opener loses Send Messages, and the channel gets **Reopen**, **Transcript** and **Delete** buttons. A ticket is only deleted after its transcript reached the log, so history is never lost silently.
 - **Transcripts** are self-contained HTML files attached to the log channel; without a log channel, `/ticket transcript` sends the file directly to the opener or staff member.
 - The bot needs **Manage Channels**, **Manage Messages**, plus **View Channel**, **Send Messages**, **Embed Links**, **Read Message History** and **Attach Files** in the panel, category and log channels. Tickets are not anonymous: the opener is recorded, so staff can follow up.
-- Configuration lives in `data/bot.db` (`ticket_settings` for the panel, `ticket_types` for the buttons, `tickets` for history). The panel message id is stored, so a restart does not lose it.
+- Configuration lives in `data/bot.db` (`ticket_panels` for the panels and their embed/message ids, `ticket_types` for the buttons, `ticket_settings` for the log channel, and `tickets` for history). A restart does not lose a posted panel. The old single-panel configuration is migrated once into a `main` panel.
 
 ## Moderation
 

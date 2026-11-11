@@ -11,16 +11,25 @@ import { parseColor } from '../general/color.js';
 import {
   BUTTON_STYLES,
   CLOSE_ACTIONS,
+  DEFAULT_PANEL_KEY,
+  MAX_PANELS,
   claimTicket,
+  countPanelButtons,
+  deleteTicketPanel,
   deleteTicketType,
+  ensureTicketPanel,
   getTicketByChannel,
+  getTicketPanel,
   getTicketSettings,
   getTicketType,
+  listTicketPanels,
   listTicketTypes,
+  normalizePanelKey,
   normalizeTypeKey,
   openTicketsFor,
   ticketCounts,
   updateTicketSettings,
+  upsertTicketPanel,
   upsertTicketType,
 } from '../../services/ticket-store.js';
 import {
@@ -29,6 +38,7 @@ import {
   ephemeral,
   isStaffMember,
   publishPanel,
+  refreshPanels,
   saveTicketTranscript,
   sanitizeChannelName,
 } from '../../services/ticket.js';
@@ -160,9 +170,19 @@ function parseFlagTokens(args) {
 function buttonLine(button) {
   return [
     `**${button.buttonLabel || button.label}** · \`${button.key}\``,
-    `Category: ${button.categoryId ? `<#${button.categoryId}>` : '⚠️ not set'} · Style: ${button.buttonStyle ?? 'primary'}`,
+    `Panel: \`${button.panelKey}\` · Category: ${button.categoryId ? `<#${button.categoryId}>` : '⚠️ not set'}`,
+    `Style: ${button.buttonStyle ?? 'primary'} · Max open: ${button.maxOpen} · Close: ${button.closeAction}`,
     `Support: ${roleList(button.supportRoleIds)} · Ping: ${roleList(button.pingRoleIds)}`,
-    `Max open: ${button.maxOpen} · Close: ${button.closeAction}`,
+  ].join('\n');
+}
+
+function panelLine(guild, panel) {
+  const buttons = countPanelButtons(guild.id, panel.key);
+
+  return [
+    `Buttons: **${buttons}**`,
+    `Message: ${panel.messageId ? `${channelLabel(guild, panel.channelId)} ([jump](https://discord.com/channels/${guild.id}/${panel.channelId}/${panel.messageId}))` : 'not posted'}`,
+    `Title: ${panel.title || 'default'}`,
   ].join('\n');
 }
 
@@ -170,39 +190,36 @@ function overviewEmbed() {
   return embed({
     title: 'Tickets',
     description: [
-      'A single, fully customizable ticket panel. You choose the embed and every button.',
+      'Fully customizable ticket panels. Each panel has its own embed, and you choose which buttons belong to it.',
       '',
       '**Member commands**',
       '`/ticket close [reason]` — close the ticket you are in',
       '`/ticket claim` — claim or unclaim a ticket (support team)',
       '`/ticket transcript` — save the transcript (opener or support team)',
       '',
-      '**Admin setup**',
-      '`/ticket button add key:general label:Support category:#tickets` — create a button',
-      '`/ticket button edit key:general ...` — change its text, color, category, roles or welcome',
-      '`/ticket button remove key:general confirm:true` — delete a button',
-      '`/ticket panel ...` — edit the embed and post or refresh the panel',
-      '`/ticket list` — show the panel and every button',
+      '**Panels**',
+      '`/ticket panel add key:support label:Support channel:#support` — create a panel',
+      '`/ticket panel edit key:support title:"Need help?"` — change its embed',
+      '`/ticket panel post key:support` — post or refresh it',
+      '`/ticket panel list` — show every panel',
+      '',
+      '**Buttons**',
+      '`/ticket button add key:help label:Help panel:support category:#tickets` — create a button',
+      '`/ticket button edit key:help panel:support ...` — change it or move it',
+      '`/ticket button remove key:help confirm:true` — delete it',
+      '',
+      '**Shared setup**',
+      '`/ticket list` — show every panel and button',
       '`/ticket log #channel` — where transcripts and ticket events go',
       '',
       'Every value can be changed later. Nothing is predefined.',
     ].join('\n'),
-    footer: 'The panel supports up to 25 buttons, five per row',
+    footer: 'Each panel supports up to 25 buttons, five per row',
   });
 }
 
-async function refreshPanel(ctx) {
-  const settings = getTicketSettings(ctx.guildId);
-
-  if (!settings.panelChannelId) return;
-
-  const channel =
-    ctx.guild.channels.cache.get(settings.panelChannelId) ??
-    (await ctx.guild.channels.fetch(settings.panelChannelId).catch(() => null));
-
-  if (channel?.isTextBased?.() !== false) {
-    await publishPanel(ctx.guild, channel).catch(() => null);
-  }
+async function refreshPostedPanels(ctx) {
+  await refreshPanels(ctx.guild).catch(() => null);
 }
 
 async function readButtonOptions(ctx, startIndex) {
@@ -213,6 +230,9 @@ async function readButtonOptions(ctx, startIndex) {
   if (ctx.isSlash) {
     key = ctx.getString('key');
     label = ctx.getString('label');
+
+    const panel = ctx.getString('panel');
+    if (panel !== undefined) patch.panelKey = panel;
 
     const emoji = ctx.getString('emoji');
     if (emoji !== undefined) patch.emoji = emoji;
@@ -270,6 +290,9 @@ async function readButtonOptions(ctx, startIndex) {
     key = flags.key ?? rest[0];
     label = flags.label;
 
+    if (flags.panel !== undefined || flags.panel_key !== undefined) {
+      patch.panelKey = flags.panel ?? flags.panel_key;
+    }
     if (flags.emoji !== undefined) patch.emoji = isClearValue(flags.emoji) ? '' : flags.emoji;
     if (flags.style !== undefined || flags.button_style !== undefined) {
       patch.buttonStyle = parseButtonStyle(flags.style ?? flags.button_style);
@@ -333,6 +356,21 @@ async function readButtonOptions(ctx, startIndex) {
   return { key, label, patch };
 }
 
+/** Resolves the panel a button belongs to, creating the default one if needed. */
+function resolvePanelForButton(guildId, rawKey, { create = true } = {}) {
+  if (rawKey !== undefined && !normalizePanelKey(rawKey)) {
+    throw new TicketError('A panel key needs letters, numbers, `-` or `_`.');
+  }
+
+  const normalized = normalizePanelKey(rawKey ?? '') || DEFAULT_PANEL_KEY;
+  const before = getTicketPanel(guildId, normalized);
+
+  if (before) return { panel: before, created: false };
+  if (!create) return { panel: null, created: false };
+
+  return { panel: ensureTicketPanel(guildId, normalized), created: true };
+}
+
 async function handleButtonAdd(ctx) {
   if (!(await requireAdmin(ctx))) return;
 
@@ -341,7 +379,7 @@ async function handleButtonAdd(ctx) {
     const normalized = normalizeTypeKey(key);
 
     if (!normalized) {
-      await ctx.fail({ embeds: [errorEmbed('No key given', 'Use `/ticket button add key:general label:Support category:#tickets`.')] });
+      await ctx.fail({ embeds: [errorEmbed('No key given', 'Use `/ticket button add key:general label:Support panel:main category:#tickets`.')] });
       return;
     }
 
@@ -364,8 +402,11 @@ async function handleButtonAdd(ctx) {
       return;
     }
 
+    const { panel, created } = resolvePanelForButton(ctx.guildId, patch.panelKey);
+    patch.panelKey = panel.key;
+
     const button = upsertTicketType(ctx.guildId, normalized, { ...patch, label });
-    await refreshPanel(ctx);
+    await refreshPostedPanels(ctx);
 
     await ctx.reply(
       ephemeral({
@@ -375,7 +416,9 @@ async function handleButtonAdd(ctx) {
             [
               buttonLine(button),
               '',
-              'Run `/ticket panel` to refresh the posted panel, or edit it with `/ticket button edit`.',
+              created
+                ? `Panel \`${panel.key}\` was created for it. Style it with \`/ticket panel edit key:${panel.key} title:"..."\` and post it with \`/ticket panel post key:${panel.key} channel:#channel\`.`
+                : 'The posted panel was refreshed automatically. Edit the button with `/ticket button edit`.',
             ].join('\n'),
           ),
         ],
@@ -403,12 +446,21 @@ async function handleButtonEdit(ctx) {
 
     if (label !== undefined) patch.label = label;
 
+    if (patch.panelKey !== undefined) {
+      patch.panelKey = resolvePanelForButton(ctx.guildId, patch.panelKey).panel.key;
+    }
+
     const button = upsertTicketType(ctx.guildId, normalized, patch);
-    await refreshPanel(ctx);
+    await refreshPostedPanels(ctx);
 
     await ctx.reply(
       ephemeral({
-        embeds: [successEmbed(`Button saved · ${button.buttonLabel || button.label}`, buttonLine(button))],
+        embeds: [
+          successEmbed(
+            `Button saved · ${button.buttonLabel || button.label}`,
+            `${buttonLine(button)}\n\nThe posted panels were refreshed automatically.`,
+          ),
+        ],
       }),
     );
   } catch (error) {
@@ -455,10 +507,10 @@ async function handleButtonRemove(ctx) {
   }
 
   deleteTicketType(ctx.guildId, button.key);
-  await refreshPanel(ctx);
+  await refreshPostedPanels(ctx);
 
   await ctx.reply({
-    embeds: [successEmbed('Button deleted', `\`${button.key}\` was removed from the panel.`)],
+    embeds: [successEmbed('Button deleted', `\`${button.key}\` was removed from panel \`${button.panelKey}\`.`)],
   });
 }
 
@@ -466,23 +518,21 @@ async function handleButtonList(ctx) {
   if (!(await requireAdmin(ctx))) return;
 
   const buttons = listTicketTypes(ctx.guildId);
-  const settings = getTicketSettings(ctx.guildId);
+  const panels = listTicketPanels(ctx.guildId);
 
   await ctx.reply({
     embeds: [
       embed({
         title: 'Panel buttons',
         description: buttons.length
-          ? [
-              `**${buttons.length}** button(s). They appear in this order.`,
-              `Panel: ${settings.panelMessageId ? channelLabel(ctx.guild, settings.panelChannelId) : 'not posted'}`,
-            ].join('\n')
-          : 'No buttons yet. Add one with `/ticket button add key:general label:Support category:#tickets`.',
+          ? `**${buttons.length}** button(s) across **${panels.length}** panel(s). Each button appears only on its own panel.`
+          : 'No buttons yet. Add one with `/ticket button add key:general label:Support panel:main category:#tickets`.',
         fields: buttons.map((button) => ({
           name: `${button.emoji ? `${button.emoji} ` : ''}${button.buttonLabel || button.label} · ${button.key}`,
           value: buttonLine(button),
         })),
         color: COLORS.primary,
+        footer: `Up to ${MAX_PANELS} panels, 25 buttons per panel`,
       }),
     ],
   });
@@ -492,6 +542,9 @@ function readPanelDesign(ctx, startIndex) {
   const patch = {};
 
   if (ctx.isSlash) {
+    const label = ctx.getString('label');
+    if (label !== undefined) patch.label = isClearValue(label) ? null : label;
+
     const title = ctx.getString('title');
     if (title !== undefined) patch.title = isClearValue(title) ? null : title;
 
@@ -511,10 +564,14 @@ function readPanelDesign(ctx, startIndex) {
 
     const color = ctx.getString('color');
     if (color !== undefined) patch.color = parseDesignColor(color);
+
+    const position = ctx.getInteger('position');
+    if (position !== undefined) patch.position = position;
   } else {
     const { flags } = parseFlagTokens(ctx.args.slice(startIndex));
 
     for (const [key, field] of [
+      ['label', 'label'],
       ['title', 'title'],
       ['description', 'description'],
       ['footer', 'footer'],
@@ -527,6 +584,16 @@ function readPanelDesign(ctx, startIndex) {
     }
 
     if (flags.color !== undefined) patch.color = parseDesignColor(flags.color);
+
+    if (flags.position !== undefined) {
+      const value = Number(flags.position);
+
+      if (!Number.isFinite(value)) {
+        throw new TicketError('position must be a number from 0 to 99.');
+      }
+
+      patch.position = Math.max(0, Math.min(99, Math.trunc(value)));
+    }
   }
 
   for (const field of ['image', 'thumbnail']) {
@@ -538,42 +605,202 @@ function readPanelDesign(ctx, startIndex) {
   return patch;
 }
 
-async function handlePanel(ctx) {
+/** Reads the panel key from a slash option or a prefix flag/argument. */
+function readPanelKey(ctx, startIndex, fallback = null) {
+  if (ctx.isSlash) return ctx.getString('key') ?? fallback;
+
+  const { flags, rest } = parseFlagTokens(ctx.args.slice(startIndex));
+
+  return flags.key ?? flags.panel ?? rest[0] ?? fallback;
+}
+
+async function readPanelChannel(ctx, { startIndex = 2, positional = null } = {}) {
+  if (ctx.isSlash) return ctx.getChannel('channel') ?? null;
+
+  const { flags, rest } = parseFlagTokens(ctx.args.slice(startIndex));
+  let raw = flags.channel ?? flags.ch;
+
+  if (raw === undefined && positional !== null) raw = rest[positional];
+  if (!raw) return null;
+
+  return resolveTextChannel(ctx.guild, raw);
+}
+
+async function panelChannelById(guild, channelId) {
+  if (!channelId) return null;
+
+  return (
+    guild.channels.cache.get(channelId) ??
+    (await guild.channels.fetch(channelId).catch(() => null))
+  );
+}
+
+async function handlePanelAdd(ctx) {
   if (!(await requireAdmin(ctx))) return;
 
   try {
-    const buttons = listTicketTypes(ctx.guildId);
+    const rawKey = readPanelKey(ctx, 2);
+    const key = normalizePanelKey(rawKey);
 
-    if (!buttons.length) {
+    if (!key) {
+      await ctx.fail({
+        embeds: [errorEmbed('No key given', 'Use `/ticket panel add key:support label:Support`.')],
+      });
+      return;
+    }
+
+    if (getTicketPanel(ctx.guildId, key)) {
       await ctx.fail({
         embeds: [
-          warningEmbed(
-            'No buttons yet',
-            'Add at least one button first: `/ticket button add key:general label:Support category:#tickets`.',
+          errorEmbed(
+            'That panel already exists',
+            `Change it with \`/ticket panel edit key:${key} ...\`.`,
           ),
         ],
       });
       return;
     }
 
-    const settings = getTicketSettings(ctx.guildId);
-    const patch = readPanelDesign(ctx, 1);
-    let channel;
+    if (listTicketPanels(ctx.guildId).length >= MAX_PANELS) {
+      await ctx.fail({
+        embeds: [errorEmbed('Too many panels', `A server can have at most ${MAX_PANELS} panels.`)],
+      });
+      return;
+    }
+
+    const patch = readPanelDesign(ctx, 2);
+    const channel = await readPanelChannel(ctx, { startIndex: 2 });
+    const panel = upsertTicketPanel(ctx.guildId, key, patch);
+    let message = null;
+
+    if (channel) message = await publishPanel(ctx.guild, channel, key);
+
+    await ctx.reply(
+      ephemeral({
+        embeds: [
+          successEmbed(
+            `Panel created · ${panel.label}`,
+            [
+              `Key: \`${panel.key}\` · Buttons: **${countPanelButtons(ctx.guildId, key)}**`,
+              message
+                ? `It is live in ${channel} ([jump](${message.url ?? '#'})).`
+                : `Post it with \`/ticket panel post key:${panel.key} channel:#channel\`.`,
+              `Add buttons with \`/ticket button add key:help label:Help panel:${panel.key} category:#tickets\`.`,
+            ].join('\n'),
+          ),
+        ],
+      }),
+    );
+  } catch (error) {
+    await ctx.fail({
+      embeds: [
+        errorEmbed(
+          'Could not create the panel',
+          error instanceof TicketError ? error.message : error.message,
+        ),
+      ],
+    });
+  }
+}
+
+async function handlePanelEdit(ctx) {
+  if (!(await requireAdmin(ctx))) return;
+
+  try {
+    const rawKey = readPanelKey(ctx, 2);
+    const key = normalizePanelKey(rawKey);
+
+    if (!key) {
+      await ctx.fail({
+        embeds: [errorEmbed('No panel given', 'Use `/ticket panel edit key:support title:"..."`.')],
+      });
+      return;
+    }
+
+    const existing = getTicketPanel(ctx.guildId, key);
+
+    if (!existing) {
+      await ctx.fail({
+        embeds: [
+          errorEmbed(
+            'Unknown panel',
+            `No panel called \`${rawKey || '?'}\`. Create it with \`/ticket panel add key:${key || 'key'}\`.`,
+          ),
+        ],
+      });
+      return;
+    }
+
+    const patch = readPanelDesign(ctx, 2);
+    const channel = await readPanelChannel(ctx, { startIndex: 2 });
+    const panel = upsertTicketPanel(ctx.guildId, key, patch);
+    let message = null;
+
+    if (channel) {
+      message = await publishPanel(ctx.guild, channel, key);
+    } else {
+      const saved = await panelChannelById(ctx.guild, panel.channelId);
+
+      if (saved) message = await publishPanel(ctx.guild, saved, key).catch(() => null);
+    }
+
+    await ctx.reply(
+      ephemeral({
+        embeds: [
+          successEmbed(
+            `Panel saved · ${panel.label}`,
+            [
+              `Key: \`${panel.key}\` · Buttons: **${countPanelButtons(ctx.guildId, key)}**`,
+              message
+                ? `The posted panel was refreshed ([jump](${message.url ?? '#'})).`
+                : `Post it with \`/ticket panel post key:${panel.key} channel:#channel\`.`,
+            ].join('\n'),
+          ),
+        ],
+      }),
+    );
+  } catch (error) {
+    await ctx.fail({
+      embeds: [
+        errorEmbed(
+          'Could not save the panel',
+          error instanceof TicketError ? error.message : error.message,
+        ),
+      ],
+    });
+  }
+}
+
+async function handlePanelPost(ctx) {
+  if (!(await requireAdmin(ctx))) return;
+
+  try {
+    const actionKnown = ['post', 'publish'].includes(String(ctx.args[1] ?? '').toLowerCase());
+    const startIndex = ctx.isSlash ? 0 : actionKnown ? 2 : 1;
+    const patch = readPanelDesign(ctx, startIndex);
+
+    let rawKey;
 
     if (ctx.isSlash) {
-      channel = ctx.getChannel('channel');
+      rawKey = ctx.getString('key') ?? DEFAULT_PANEL_KEY;
     } else {
-      const { rest } = parseFlagTokens(ctx.args.slice(1));
+      const { flags, rest } = parseFlagTokens(ctx.args.slice(startIndex));
 
-      if (rest[0]) channel = await resolveTextChannel(ctx.guild, rest[0]);
+      rawKey = flags.key ?? flags.panel ?? (actionKnown ? rest[0] : null) ?? DEFAULT_PANEL_KEY;
     }
 
-    if (!channel && settings.panelChannelId) {
-      channel =
-        ctx.guild.channels.cache.get(settings.panelChannelId) ??
-        (await ctx.guild.channels.fetch(settings.panelChannelId).catch(() => null));
-    }
+    const key = normalizePanelKey(rawKey) || DEFAULT_PANEL_KEY;
 
+    if (!getTicketPanel(ctx.guildId, key)) upsertTicketPanel(ctx.guildId, key, {});
+    if (Object.keys(patch).length > 0) upsertTicketPanel(ctx.guildId, key, patch);
+
+    const panel = getTicketPanel(ctx.guildId, key);
+    let channel = await readPanelChannel(ctx, {
+      startIndex,
+      positional: actionKnown ? null : 0,
+    });
+
+    if (!channel) channel = await panelChannelById(ctx.guild, panel.channelId);
     if (!channel) channel = ctx.channel;
 
     if (!channel?.isTextBased?.()) {
@@ -581,16 +808,19 @@ async function handlePanel(ctx) {
       return;
     }
 
-    const message = await publishPanel(ctx.guild, channel, patch);
+    const buttons = listTicketTypes(ctx.guildId, key);
+    const message = await publishPanel(ctx.guild, channel, key);
 
     await ctx.reply(
       ephemeral({
         embeds: [
           successEmbed(
-            'Panel posted',
+            `Panel posted · ${panel.label}`,
             [
-              `The panel is live in ${channel} ([jump](${message.url ?? '#'})).`,
-              `It has **${buttons.length}** button(s) and uses your custom embed.`,
+              `It is live in ${channel} ([jump](${message.url ?? '#'})).`,
+              buttons.length
+                ? `It has **${buttons.length}** button(s) and uses your custom embed.`
+                : `It has no buttons yet. Add one with \`/ticket button add ... panel:${key}\`.`,
             ].join('\n'),
           ),
         ],
@@ -610,9 +840,121 @@ async function handlePanel(ctx) {
   }
 }
 
+async function handlePanelList(ctx) {
+  if (!(await requireAdmin(ctx))) return;
+
+  const panels = listTicketPanels(ctx.guildId);
+  const buttons = listTicketTypes(ctx.guildId);
+
+  await ctx.reply({
+    embeds: [
+      embed({
+        title: 'Ticket panels',
+        description: panels.length
+          ? [
+              `**${panels.length}** panel(s) · **${buttons.length}** button(s).`,
+              `Log channel: ${channelLabel(ctx.guild, getTicketSettings(ctx.guildId).logChannelId)}`,
+            ].join('\n')
+          : 'No panels yet. Create one with `/ticket panel add key:main label:Main`.',
+        fields: panels.map((panel) => {
+          const members = buttons.filter((button) => button.panelKey === panel.key);
+
+          return {
+            name: `${panel.label} · ${panel.key}`,
+            value: [
+              panelLine(ctx.guild, panel),
+              members.length
+                ? members
+                    .map((button) => `• ${button.buttonLabel || button.label} (\`${button.key}\`)`)
+                    .join('\n')
+                : '• no buttons yet',
+            ]
+              .join('\n')
+              .slice(0, 1024),
+          };
+        }),
+        color: COLORS.primary,
+        footer: 'Edit a panel with /ticket panel edit, or a button with /ticket button edit',
+      }),
+    ],
+  });
+}
+
+async function handlePanelRemove(ctx) {
+  if (!(await requireAdmin(ctx))) return;
+
+  const rawKey = readPanelKey(ctx, 2);
+  const key = normalizePanelKey(rawKey);
+  const panel = key ? getTicketPanel(ctx.guildId, key) : null;
+  const { flags } = ctx.isSlash ? { flags: {} } : parseFlagTokens(ctx.args.slice(2));
+  const confirmed = ctx.isSlash
+    ? ctx.getBoolean('confirm')
+    : flags.confirm !== undefined || ctx.args.includes('confirm');
+
+  if (!panel) {
+    await ctx.fail({
+      embeds: [errorEmbed('Unknown panel', `No panel called \`${rawKey || '?'}\`.` )],
+    });
+    return;
+  }
+
+  const buttons = listTicketTypes(ctx.guildId, panel.key);
+  const open = buttons
+    .map((button) => ({ button, count: openTicketsFor(ctx.guildId, null, button.key).length }))
+    .filter((entry) => entry.count > 0);
+
+  if (open.length > 0) {
+    await ctx.fail({
+      embeds: [
+        warningEmbed(
+          'Open tickets still exist',
+          `Close the open tickets before deleting this panel:\n${open
+            .map((entry) => `• \`${entry.button.key}\` (${entry.count})`)
+            .join('\n')}`,
+        ),
+      ],
+    });
+    return;
+  }
+
+  if (!confirmed) {
+    await ctx.fail({
+      embeds: [
+        warningEmbed(
+          'Confirmation needed',
+          `This deletes panel \`${panel.key}\` and its **${buttons.length}** button(s). Run \`/ticket panel remove key:${panel.key} confirm:true\`.`,
+        ),
+      ],
+    });
+    return;
+  }
+
+  if (panel.channelId && panel.messageId) {
+    const channel = await panelChannelById(ctx.guild, panel.channelId);
+    const message = channel?.messages?.fetch
+      ? await channel.messages.fetch(panel.messageId).catch(() => null)
+      : null;
+
+    if (message) await message.delete().catch(() => null);
+  }
+
+  for (const button of buttons) deleteTicketType(ctx.guildId, button.key);
+  deleteTicketPanel(ctx.guildId, panel.key);
+
+  await ctx.reply({
+    embeds: [
+      successEmbed(
+        'Panel deleted',
+        `\`${panel.key}\` and its **${buttons.length}** button(s) were removed.`,
+      ),
+    ],
+  });
+}
+
 async function handleList(ctx) {
   if (!(await requireAdmin(ctx))) return;
 
+  const panels = listTicketPanels(ctx.guildId);
   const buttons = listTicketTypes(ctx.guildId);
   const settings = getTicketSettings(ctx.guildId);
   const counts = ticketCounts(ctx.guildId);
@@ -622,16 +964,27 @@ async function handleList(ctx) {
       embed({
         title: 'Ticket setup',
         description: [
-          `Buttons: **${buttons.length}** · open: **${counts.open}** · archived: **${counts.closed}** · deleted: **${counts.deleted}**`,
+          `Panels: **${panels.length}** · buttons: **${buttons.length}** · open: **${counts.open}** · archived: **${counts.closed}** · deleted: **${counts.deleted}**`,
           `Log channel: ${channelLabel(ctx.guild, settings.logChannelId)}`,
-          `Panel: ${settings.panelMessageId ? channelLabel(ctx.guild, settings.panelChannelId) : 'not posted'}`,
-          `Panel title: **${settings.panelTitle || 'Open a ticket'}** · color: ${settings.panelColor ? `#${settings.panelColor.toString(16).padStart(6, '0')}` : 'default'}`,
         ].join('\n'),
-        fields: buttons.map((button) => ({
-          name: `${button.emoji ? `${button.emoji} ` : ''}${button.buttonLabel || button.label} · ${button.key}`,
-          value: buttonLine(button),
-        })),
-        footer: 'Edit the embed with /ticket panel and the buttons with /ticket button edit',
+        fields: panels.map((panel) => {
+          const members = buttons.filter((button) => button.panelKey === panel.key);
+
+          return {
+            name: `${panel.label} · ${panel.key} · ${members.length} button(s)`,
+            value: [
+              panelLine(ctx.guild, panel),
+              ...members.map(
+                (button) =>
+                  `• ${button.emoji ? `${button.emoji} ` : ''}${button.buttonLabel || button.label} (\`${button.key}\`) → ${button.categoryId ? `<#${button.categoryId}>` : '⚠️ no category'}`,
+              ),
+            ]
+              .join('\n')
+              .slice(0, 1024),
+          };
+        }),
+        footer:
+          'Edit a panel with /ticket panel edit, or a button with /ticket button edit. Up to 25 buttons per panel.',
       }),
     ],
   });
@@ -989,10 +1342,17 @@ async function handleTranscript(ctx) {
 function addButtonOptions(sub, { requireLabel = false } = {}) {
   return sub
     .addStringOption((option) =>
-      option.setName('key').setDescription('Short id used in the button, for example general').setRequired(true).setAutocomplete(true),
+      option.setName('key').setDescription('Short id used in the button, for example help').setRequired(true).setAutocomplete(true),
     )
     .addStringOption((option) =>
       option.setName('label').setDescription('Name shown in the embed and ticket').setRequired(requireLabel),
+    )
+    .addStringOption((option) =>
+      option
+        .setName('panel')
+        .setDescription('Panel this button belongs to (default: main)')
+        .setAutocomplete(true)
+        .setRequired(false),
     )
     .addChannelOption((option) =>
       option
@@ -1059,6 +1419,44 @@ function addButtonOptions(sub, { requireLabel = false } = {}) {
     );
 }
 
+function addPanelOptions(sub, { requireKey = false } = {}) {
+  return sub
+    .addStringOption((option) =>
+      option
+        .setName('key')
+        .setDescription('Panel id, for example support')
+        .setRequired(requireKey)
+        .setAutocomplete(true),
+    )
+    .addStringOption((option) =>
+      option.setName('label').setDescription('Name shown in /ticket panel list').setRequired(false),
+    )
+    .addChannelOption((option) =>
+      option
+        .setName('channel')
+        .setDescription('Where to post it (default: saved channel or this channel)')
+        .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
+        .setRequired(false),
+    )
+    .addStringOption((option) => option.setName('title').setDescription('Embed title').setRequired(false))
+    .addStringOption((option) =>
+      option.setName('description').setDescription('Embed description').setRequired(false),
+    )
+    .addStringOption((option) =>
+      option.setName('color').setDescription('Embed color, for example #5865f2 or red').setRequired(false),
+    )
+    .addStringOption((option) => option.setName('footer').setDescription('Embed footer').setRequired(false))
+    .addStringOption((option) =>
+      option.setName('image').setDescription('Large image URL (http/https)').setRequired(false),
+    )
+    .addStringOption((option) =>
+      option.setName('thumbnail').setDescription('Thumbnail URL (http/https)').setRequired(false),
+    )
+    .addIntegerOption((option) =>
+      option.setName('position').setDescription('Order in /ticket panel list (lower first)').setMinValue(0).setMaxValue(99).setRequired(false),
+    );
+}
+
 export default {
   data: new SlashCommandBuilder()
     .setName('ticket')
@@ -1089,33 +1487,41 @@ export default {
             ),
         ),
     )
-    .addSubcommand((sub) =>
-      sub
+    .addSubcommandGroup((group) =>
+      group
         .setName('panel')
-        .setDescription('Admin: edit the embed and post or refresh the panel')
-        .addChannelOption((option) =>
-          option
-            .setName('channel')
-            .setDescription('Where to post it (default: saved panel channel or this channel)')
-            .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
-            .setRequired(false),
+        .setDescription('Admin: create, edit or post named ticket panels')
+        .addSubcommand((sub) =>
+          addPanelOptions(
+            sub.setName('add').setDescription('Admin: create a named panel with its own embed'),
+            { requireKey: true },
+          ),
         )
-        .addStringOption((option) => option.setName('title').setDescription('Embed title').setRequired(false))
-        .addStringOption((option) =>
-          option.setName('description').setDescription('Embed description').setRequired(false),
+        .addSubcommand((sub) =>
+          addPanelOptions(
+            sub.setName('edit').setDescription('Admin: change a panel embed or move it'),
+            { requireKey: true },
+          ),
         )
-        .addStringOption((option) =>
-          option.setName('color').setDescription('Embed color, for example #5865f2 or red').setRequired(false),
+        .addSubcommand((sub) =>
+          addPanelOptions(sub.setName('post').setDescription('Admin: post or refresh one panel')),
         )
-        .addStringOption((option) => option.setName('footer').setDescription('Embed footer').setRequired(false))
-        .addStringOption((option) =>
-          option.setName('image').setDescription('Large image URL (http/https)').setRequired(false),
+        .addSubcommand((sub) =>
+          sub.setName('list').setDescription('Admin: show every panel and its buttons'),
         )
-        .addStringOption((option) =>
-          option.setName('thumbnail').setDescription('Thumbnail URL (http/https)').setRequired(false),
+        .addSubcommand((sub) =>
+          sub
+            .setName('remove')
+            .setDescription('Admin: delete a panel and its buttons')
+            .addStringOption((option) =>
+              option.setName('key').setDescription('Panel key').setRequired(true).setAutocomplete(true),
+            )
+            .addBooleanOption((option) =>
+              option.setName('confirm').setDescription('Set true to confirm deletion').setRequired(true),
+            ),
         ),
     )
-    .addSubcommand((sub) => sub.setName('list').setDescription('Admin: show the panel and every button'))
+    .addSubcommand((sub) => sub.setName('list').setDescription('Admin: show every panel and button'))
     .addSubcommand((sub) => sub.setName('buttons').setDescription('Admin: list every panel button'))
     .addSubcommand((sub) =>
       sub
@@ -1160,19 +1566,52 @@ export default {
   aliases: ['tickets', 'ticket-tool', 'support'],
   description: 'A fully customizable ticket panel with private channels and transcripts',
   category: 'Community',
-  usage: 'ticket [button|panel|list|buttons|log|close|claim|add|remove|rename|transcript]',
+  usage: 'ticket [button add|edit|remove | panel add|edit|post|list|remove | list|buttons|log|close|claim|add|remove|rename|transcript]',
   cooldown: 3,
   guildOnly: true,
 
   async autocomplete(interaction) {
     const focused = interaction.options.getFocused(true);
+    const group = interaction.options.getSubcommandGroup(false);
+    const query = String(focused.value ?? '').toLowerCase();
 
-    if (!['key'].includes(focused.name)) {
+    if (focused.name === 'panel') {
+      const panels = listTicketPanels(interaction.guildId)
+        .filter(
+          (panel) =>
+            !query || panel.key.includes(query) || panel.label.toLowerCase().includes(query),
+        )
+        .slice(0, 25)
+        .map((panel) => ({
+          name: `${panel.label} (${panel.key})`,
+          value: panel.key,
+        }));
+
+      await interaction.respond(panels);
+      return;
+    }
+
+    if (focused.name !== 'key') {
       await interaction.respond([]);
       return;
     }
 
-    const query = String(focused.value ?? '').toLowerCase();
+    if (group === 'panel') {
+      const panels = listTicketPanels(interaction.guildId)
+        .filter(
+          (panel) =>
+            !query || panel.key.includes(query) || panel.label.toLowerCase().includes(query),
+        )
+        .slice(0, 25)
+        .map((panel) => ({
+          name: `${panel.label} (${panel.key})`,
+          value: panel.key,
+        }));
+
+      await interaction.respond(panels);
+      return;
+    }
+
     const buttons = listTicketTypes(interaction.guildId)
       .filter(
         (button) =>
@@ -1201,11 +1640,21 @@ export default {
         return ctx.reply({ embeds: [overviewEmbed()] });
       }
 
+      if (group === 'panel') {
+        const action = ctx.getSubcommand(false);
+
+        if (action === 'add') return handlePanelAdd(ctx);
+        if (action === 'edit') return handlePanelEdit(ctx);
+        if (action === 'post') return handlePanelPost(ctx);
+        if (action === 'list') return handlePanelList(ctx);
+        if (action === 'remove') return handlePanelRemove(ctx);
+
+        return ctx.reply({ embeds: [overviewEmbed()] });
+      }
+
       const subcommand = ctx.getSubcommand(false) ?? '';
 
       switch (subcommand) {
-        case 'panel':
-          return handlePanel(ctx);
         case 'list':
           return handleList(ctx);
         case 'buttons':
@@ -1242,9 +1691,20 @@ export default {
       return ctx.reply({ embeds: [overviewEmbed()] });
     }
 
+    if (subcommand === 'panel') {
+      const action = (ctx.args[1] ?? '').toLowerCase();
+
+      if (action === 'add' || action === 'create') return handlePanelAdd(ctx);
+      if (action === 'edit' || action === 'set') return handlePanelEdit(ctx);
+      if (action === 'post' || action === 'publish') return handlePanelPost(ctx);
+      if (action === 'list') return handlePanelList(ctx);
+      if (action === 'remove' || action === 'delete') return handlePanelRemove(ctx);
+
+      // `:-ticket panel title=...` keeps working as "edit and post the main panel".
+      return handlePanelPost(ctx);
+    }
+
     switch (subcommand) {
-      case 'panel':
-        return handlePanel(ctx);
       case 'list':
       case 'status':
         return handleList(ctx);

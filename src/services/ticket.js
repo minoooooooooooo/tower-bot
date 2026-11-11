@@ -13,19 +13,24 @@ import {
 import { COLORS, embed, errorEmbed, successEmbed } from '../lib/embeds.js';
 import { createLogger } from '../lib/logger.js';
 import {
+  DEFAULT_PANEL_KEY,
   claimTicket,
   closeTicketRecord,
   createTicket,
   getTicketByChannel,
+  getTicketPanel,
   getTicketSettings,
   getTicketType,
+  listTicketPanels,
   listTicketTypes,
   markTicketDeleted,
   nextTicketNumber,
+  normalizePanelKey,
   openTicketsFor,
   reopenTicketRecord,
+  setTicketPanelMessage,
   setTicketTranscript,
-  updateTicketSettings,
+  upsertTicketPanel,
 } from './ticket-store.js';
 
 const logger = createLogger('ticket');
@@ -135,20 +140,21 @@ export function buttonRows(types) {
   return rows;
 }
 
-/** The single customizable panel: one embed and every configured button. */
-export function buildPanel(guildId) {
-  const settings = getTicketSettings(guildId);
-  const types = listTicketTypes(guildId);
+/** One named panel: its own embed and only the buttons assigned to it. */
+export function buildPanel(guildId, panelKey = DEFAULT_PANEL_KEY) {
+  const key = normalizePanelKey(panelKey) || DEFAULT_PANEL_KEY;
+  const panel = getTicketPanel(guildId, key);
+  const types = listTicketTypes(guildId, key);
 
   return {
     embeds: [
       embed({
-        title: settings.panelTitle || DEFAULT_PANEL_TITLE,
-        description: settings.panelDescription || DEFAULT_PANEL_DESCRIPTION,
-        color: settings.panelColor ?? COLORS.primary,
-        footer: settings.panelFooter || DEFAULT_PANEL_FOOTER,
-        image: settings.panelImage || undefined,
-        thumbnail: settings.panelThumbnail || undefined,
+        title: panel?.title || DEFAULT_PANEL_TITLE,
+        description: panel?.description || DEFAULT_PANEL_DESCRIPTION,
+        color: panel?.color ?? COLORS.primary,
+        footer: panel?.footer || DEFAULT_PANEL_FOOTER,
+        image: panel?.image || undefined,
+        thumbnail: panel?.thumbnail || undefined,
       }),
     ],
     components: buttonRows(types),
@@ -161,46 +167,55 @@ async function fetchMessage(channel, messageId) {
   return channel.messages.fetch(messageId).catch(() => null);
 }
 
-function clampText(value, max) {
-  if (value === null || value === undefined) return null;
-  const text = String(value).trim();
-  return text ? text.slice(0, max) : null;
+async function resolveChannelById(guild, channelId) {
+  if (!channelId) return null;
+  return (
+    guild.channels.cache.get(channelId) ??
+    (await guild.channels.fetch(channelId).catch(() => null))
+  );
 }
 
 /**
- * Publishes or edits the panel. Re-posting is idempotent: the stored message
- * is edited in place, and a panel left in another channel is removed so the
- * server does not end up with two live panels.
+ * Publishes or edits one panel. Re-posting is idempotent: the stored message is
+ * edited in place, and a panel left in another channel is removed so the server
+ * does not end up with two live copies of the same panel.
+ *
+ * `publishPanel(guild, channel, { title })` is accepted as shorthand for the
+ * default panel, which keeps older call sites working.
  */
-export async function publishPanel(guild, channel, patch = {}) {
-  const mapped = {};
+export async function publishPanel(
+  guild,
+  channel,
+  panelKey = DEFAULT_PANEL_KEY,
+  patch = {},
+) {
+  if (panelKey && typeof panelKey === 'object') {
+    patch = panelKey;
+    panelKey = DEFAULT_PANEL_KEY;
+  }
 
-  if (patch.title !== undefined) mapped.panelTitle = clampText(patch.title, 256);
-  if (patch.description !== undefined) mapped.panelDescription = clampText(patch.description, 4096);
-  if (patch.color !== undefined) mapped.panelColor = patch.color;
-  if (patch.footer !== undefined) mapped.panelFooter = clampText(patch.footer, 2048);
-  if (patch.image !== undefined) mapped.panelImage = clampText(patch.image, 512);
-  if (patch.thumbnail !== undefined) mapped.panelThumbnail = clampText(patch.thumbnail, 512);
+  const key = normalizePanelKey(panelKey) || DEFAULT_PANEL_KEY;
+  const before = getTicketPanel(guild.id, key);
+  let panel = before ?? upsertTicketPanel(guild.id, key, {});
 
-  if (Object.keys(mapped).length > 0) updateTicketSettings(guild.id, mapped);
+  if (Object.keys(patch ?? {}).length > 0) {
+    panel = upsertTicketPanel(guild.id, key, patch);
+  }
 
-  const current = getTicketSettings(guild.id);
-  const payload = buildPanel(guild.id);
+  const payload = buildPanel(guild.id, key);
   let message = null;
 
-  if (current.panelMessageId && current.panelChannelId === channel.id) {
-    const existing = await fetchMessage(channel, current.panelMessageId);
+  if (panel.messageId && panel.channelId === channel.id) {
+    const existing = await fetchMessage(channel, panel.messageId);
 
     if (existing) {
       message = await existing.edit(payload);
     }
   }
 
-  if (!message && current.panelMessageId && current.panelChannelId !== channel.id) {
-    const oldChannel =
-      guild.channels.cache.get(current.panelChannelId) ??
-      (await guild.channels.fetch(current.panelChannelId).catch(() => null));
-    const old = await fetchMessage(oldChannel, current.panelMessageId);
+  if (!message && panel.messageId && panel.channelId && panel.channelId !== channel.id) {
+    const oldChannel = await resolveChannelById(guild, panel.channelId);
+    const old = await fetchMessage(oldChannel, panel.messageId);
 
     if (old) await old.delete().catch(() => null);
   }
@@ -209,12 +224,40 @@ export async function publishPanel(guild, channel, patch = {}) {
     message = await channel.send(payload);
   }
 
-  updateTicketSettings(guild.id, {
-    panelChannelId: channel.id,
-    panelMessageId: message.id,
+  setTicketPanelMessage(guild.id, key, {
+    channelId: channel.id,
+    messageId: message.id,
   });
 
   return message;
+}
+
+/**
+ * Re-edits every posted panel in place. Button changes call this so a server
+ * never has to repost its panels by hand.
+ */
+export async function refreshPanels(guild) {
+  let refreshed = 0;
+
+  for (const panel of listTicketPanels(guild.id)) {
+    if (!panel.messageId || !panel.channelId) continue;
+
+    const channel = await resolveChannelById(guild, panel.channelId);
+
+    if (!channel) continue;
+
+    const message = await fetchMessage(channel, panel.messageId);
+
+    if (!message) continue;
+
+    const edited = await message
+      .edit(buildPanel(guild.id, panel.key))
+      .catch(() => null);
+
+    if (edited) refreshed += 1;
+  }
+
+  return refreshed;
 }
 
 export function isStaffMember(guild, member, type) {

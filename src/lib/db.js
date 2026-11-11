@@ -499,16 +499,41 @@ const SCHEMA = `
     panel_image       TEXT,
     panel_thumbnail   TEXT,
     legacy_cleared    INTEGER NOT NULL DEFAULT 0,
+    panels_migrated   INTEGER NOT NULL DEFAULT 0,
     updated_at        INTEGER NOT NULL
   );
 
-  -- One row per panel button. Each button chooses its own category, ping roles,
-  -- welcome text, channel-name template and button appearance.
+  -- Named ticket panels. Each panel is its own embed/message and owns the
+  -- buttons assigned to it, so a server can post several separate panels.
+  CREATE TABLE IF NOT EXISTS ticket_panels (
+    guild_id    TEXT    NOT NULL,
+    key         TEXT    NOT NULL,
+    label       TEXT    NOT NULL,
+    channel_id  TEXT,
+    message_id  TEXT,
+    title       TEXT,
+    description TEXT,
+    color       INTEGER,
+    footer      TEXT,
+    image       TEXT,
+    thumbnail   TEXT,
+    position    INTEGER NOT NULL DEFAULT 0,
+    created_at  INTEGER NOT NULL,
+    updated_at  INTEGER NOT NULL,
+    PRIMARY KEY (guild_id, key)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_ticket_panels_order
+    ON ticket_panels (guild_id, position, key);
+
+  -- One row per panel button. Each button chooses its panel, category, ping
+  -- roles, welcome text, channel-name template and button appearance.
   CREATE TABLE IF NOT EXISTS ticket_types (
     guild_id         TEXT    NOT NULL,
     key              TEXT    NOT NULL,
     label            TEXT    NOT NULL,
     emoji            TEXT,
+    panel_key        TEXT    NOT NULL DEFAULT 'main',
     category_id      TEXT,
     support_role_ids TEXT,
     ping_role_ids    TEXT,
@@ -575,8 +600,10 @@ const COLUMN_MIGRATIONS = [
   ['ticket_settings', 'panel_image', 'TEXT'],
   ['ticket_settings', 'panel_thumbnail', 'TEXT'],
   ['ticket_settings', 'legacy_cleared', 'INTEGER NOT NULL DEFAULT 0'],
+  ['ticket_settings', 'panels_migrated', 'INTEGER NOT NULL DEFAULT 0'],
   ['ticket_types', 'button_label', 'TEXT'],
   ['ticket_types', 'button_style', 'TEXT'],
+  ['ticket_types', 'panel_key', "TEXT NOT NULL DEFAULT 'main'"],
   ['command_aliases', 'channel_mode', 'TEXT'],
   ['profiles', 'show_birthday', 'INTEGER NOT NULL DEFAULT 1'],
   ['profiles', 'background', 'TEXT'],
