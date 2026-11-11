@@ -7,10 +7,11 @@ import { createLogger } from './lib/logger.js';
 const logger = createLogger('deploy');
 const clientId = requireClientId();
 const { commands } = await loadCommands(config.commandsDir);
-const body = commandPayloads(commands);
 const rest = new REST({ version: '10' }).setToken(config.token);
 
 try {
+  const body = commandPayloads(commands);
+
   if (config.guildId) {
     await rest.put(Routes.applicationGuildCommands(clientId, config.guildId), { body });
     logger.info(`Registered ${body.length} slash command(s) in guild ${config.guildId} (instant)`);

@@ -1,5 +1,30 @@
 import { logger } from '../lib/logger.js';
 
+/**
+ * Discord rejects the whole bulk overwrite when a required option follows an
+ * optional one, with a cryptic "options[3] ... REQUIRED_INVALID" path. Check it
+ * here so the log names the command and the option instead.
+ */
+function optionOrderProblem(path, options = []) {
+  let optionalSeen = null;
+
+  for (const option of options) {
+    if (!option.required && optionalSeen === null) optionalSeen = option.name;
+
+    if (option.required && optionalSeen !== null) {
+      return `command "${path}" requires "${option.name}" after optional "${optionalSeen}"`;
+    }
+
+    const nested = option.options
+      ? optionOrderProblem(`${path} ${option.name}`, option.options)
+      : null;
+
+    if (nested) return nested;
+  }
+
+  return null;
+}
+
 export function commandPayloads(commands) {
   const payloads = [];
 
@@ -15,6 +40,14 @@ export function commandPayloads(commands) {
     if (!data?.name) {
       logger.warn(`Command "${command.name}" has invalid "data", skipping slash registration`);
       continue;
+    }
+
+    const orderProblem = optionOrderProblem(data.name, data.options);
+
+    if (orderProblem) {
+      throw new Error(
+        `Invalid slash command: ${orderProblem}. Required options must come before optional ones.`,
+      );
     }
 
     payloads.push(data);

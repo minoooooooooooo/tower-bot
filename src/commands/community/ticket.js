@@ -1458,19 +1458,19 @@ function addButtonOptions(sub, { requireLabel = false } = {}) {
     .addStringOption((option) =>
       option.setName('label').setDescription('Name shown in the embed and ticket').setRequired(requireLabel),
     )
-    .addStringOption((option) =>
-      option
-        .setName('panel')
-        .setDescription('Panel this button belongs to (default: main)')
-        .setAutocomplete(true)
-        .setRequired(false),
-    )
     .addChannelOption((option) =>
       option
         .setName('category')
         .setDescription('Category where this button creates ticket channels')
         .addChannelTypes(ChannelType.GuildCategory)
         .setRequired(requireLabel),
+    )
+    .addStringOption((option) =>
+      option
+        .setName('panel')
+        .setDescription('Panel this button belongs to (default: main)')
+        .setAutocomplete(true)
+        .setRequired(false),
     )
     .addStringOption((option) =>
       option.setName('emoji').setDescription('Button emoji, for example 🎫').setRequired(false),
