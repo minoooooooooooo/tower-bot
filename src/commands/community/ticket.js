@@ -12,6 +12,7 @@ import {
   BUTTON_STYLES,
   CLOSE_ACTIONS,
   DEFAULT_PANEL_KEY,
+  MAX_NUMBER_START,
   MAX_PANELS,
   claimTicket,
   countPanelButtons,
@@ -24,6 +25,7 @@ import {
   getTicketType,
   listTicketPanels,
   listTicketTypes,
+  nextTicketNumber,
   normalizePanelKey,
   normalizeTypeKey,
   openTicketsFor,
@@ -37,6 +39,7 @@ import {
   closeTicketChannel,
   ephemeral,
   isStaffMember,
+  padTicketNumber,
   publishPanel,
   refreshPanels,
   saveTicketTranscript,
@@ -172,6 +175,7 @@ function buttonLine(button) {
     `**${button.buttonLabel || button.label}** · \`${button.key}\``,
     `Panel: \`${button.panelKey}\` · Category: ${button.categoryId ? `<#${button.categoryId}>` : '⚠️ not set'}`,
     `Style: ${button.buttonStyle ?? 'primary'} · Max open: ${button.maxOpen} · Close: ${button.closeAction}`,
+    `Numbering: ${button.numberStart ? `starts at ${button.numberStart}` : 'from 1'}`,
     `Support: ${roleList(button.supportRoleIds)} · Ping: ${roleList(button.pingRoleIds)}`,
   ].join('\n');
 }
@@ -207,6 +211,7 @@ function overviewEmbed() {
       '`/ticket button add key:help label:Help panel:support category:#tickets` — create a button',
       '`/ticket button edit key:help panel:support ...` — change it or move it',
       '`/ticket button remove key:help confirm:true` — delete it',
+      '`/ticket number key:help start:100` — start that button’s tickets at 100',
       '',
       '**Shared setup**',
       '`/ticket list` — show every panel and button',
@@ -511,6 +516,112 @@ async function handleButtonRemove(ctx) {
 
   await ctx.reply({
     embeds: [successEmbed('Button deleted', `\`${button.key}\` was removed from panel \`${button.panelKey}\`.`)],
+  });
+}
+
+async function handleNumber(ctx) {
+  if (!(await requireAdmin(ctx))) return;
+
+  let rawKey;
+  let rawStart;
+
+  if (ctx.isSlash) {
+    rawKey = ctx.getString('key') ?? '';
+    rawStart = ctx.getInteger('start');
+  } else {
+    const { flags, rest } = parseFlagTokens(ctx.args.slice(1));
+
+    rawKey = flags.key ?? flags.button ?? flags.type ?? rest[0] ?? '';
+    rawStart = flags.start ?? flags.number ?? rest[1];
+  }
+
+  const key = normalizeTypeKey(rawKey);
+
+  if (!key) {
+    const buttons = listTicketTypes(ctx.guildId);
+
+    await ctx.reply({
+      embeds: [
+        embed({
+          title: 'Button ticket numbers',
+          description: buttons.length
+            ? 'Each button counts on its own. Pick one with `/ticket number key:<key> start:<n>`.'
+            : 'No buttons yet. Add one with `/ticket button add ...`.',
+          fields: buttons.slice(0, 25).map((button) => ({
+            name: `${button.buttonLabel || button.label} · ${button.key}`,
+            value: `Starts at **${button.numberStart}** · next ticket **#${padTicketNumber(nextTicketNumber(ctx.guildId, button.key))}**`,
+          })),
+          color: COLORS.primary,
+          footer: `Start numbers go from 0 to ${MAX_NUMBER_START}; 0 means counting from 1`,
+        }),
+      ],
+    });
+    return;
+  }
+
+  const button = getTicketType(ctx.guildId, key);
+
+  if (!button) {
+    await ctx.fail({
+      embeds: [
+        errorEmbed(
+          'Unknown button',
+          `No button called \`${rawKey || '?'}\`. Add it with \`/ticket button add key:${key} label:... category:#category\`.`,
+        ),
+      ],
+    });
+    return;
+  }
+
+  if (rawStart === undefined || rawStart === null || rawStart === '') {
+    await ctx.reply({
+      embeds: [
+        embed({
+          title: `Ticket numbers · ${button.buttonLabel || button.label}`,
+          description: [
+            `Key: \`${button.key}\``,
+            `Starts at: **${button.numberStart}**${button.numberStart ? '' : ' (counts from 1)'}`,
+            `Next ticket: **#${padTicketNumber(nextTicketNumber(ctx.guildId, button.key))}**`,
+            '',
+            `Change it with \`/ticket number key:${button.key} start:100\`.`,
+          ].join('\n'),
+          color: COLORS.primary,
+        }),
+      ],
+    });
+    return;
+  }
+
+  const start = Number(rawStart);
+
+  if (!Number.isInteger(start) || start < 0 || start > MAX_NUMBER_START) {
+    await ctx.fail({
+      embeds: [
+        errorEmbed(
+          'Invalid number',
+          `Use a whole number from 0 to ${MAX_NUMBER_START}. \`0\` counts from 1.`,
+        ),
+      ],
+    });
+    return;
+  }
+
+  const updated = upsertTicketType(ctx.guildId, key, { numberStart: start });
+  const next = nextTicketNumber(ctx.guildId, updated.key);
+
+  await ctx.reply({
+    embeds: [
+      successEmbed(
+        `Numbering set · ${updated.buttonLabel || updated.label}`,
+        [
+          start === 0
+            ? `\`${updated.key}\` now counts from 1.`
+            : `\`${updated.key}\` now starts at **${start}**.`,
+          `The next ticket from this button will be **#${padTicketNumber(next)}**.`,
+          `Existing tickets keep their numbers. Run \`/ticket number key:${updated.key}\` to check it.`,
+        ].join('\n'),
+      ),
+    ],
   });
 }
 
@@ -1525,6 +1636,26 @@ export default {
     .addSubcommand((sub) => sub.setName('buttons').setDescription('Admin: list every panel button'))
     .addSubcommand((sub) =>
       sub
+        .setName('number')
+        .setDescription('Admin: set the starting ticket number for one button')
+        .addStringOption((option) =>
+          option
+            .setName('key')
+            .setDescription('Button key (empty shows every button)')
+            .setAutocomplete(true)
+            .setRequired(false),
+        )
+        .addIntegerOption((option) =>
+          option
+            .setName('start')
+            .setDescription('First ticket number (0–999999; 0 counts from 1)')
+            .setMinValue(0)
+            .setMaxValue(MAX_NUMBER_START)
+            .setRequired(false),
+        ),
+    )
+    .addSubcommand((sub) =>
+      sub
         .setName('log')
         .setDescription('Admin: set the transcript and event log channel')
         .addChannelOption((option) =>
@@ -1566,7 +1697,7 @@ export default {
   aliases: ['tickets', 'ticket-tool', 'support'],
   description: 'A fully customizable ticket panel with private channels and transcripts',
   category: 'Community',
-  usage: 'ticket [button add|edit|remove | panel add|edit|post|list|remove | list|buttons|log|close|claim|add|remove|rename|transcript]',
+  usage: 'ticket [button add|edit|remove | panel add|edit|post|list|remove | number|list|buttons|log|close|claim|add|remove|rename|transcript]',
   cooldown: 3,
   guildOnly: true,
 
@@ -1659,6 +1790,8 @@ export default {
           return handleList(ctx);
         case 'buttons':
           return handleButtonList(ctx);
+        case 'number':
+          return handleNumber(ctx);
         case 'log':
           return handleLog(ctx);
         case 'close':
@@ -1710,6 +1843,10 @@ export default {
         return handleList(ctx);
       case 'buttons':
         return handleButtonList(ctx);
+      case 'number':
+      case 'numbers':
+      case 'numbering':
+        return handleNumber(ctx);
       case 'log':
         return handleLog(ctx);
       case 'close':

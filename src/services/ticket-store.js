@@ -3,6 +3,8 @@ import { getDb } from '../lib/db.js';
 export const CLOSE_ACTIONS = ['delete', 'archive'];
 export const BUTTON_STYLES = ['primary', 'secondary', 'success', 'danger'];
 export const MAX_OPEN_LIMIT = 10;
+/** Highest value a button's starting number may be set to. */
+export const MAX_NUMBER_START = 999999;
 export const DEFAULT_PANEL_KEY = 'main';
 export const MAX_PANELS = 10;
 
@@ -52,6 +54,7 @@ function mapType(row) {
     welcomeMessage: row.welcome_message ?? '',
     nameTemplate: row.name_template ?? 'ticket-{number}',
     maxOpen: Number(row.max_open) || 1,
+    numberStart: Math.max(0, Math.trunc(Number(row.number_start) || 0)),
     color: row.color === null || row.color === undefined ? null : Number(row.color),
     closeAction: CLOSE_ACTIONS.includes(row.close_action) ? row.close_action : 'delete',
     position: Number(row.position) || 0,
@@ -469,6 +472,7 @@ export function upsertTicketType(guildId, key, patch = {}) {
     welcomeMessage: base?.welcomeMessage ?? '',
     nameTemplate: base?.nameTemplate ?? 'ticket-{number}',
     maxOpen: base?.maxOpen ?? 1,
+    numberStart: base?.numberStart ?? 0,
     color: base?.color ?? null,
     closeAction: base?.closeAction ?? 'delete',
     position: base && !movedPanel ? base.position : nextTypePosition(guildId, requestedPanel),
@@ -484,6 +488,10 @@ export function upsertTicketType(guildId, key, patch = {}) {
   }
 
   next.maxOpen = Math.max(1, Math.min(MAX_OPEN_LIMIT, Number(next.maxOpen) || 1));
+  next.numberStart = Math.max(
+    0,
+    Math.min(MAX_NUMBER_START, Math.trunc(Number(next.numberStart) || 0)),
+  );
   next.position = Math.max(0, Math.min(99, Math.trunc(Number(next.position) || 0)));
   next.label = String(next.label ?? normalized).trim().slice(0, 80) || normalized;
   next.emoji = String(next.emoji ?? '').trim().slice(0, 64);
@@ -504,8 +512,9 @@ export function upsertTicketType(guildId, key, patch = {}) {
       `INSERT INTO ticket_types
          (guild_id, key, label, emoji, panel_key, category_id, support_role_ids,
           ping_role_ids, log_channel_id, welcome_message, name_template, max_open,
-          color, close_action, position, button_label, button_style, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          number_start, color, close_action, position, button_label, button_style,
+          created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (guild_id, key) DO UPDATE SET
          label = excluded.label,
          emoji = excluded.emoji,
@@ -517,6 +526,7 @@ export function upsertTicketType(guildId, key, patch = {}) {
          welcome_message = excluded.welcome_message,
          name_template = excluded.name_template,
          max_open = excluded.max_open,
+         number_start = excluded.number_start,
          color = excluded.color,
          close_action = excluded.close_action,
          position = excluded.position,
@@ -537,6 +547,7 @@ export function upsertTicketType(guildId, key, patch = {}) {
       next.welcomeMessage || null,
       next.nameTemplate,
       next.maxOpen,
+      next.numberStart,
       next.color ?? null,
       next.closeAction,
       next.position,
@@ -630,12 +641,30 @@ export function updateTicketSettings(guildId, patch = {}) {
   return next;
 }
 
-export function nextTicketNumber(guildId) {
-  const row = getDb()
-    .prepare('SELECT COALESCE(MAX(number), 0) AS value FROM tickets WHERE guild_id = ?')
-    .get(guildId);
+/**
+ * Next number for a ticket. With a type key the counter is per button: it starts
+ * at that button's `numberStart` and climbs from the highest number that button
+ * has already handed out. Without a key it behaves like the old guild-wide counter.
+ */
+export function nextTicketNumber(guildId, typeKey = null) {
+  const normalized = typeKey ? normalizeTypeKey(typeKey) : null;
 
-  return Number(row?.value ?? 0) + 1;
+  if (!normalized) {
+    const row = getDb()
+      .prepare('SELECT COALESCE(MAX(number), 0) AS value FROM tickets WHERE guild_id = ?')
+      .get(guildId);
+
+    return Number(row?.value ?? 0) + 1;
+  }
+
+  const row = getDb()
+    .prepare(
+      'SELECT COALESCE(MAX(number), 0) AS value FROM tickets WHERE guild_id = ? AND type_key = ?',
+    )
+    .get(guildId, normalized);
+  const start = getTicketType(guildId, normalized)?.numberStart ?? 0;
+
+  return Math.max(start, Number(row?.value ?? 0) + 1);
 }
 
 export function createTicket({

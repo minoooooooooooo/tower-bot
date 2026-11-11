@@ -384,7 +384,7 @@ export async function createTicketChannel({ guild, user, typeKey }) {
   }
 
   const category = await resolveCategory(guild, type.categoryId);
-  const number = nextTicketNumber(guild.id);
+  const number = nextTicketNumber(guild.id, type.key);
   const name = channelNameFor(type, user, number);
   const channel = await guild.channels.create({
     name,
