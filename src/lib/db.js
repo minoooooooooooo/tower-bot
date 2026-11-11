@@ -486,42 +486,41 @@ const SCHEMA = `
     PRIMARY KEY (guild_id, channel_id)
   );
 
-  -- Shared ticket settings: where closed transcripts go and the copy of the
-  -- separate "Complaint Against Administration" panel.
+  -- Shared ticket settings: one customizable panel and the transcript log.
   CREATE TABLE IF NOT EXISTS ticket_settings (
-    guild_id               TEXT PRIMARY KEY,
-    log_channel_id         TEXT,
-    complaint_channel_id   TEXT,
-    complaint_message_id   TEXT,
-    complaint_title        TEXT,
-    complaint_description  TEXT,
-    complaint_color        INTEGER,
-    defaults_seeded        INTEGER NOT NULL DEFAULT 0,
-    updated_at             INTEGER NOT NULL
+    guild_id          TEXT PRIMARY KEY,
+    log_channel_id    TEXT,
+    panel_channel_id  TEXT,
+    panel_message_id  TEXT,
+    panel_title       TEXT,
+    panel_description TEXT,
+    panel_color       INTEGER,
+    panel_footer      TEXT,
+    panel_image       TEXT,
+    panel_thumbnail   TEXT,
+    legacy_cleared    INTEGER NOT NULL DEFAULT 0,
+    updated_at        INTEGER NOT NULL
   );
 
-  -- One row per ticket type. A type owns its category, support and ping roles,
-  -- panel message and channel-name template, so two types can behave
-  -- independently on the same server.
+  -- One row per panel button. Each button chooses its own category, ping roles,
+  -- welcome text, channel-name template and button appearance.
   CREATE TABLE IF NOT EXISTS ticket_types (
     guild_id         TEXT    NOT NULL,
     key              TEXT    NOT NULL,
     label            TEXT    NOT NULL,
-    description      TEXT,
     emoji            TEXT,
-    kind             TEXT    NOT NULL DEFAULT 'standard',
     category_id      TEXT,
     support_role_ids TEXT,
     ping_role_ids    TEXT,
     log_channel_id   TEXT,
-    panel_channel_id TEXT,
-    panel_message_id TEXT,
     welcome_message  TEXT,
     name_template    TEXT,
     max_open         INTEGER NOT NULL DEFAULT 1,
     color            INTEGER,
     close_action     TEXT    NOT NULL DEFAULT 'delete',
     position         INTEGER NOT NULL DEFAULT 0,
+    button_label     TEXT,
+    button_style     TEXT,
     created_at       INTEGER NOT NULL,
     updated_at       INTEGER NOT NULL,
     PRIMARY KEY (guild_id, key)
@@ -567,7 +566,17 @@ const COLUMN_MIGRATIONS = [
   ['welcome_settings', 'gif_url', 'TEXT'],
   ['activity_meta', 'messages_since', 'INTEGER'],
   ['activity_meta', 'voice_since', 'INTEGER'],
-  ['ticket_settings', 'defaults_seeded', 'INTEGER NOT NULL DEFAULT 0'],
+  ['ticket_settings', 'panel_channel_id', 'TEXT'],
+  ['ticket_settings', 'panel_message_id', 'TEXT'],
+  ['ticket_settings', 'panel_title', 'TEXT'],
+  ['ticket_settings', 'panel_description', 'TEXT'],
+  ['ticket_settings', 'panel_color', 'INTEGER'],
+  ['ticket_settings', 'panel_footer', 'TEXT'],
+  ['ticket_settings', 'panel_image', 'TEXT'],
+  ['ticket_settings', 'panel_thumbnail', 'TEXT'],
+  ['ticket_settings', 'legacy_cleared', 'INTEGER NOT NULL DEFAULT 0'],
+  ['ticket_types', 'button_label', 'TEXT'],
+  ['ticket_types', 'button_style', 'TEXT'],
   ['command_aliases', 'channel_mode', 'TEXT'],
   ['profiles', 'show_birthday', 'INTEGER NOT NULL DEFAULT 1'],
   ['profiles', 'background', 'TEXT'],

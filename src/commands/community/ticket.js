@@ -9,11 +9,10 @@ import { COLORS, embed, errorEmbed, successEmbed, warningEmbed } from '../../lib
 import { resolveChannel, resolveMember, resolveRole } from '../../lib/resolve.js';
 import { parseColor } from '../general/color.js';
 import {
+  BUTTON_STYLES,
   CLOSE_ACTIONS,
-  TICKET_KINDS,
   claimTicket,
   deleteTicketType,
-  ensureDefaultTicketTypes,
   getTicketByChannel,
   getTicketSettings,
   getTicketType,
@@ -29,8 +28,7 @@ import {
   closeTicketChannel,
   ephemeral,
   isStaffMember,
-  publishComplaintPanel,
-  publishTypePanel,
+  publishPanel,
   saveTicketTranscript,
   sanitizeChannelName,
 } from '../../services/ticket.js';
@@ -53,6 +51,39 @@ async function requireAdmin(ctx) {
 
 function isClearValue(value) {
   return ['none', 'off', 'clear', '-'].includes(String(value ?? '').trim().toLowerCase());
+}
+
+function isHttpUrl(value) {
+  try {
+    const url = new URL(String(value));
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+function parseDesignColor(value) {
+  if (value === null || value === undefined || isClearValue(value)) return null;
+
+  const parsed = parseColor(String(value));
+
+  if (!parsed) {
+    throw new TicketError(`\`${value}\` is not a color. Try \`#5865f2\`, \`red\` or \`none\`.`);
+  }
+
+  return parsed.value;
+}
+
+function parseButtonStyle(value) {
+  if (value === null || value === undefined || isClearValue(value)) return null;
+
+  const style = String(value).toLowerCase();
+
+  if (!BUTTON_STYLES.includes(style)) {
+    throw new TicketError(`Use a button style: ${BUTTON_STYLES.join(', ')} or none.`);
+  }
+
+  return style;
 }
 
 async function resolveTextChannel(guild, value) {
@@ -109,14 +140,29 @@ function channelLabel(guild, id) {
   return id ? guild?.channels?.cache?.get(id)?.toString?.() ?? `<#${id}>` : 'not set';
 }
 
-function typeLine(type) {
-  const category = type.categoryId ? `<#${type.categoryId}>` : '⚠️ not set';
-  const panel = type.panelMessageId && type.panelChannelId ? `<#${type.panelChannelId}>` : 'not posted';
+function parseFlagTokens(args) {
+  const flags = {};
+  const rest = [];
 
+  for (const token of args) {
+    const separator = token.indexOf('=');
+
+    if (separator > 0) {
+      flags[token.slice(0, separator).trim().toLowerCase()] = token.slice(separator + 1);
+    } else if (token) {
+      rest.push(token);
+    }
+  }
+
+  return { flags, rest };
+}
+
+function buttonLine(button) {
   return [
-    `**${type.label}** · \`${type.key}\` · ${type.kind}`,
-    `Category: ${category} · Support: ${roleList(type.supportRoleIds)} · Ping: ${roleList(type.pingRoleIds)}`,
-    `Panel: ${panel} · Max open: ${type.maxOpen} · Close: ${type.closeAction}`,
+    `**${button.buttonLabel || button.label}** · \`${button.key}\``,
+    `Category: ${button.categoryId ? `<#${button.categoryId}>` : '⚠️ not set'} · Style: ${button.buttonStyle ?? 'primary'}`,
+    `Support: ${roleList(button.supportRoleIds)} · Ping: ${roleList(button.pingRoleIds)}`,
+    `Max open: ${button.maxOpen} · Close: ${button.closeAction}`,
   ].join('\n');
 }
 
@@ -124,7 +170,7 @@ function overviewEmbed() {
   return embed({
     title: 'Tickets',
     description: [
-      'A Ticket Tool-style system: private channels, panels, claiming, closing and HTML transcripts.',
+      'A single, fully customizable ticket panel. You choose the embed and every button.',
       '',
       '**Member commands**',
       '`/ticket close [reason]` — close the ticket you are in',
@@ -132,230 +178,463 @@ function overviewEmbed() {
       '`/ticket transcript` — save the transcript (opener or support team)',
       '',
       '**Admin setup**',
-      '`/ticket setup type:<key> category:#category support_roles:@role ping_roles:@role`',
-      '`/ticket log [#channel]` — where transcripts and ticket events are sent',
-      '`/ticket panel [type] [#channel]` — post one type panel',
-      '`/ticket complaint [#channel]` — post the separate administration complaint panel',
-      '`/ticket list` — show every type and its configuration',
-      '`/ticket reset type:<key> confirm:true` — delete a type',
+      '`/ticket button add key:general label:Support category:#tickets` — create a button',
+      '`/ticket button edit key:general ...` — change its text, color, category, roles or welcome',
+      '`/ticket button remove key:general confirm:true` — delete a button',
+      '`/ticket panel ...` — edit the embed and post or refresh the panel',
+      '`/ticket list` — show the panel and every button',
+      '`/ticket log #channel` — where transcripts and ticket events go',
       '',
-      `Types: ${listTicketTypesPlaceholder()}`,
+      'Every value can be changed later. Nothing is predefined.',
     ].join('\n'),
-    footer: 'Buttons open a private channel in the category configured for that type',
+    footer: 'The panel supports up to 25 buttons, five per row',
   });
 }
 
-function listTicketTypesPlaceholder() {
-  return '`general`, `complaint-submod`, `complaint-mod`, `complaint-owner` (created automatically)';
+async function refreshPanel(ctx) {
+  const settings = getTicketSettings(ctx.guildId);
+
+  if (!settings.panelChannelId) return;
+
+  const channel =
+    ctx.guild.channels.cache.get(settings.panelChannelId) ??
+    (await ctx.guild.channels.fetch(settings.panelChannelId).catch(() => null));
+
+  if (channel?.isTextBased?.() !== false) {
+    await publishPanel(ctx.guild, channel).catch(() => null);
+  }
 }
 
-async function handleSetup(ctx) {
-  if (!(await requireAdmin(ctx))) return;
-
-  const rawType = ctx.isSlash ? ctx.getString('type') : ctx.args[1];
-  const key = normalizeTypeKey(rawType);
-
-  if (!key) {
-    await ctx.fail({
-      embeds: [errorEmbed('No type given', 'Use `/ticket setup type:general category:#tickets`.')],
-    });
-    return;
-  }
-
+async function readButtonOptions(ctx, startIndex) {
   const patch = {};
+  let key;
+  let label;
 
   if (ctx.isSlash) {
-    const stringFields = {
-      label: 'label',
-      description: 'description',
-      support_roles: 'support_roles',
-      ping_roles: 'ping_roles',
-      welcome: 'welcome_message',
-      name_template: 'name_template',
-      emoji: 'emoji',
-    };
+    key = ctx.getString('key');
+    label = ctx.getString('label');
 
-    for (const [option, field] of Object.entries(stringFields)) {
-      const value = ctx.getString(option);
-      if (value === undefined) continue;
+    const emoji = ctx.getString('emoji');
+    if (emoji !== undefined) patch.emoji = emoji;
 
-      if (field === 'support_roles' || field === 'ping_roles') {
-        patch[field === 'support_roles' ? 'supportRoleIds' : 'pingRoleIds'] =
-          await resolveRoleList(ctx.guild, value);
-      } else {
-        patch[field] = value;
-      }
+    const style = ctx.getString('style');
+    if (style !== undefined) patch.buttonStyle = parseButtonStyle(style);
+
+    const buttonLabel = ctx.getString('button_label');
+    if (buttonLabel !== undefined) {
+      patch.buttonLabel = isClearValue(buttonLabel) ? null : buttonLabel;
     }
 
     const category = ctx.getChannel('category');
     if (category) {
       if (category.type !== ChannelType.GuildCategory) {
-        await ctx.fail({ embeds: [errorEmbed('Invalid category', 'Pick a Discord category.')] });
-        return;
+        throw new TicketError('Pick a Discord category for the ticket channel.');
       }
 
       patch.categoryId = category.id;
     }
 
+    const support = ctx.getString('support_roles');
+    if (support !== undefined) patch.supportRoleIds = await resolveRoleList(ctx.guild, support);
+
+    const ping = ctx.getString('ping_roles');
+    if (ping !== undefined) patch.pingRoleIds = await resolveRoleList(ctx.guild, ping);
+
     const log = ctx.getChannel('log_channel');
     if (log) {
-      if (log.isTextBased?.() === false) {
-        await ctx.fail({ embeds: [errorEmbed('Invalid log channel', 'Pick a text channel.')] });
-        return;
-      }
-
+      if (log.isTextBased?.() === false) throw new TicketError('Pick a text channel for the log.');
       patch.logChannelId = log.id;
     }
 
-    const panel = ctx.getChannel('panel_channel');
-    if (panel) {
-      if (panel.isTextBased?.() === false) {
-        await ctx.fail({ embeds: [errorEmbed('Invalid panel channel', 'Pick a text channel.')] });
-        return;
-      }
+    const welcome = ctx.getString('welcome');
+    if (welcome !== undefined) patch.welcomeMessage = isClearValue(welcome) ? '' : welcome;
 
-      patch.panelChannelId = panel.id;
+    const nameTemplate = ctx.getString('name_template');
+    if (nameTemplate !== undefined) {
+      patch.nameTemplate = isClearValue(nameTemplate) ? '' : nameTemplate;
     }
 
     const maxOpen = ctx.getInteger('max_open');
     if (maxOpen !== undefined) patch.maxOpen = maxOpen;
 
-    const kind = ctx.getString('kind');
-    if (kind !== undefined) patch.kind = kind;
-
     const closeAction = ctx.getString('close_action');
     if (closeAction !== undefined) patch.closeAction = closeAction;
 
     const color = ctx.getString('color');
-    if (color !== undefined) {
-      if (!color || isClearValue(color)) {
-        patch.color = null;
-      } else {
-        const parsed = parseColor(color);
+    if (color !== undefined) patch.color = parseDesignColor(color);
 
-        if (!parsed) {
-          await ctx.fail({
-            embeds: [errorEmbed('Invalid color', `\`${color}\` is not a color. Try \`#5865f2\` or \`red\`.`)],
-          });
-          return;
-        }
-
-        patch.color = parsed.value;
-      }
-    }
+    const position = ctx.getInteger('position');
+    if (position !== undefined) patch.position = position;
   } else {
-    for (const token of ctx.args.slice(2)) {
-      const separator = token.indexOf('=');
+    const { flags, rest } = parseFlagTokens(ctx.args.slice(startIndex));
+    key = flags.key ?? rest[0];
+    label = flags.label;
 
-      if (separator <= 0) {
-        await ctx.fail({
-          embeds: [
-            errorEmbed(
-              'Invalid setup argument',
-              `\`${token}\` must be \`key=value\`, for example \`category=#tickets\` or \`ping=@Mods\`.`,
-            ),
-          ],
-        });
-        return;
+    if (flags.emoji !== undefined) patch.emoji = isClearValue(flags.emoji) ? '' : flags.emoji;
+    if (flags.style !== undefined || flags.button_style !== undefined) {
+      patch.buttonStyle = parseButtonStyle(flags.style ?? flags.button_style);
+    }
+    if (flags.button !== undefined || flags.button_label !== undefined) {
+      const value = flags.button ?? flags.button_label;
+      patch.buttonLabel = isClearValue(value) ? null : value;
+    }
+    if (flags.category !== undefined) {
+      const category = await resolveCategory(ctx.guild, flags.category);
+      patch.categoryId = category?.id ?? null;
+    }
+    if (flags.support !== undefined || flags.support_roles !== undefined) {
+      patch.supportRoleIds = await resolveRoleList(ctx.guild, flags.support ?? flags.support_roles);
+    }
+    if (flags.ping !== undefined || flags.ping_roles !== undefined) {
+      patch.pingRoleIds = await resolveRoleList(ctx.guild, flags.ping ?? flags.ping_roles);
+    }
+    if (flags.log !== undefined || flags.log_channel !== undefined) {
+      const channel = await resolveTextChannel(ctx.guild, flags.log ?? flags.log_channel);
+      patch.logChannelId = channel?.id ?? null;
+    }
+    if (flags.welcome !== undefined) {
+      patch.welcomeMessage = isClearValue(flags.welcome) ? '' : flags.welcome;
+    }
+    if (flags.name !== undefined || flags.name_template !== undefined) {
+      const value = flags.name ?? flags.name_template;
+      patch.nameTemplate = isClearValue(value) ? '' : value;
+    }
+    if (flags.max !== undefined || flags.max_open !== undefined) {
+      const value = Number(flags.max ?? flags.max_open);
+
+      if (!Number.isFinite(value) || value < 1) {
+        throw new TicketError('max_open must be a number from 1 to 10.');
       }
 
-      const rawKey = token.slice(0, separator).trim().toLowerCase();
-      const value = token.slice(separator + 1);
-      const name = {
-        support: 'support_roles',
-        ping: 'ping_roles',
-        log: 'log_channel',
-        panel: 'panel_channel',
-        name: 'name_template',
-        max: 'max_open',
-        close: 'close_action',
-      }[rawKey] ?? rawKey;
+      patch.maxOpen = value;
+    }
+    if (flags.close !== undefined || flags.close_action !== undefined) {
+      const value = String(flags.close ?? flags.close_action).toLowerCase();
 
-      if (name === 'category') {
-        const category = await resolveCategory(ctx.guild, value);
-        patch.categoryId = category?.id ?? null;
-      } else if (name === 'support_roles' || name === 'ping_roles') {
-        patch[name === 'support_roles' ? 'supportRoleIds' : 'pingRoleIds'] = await resolveRoleList(
-          ctx.guild,
-          value,
-        );
-      } else if (name === 'log_channel' || name === 'panel_channel') {
-        const channel = await resolveTextChannel(ctx.guild, value);
-        patch[name === 'log_channel' ? 'logChannelId' : 'panelChannelId'] = channel?.id ?? null;
-      } else if (name === 'max_open') {
-        const number = Number(value);
-
-        if (!Number.isFinite(number) || number < 1) {
-          await ctx.fail({ embeds: [errorEmbed('Invalid max_open', 'Use a number from 1 to 10.')] });
-          return;
-        }
-
-        patch.maxOpen = number;
-      } else if (name === 'color') {
-        if (!value || isClearValue(value)) {
-          patch.color = null;
-        } else {
-          const parsed = parseColor(value);
-
-          if (!parsed) {
-            await ctx.fail({ embeds: [errorEmbed('Invalid color', `\`${value}\` is not a color.`)] });
-            return;
-          }
-
-          patch.color = parsed.value;
-        }
-      } else if (name === 'kind') {
-        if (!TICKET_KINDS.includes(value.toLowerCase())) {
-          await ctx.fail({
-            embeds: [errorEmbed('Invalid kind', `Use \`${TICKET_KINDS.join('` or `')}\`.`)],
-          });
-          return;
-        }
-
-        patch.kind = value.toLowerCase();
-      } else if (name === 'close_action') {
-        if (!CLOSE_ACTIONS.includes(value.toLowerCase())) {
-          await ctx.fail({
-            embeds: [errorEmbed('Invalid close action', `Use \`${CLOSE_ACTIONS.join('` or `')}\`.`)],
-          });
-          return;
-        }
-
-        patch.closeAction = value.toLowerCase();
-      } else if (['label', 'description', 'welcome_message', 'name_template', 'emoji'].includes(name)) {
-        patch[name] = value;
-      } else {
-        await ctx.fail({ embeds: [errorEmbed('Unknown setup key', `\`${rawKey}\` is not a setup key.`)] });
-        return;
+      if (!CLOSE_ACTIONS.includes(value)) {
+        throw new TicketError(`close_action must be ${CLOSE_ACTIONS.join(' or ')}.`);
       }
+
+      patch.closeAction = value;
+    }
+    if (flags.color !== undefined) patch.color = parseDesignColor(flags.color);
+
+    if (flags.position !== undefined) {
+      const value = Number(flags.position);
+
+      if (!Number.isFinite(value)) {
+        throw new TicketError('position must be a number from 0 to 99.');
+      }
+
+      patch.position = Math.max(0, Math.min(99, Math.trunc(value)));
     }
   }
 
-  let type;
+  return { key, label, patch };
+}
+
+async function handleButtonAdd(ctx) {
+  if (!(await requireAdmin(ctx))) return;
 
   try {
-    type = upsertTicketType(ctx.guildId, key, patch);
+    const { key, label, patch } = await readButtonOptions(ctx, 2);
+    const normalized = normalizeTypeKey(key);
+
+    if (!normalized) {
+      await ctx.fail({ embeds: [errorEmbed('No key given', 'Use `/ticket button add key:general label:Support category:#tickets`.')] });
+      return;
+    }
+
+    if (getTicketType(ctx.guildId, normalized)) {
+      await ctx.fail({
+        embeds: [errorEmbed('That key already exists', `Edit it with \`/ticket button edit key:${normalized} ...\`.` )],
+      });
+      return;
+    }
+
+    if (!String(label ?? '').trim()) {
+      await ctx.fail({ embeds: [errorEmbed('No label given', 'A button needs a label, for example `label:Support`.')] });
+      return;
+    }
+
+    if (!patch.categoryId) {
+      await ctx.fail({
+        embeds: [errorEmbed('No category given', 'Choose where this button creates ticket channels with `category:#category`.')],
+      });
+      return;
+    }
+
+    const button = upsertTicketType(ctx.guildId, normalized, { ...patch, label });
+    await refreshPanel(ctx);
+
+    await ctx.reply(
+      ephemeral({
+        embeds: [
+          successEmbed(
+            `Button added · ${button.buttonLabel || button.label}`,
+            [
+              buttonLine(button),
+              '',
+              'Run `/ticket panel` to refresh the posted panel, or edit it with `/ticket button edit`.',
+            ].join('\n'),
+          ),
+        ],
+      }),
+    );
   } catch (error) {
-    await ctx.fail({ embeds: [errorEmbed('Could not save the type', error.message)] });
+    await ctx.fail({
+      embeds: [errorEmbed('Could not add the button', error instanceof TicketError ? error.message : error.message)],
+    });
+  }
+}
+
+async function handleButtonEdit(ctx) {
+  if (!(await requireAdmin(ctx))) return;
+
+  try {
+    const { key, label, patch } = await readButtonOptions(ctx, 2);
+    const normalized = normalizeTypeKey(key);
+    const existing = normalized ? getTicketType(ctx.guildId, normalized) : null;
+
+    if (!existing) {
+      await ctx.fail({ embeds: [errorEmbed('Unknown button', `No button called \`${key || '?'}\`. Add it first with \`/ticket button add\`.`)] });
+      return;
+    }
+
+    if (label !== undefined) patch.label = label;
+
+    const button = upsertTicketType(ctx.guildId, normalized, patch);
+    await refreshPanel(ctx);
+
+    await ctx.reply(
+      ephemeral({
+        embeds: [successEmbed(`Button saved · ${button.buttonLabel || button.label}`, buttonLine(button))],
+      }),
+    );
+  } catch (error) {
+    await ctx.fail({
+      embeds: [errorEmbed('Could not save the button', error instanceof TicketError ? error.message : error.message)],
+    });
+  }
+}
+
+async function handleButtonRemove(ctx) {
+  if (!(await requireAdmin(ctx))) return;
+
+  const key = ctx.isSlash ? ctx.getString('key') : parseFlagTokens(ctx.args.slice(2)).flags.key ?? parseFlagTokens(ctx.args.slice(2)).rest[0];
+  const confirmed = ctx.isSlash ? ctx.getBoolean('confirm') : parseFlagTokens(ctx.args.slice(2)).flags.confirm !== undefined || ctx.args.includes('confirm');
+  const normalized = normalizeTypeKey(key);
+  const button = normalized ? getTicketType(ctx.guildId, normalized) : null;
+
+  if (!button) {
+    await ctx.fail({ embeds: [errorEmbed('Unknown button', `No button called \`${key || '?'}\`.`)] });
     return;
   }
 
-  await ctx.reply(
-    ephemeral({
+  if (!confirmed) {
+    await ctx.fail({
       embeds: [
-        successEmbed(
-          `Ticket type saved · ${type.label}`,
-          [
-            typeLine(type),
-            '',
-            type.categoryId
-              ? `Post it with \`/ticket panel type:${type.key} channel:#channel\`.`
-              : 'Set a category before posting the panel: the button cannot create a channel without one.',
-          ].join('\n'),
+        warningEmbed(
+          'Confirmation needed',
+          `This deletes \`${button.key}\`. Run \`/ticket button remove key:${button.key} confirm:true\`.`,
         ),
       ],
-    }),
-  );
+    });
+    return;
+  }
+
+  const open = openTicketsFor(ctx.guildId, null, button.key).length;
+
+  if (open > 0) {
+    await ctx.fail({
+      embeds: [
+        warningEmbed('Open tickets still exist', `Close the ${open} open ticket(s) of this button before deleting it.`),
+      ],
+    });
+    return;
+  }
+
+  deleteTicketType(ctx.guildId, button.key);
+  await refreshPanel(ctx);
+
+  await ctx.reply({
+    embeds: [successEmbed('Button deleted', `\`${button.key}\` was removed from the panel.`)],
+  });
+}
+
+async function handleButtonList(ctx) {
+  if (!(await requireAdmin(ctx))) return;
+
+  const buttons = listTicketTypes(ctx.guildId);
+  const settings = getTicketSettings(ctx.guildId);
+
+  await ctx.reply({
+    embeds: [
+      embed({
+        title: 'Panel buttons',
+        description: buttons.length
+          ? [
+              `**${buttons.length}** button(s). They appear in this order.`,
+              `Panel: ${settings.panelMessageId ? channelLabel(ctx.guild, settings.panelChannelId) : 'not posted'}`,
+            ].join('\n')
+          : 'No buttons yet. Add one with `/ticket button add key:general label:Support category:#tickets`.',
+        fields: buttons.map((button) => ({
+          name: `${button.emoji ? `${button.emoji} ` : ''}${button.buttonLabel || button.label} · ${button.key}`,
+          value: buttonLine(button),
+        })),
+        color: COLORS.primary,
+      }),
+    ],
+  });
+}
+
+function readPanelDesign(ctx, startIndex) {
+  const patch = {};
+
+  if (ctx.isSlash) {
+    const title = ctx.getString('title');
+    if (title !== undefined) patch.title = isClearValue(title) ? null : title;
+
+    const description = ctx.getString('description');
+    if (description !== undefined) {
+      patch.description = isClearValue(description) ? null : description;
+    }
+
+    const footer = ctx.getString('footer');
+    if (footer !== undefined) patch.footer = isClearValue(footer) ? null : footer;
+
+    const image = ctx.getString('image');
+    if (image !== undefined) patch.image = isClearValue(image) ? null : image;
+
+    const thumbnail = ctx.getString('thumbnail');
+    if (thumbnail !== undefined) patch.thumbnail = isClearValue(thumbnail) ? null : thumbnail;
+
+    const color = ctx.getString('color');
+    if (color !== undefined) patch.color = parseDesignColor(color);
+  } else {
+    const { flags } = parseFlagTokens(ctx.args.slice(startIndex));
+
+    for (const [key, field] of [
+      ['title', 'title'],
+      ['description', 'description'],
+      ['footer', 'footer'],
+      ['image', 'image'],
+      ['thumbnail', 'thumbnail'],
+    ]) {
+      if (flags[key] !== undefined) {
+        patch[field] = isClearValue(flags[key]) ? null : flags[key];
+      }
+    }
+
+    if (flags.color !== undefined) patch.color = parseDesignColor(flags.color);
+  }
+
+  for (const field of ['image', 'thumbnail']) {
+    if (patch[field] && !isHttpUrl(patch[field])) {
+      throw new TicketError(`The ${field} must be an http(s) image URL.`);
+    }
+  }
+
+  return patch;
+}
+
+async function handlePanel(ctx) {
+  if (!(await requireAdmin(ctx))) return;
+
+  try {
+    const buttons = listTicketTypes(ctx.guildId);
+
+    if (!buttons.length) {
+      await ctx.fail({
+        embeds: [
+          warningEmbed(
+            'No buttons yet',
+            'Add at least one button first: `/ticket button add key:general label:Support category:#tickets`.',
+          ),
+        ],
+      });
+      return;
+    }
+
+    const settings = getTicketSettings(ctx.guildId);
+    const patch = readPanelDesign(ctx, 1);
+    let channel;
+
+    if (ctx.isSlash) {
+      channel = ctx.getChannel('channel');
+    } else {
+      const { rest } = parseFlagTokens(ctx.args.slice(1));
+
+      if (rest[0]) channel = await resolveTextChannel(ctx.guild, rest[0]);
+    }
+
+    if (!channel && settings.panelChannelId) {
+      channel =
+        ctx.guild.channels.cache.get(settings.panelChannelId) ??
+        (await ctx.guild.channels.fetch(settings.panelChannelId).catch(() => null));
+    }
+
+    if (!channel) channel = ctx.channel;
+
+    if (!channel?.isTextBased?.()) {
+      await ctx.fail({ embeds: [errorEmbed('No channel', 'Pick a text channel for the panel.')] });
+      return;
+    }
+
+    const message = await publishPanel(ctx.guild, channel, patch);
+
+    await ctx.reply(
+      ephemeral({
+        embeds: [
+          successEmbed(
+            'Panel posted',
+            [
+              `The panel is live in ${channel} ([jump](${message.url ?? '#'})).`,
+              `It has **${buttons.length}** button(s) and uses your custom embed.`,
+            ].join('\n'),
+          ),
+        ],
+      }),
+    );
+  } catch (error) {
+    await ctx.fail({
+      embeds: [
+        errorEmbed(
+          'Could not post the panel',
+          error instanceof TicketError
+            ? error.message
+            : `Check that I can **View Channel**, **Send Messages** and **Embed Links** in the channel. ${error.message}`,
+        ),
+      ],
+    });
+  }
+}
+
+async function handleList(ctx) {
+  if (!(await requireAdmin(ctx))) return;
+
+  const buttons = listTicketTypes(ctx.guildId);
+  const settings = getTicketSettings(ctx.guildId);
+  const counts = ticketCounts(ctx.guildId);
+
+  await ctx.reply({
+    embeds: [
+      embed({
+        title: 'Ticket setup',
+        description: [
+          `Buttons: **${buttons.length}** · open: **${counts.open}** · archived: **${counts.closed}** · deleted: **${counts.deleted}**`,
+          `Log channel: ${channelLabel(ctx.guild, settings.logChannelId)}`,
+          `Panel: ${settings.panelMessageId ? channelLabel(ctx.guild, settings.panelChannelId) : 'not posted'}`,
+          `Panel title: **${settings.panelTitle || 'Open a ticket'}** · color: ${settings.panelColor ? `#${settings.panelColor.toString(16).padStart(6, '0')}` : 'default'}`,
+        ].join('\n'),
+        fields: buttons.map((button) => ({
+          name: `${button.emoji ? `${button.emoji} ` : ''}${button.buttonLabel || button.label} · ${button.key}`,
+          value: buttonLine(button),
+        })),
+        footer: 'Edit the embed with /ticket panel and the buttons with /ticket button edit',
+      }),
+    ],
+  });
 }
 
 async function handleLog(ctx) {
@@ -425,204 +704,6 @@ async function handleLog(ctx) {
   } catch (error) {
     await ctx.fail({ embeds: [errorEmbed('Could not set the log channel', error.message)] });
   }
-}
-
-async function panelTarget(ctx, channelOption, type) {
-  if (ctx.isSlash) {
-    const channel = ctx.getChannel(channelOption);
-    if (channel) return channel;
-  }
-
-  if (type?.panelChannelId) {
-    return (
-      ctx.guild.channels.cache.get(type.panelChannelId) ??
-      (await ctx.guild.channels.fetch(type.panelChannelId).catch(() => null))
-    );
-  }
-
-  return ctx.channel;
-}
-
-async function handlePanel(ctx) {
-  if (!(await requireAdmin(ctx))) return;
-
-  ensureDefaultTicketTypes(ctx.guildId);
-
-  let rawType = ctx.isSlash ? ctx.getString('type') : ctx.args[1];
-  let rawChannel = null;
-
-  if (!ctx.isSlash && rawType) {
-    const maybeChannel = await resolveChannel(ctx.guild, rawType);
-
-    if (maybeChannel) {
-      rawChannel = rawType;
-      rawType = null;
-    } else if (ctx.args[2]) {
-      rawChannel = ctx.args[2];
-    }
-  }
-
-  const key = normalizeTypeKey(rawType || 'general');
-  const type = getTicketType(ctx.guildId, key);
-
-  if (!type) {
-    await ctx.fail({
-      embeds: [
-        errorEmbed(
-          'Unknown ticket type',
-          `No type called \`${key}\`. Create it with \`/ticket setup type:${key} category:#category\`.`,
-        ),
-      ],
-    });
-    return;
-  }
-
-  const channel = rawChannel
-    ? await resolveTextChannel(ctx.guild, rawChannel)
-    : await panelTarget(ctx, 'channel', type);
-
-  if (!channel) {
-    await ctx.fail({ embeds: [errorEmbed('No channel', 'Pick a channel for the panel.')] });
-    return;
-  }
-
-  try {
-    const message = await publishTypePanel(ctx.guild, type, channel);
-
-    await ctx.reply(
-      ephemeral({
-        embeds: [
-          successEmbed(
-            'Panel posted',
-            [
-              `**${type.label}** is live in ${channel} ([jump](${message.url ?? '#'})).`,
-              type.categoryId
-                ? `Its button opens a private ticket in <#${type.categoryId}>.`
-                : '⚠️ No category is set, so the button will explain the missing setup instead of opening a ticket.',
-            ].join('\n'),
-          ),
-        ],
-      }),
-    );
-  } catch (error) {
-    await ctx.fail({
-      embeds: [
-        errorEmbed(
-          'Could not post the panel',
-          `Check that I can **View Channel**, **Send Messages** and **Embed Links** in ${channel}.`,
-        ),
-      ],
-    });
-  }
-}
-
-async function handleComplaint(ctx) {
-  if (!(await requireAdmin(ctx))) return;
-
-  ensureDefaultTicketTypes(ctx.guildId);
-
-  const settings = getTicketSettings(ctx.guildId);
-  let channel = null;
-  let title;
-  let description;
-
-  if (ctx.isSlash) {
-    channel = ctx.getChannel('channel');
-    title = ctx.getString('title');
-    description = ctx.getString('description');
-  } else {
-    for (const token of ctx.args.slice(1)) {
-      const separator = token.indexOf('=');
-
-      if (separator > 0) {
-        const key = token.slice(0, separator).toLowerCase();
-        const value = token.slice(separator + 1);
-
-        if (key === 'title') title = value;
-        else if (key === 'description') description = value;
-        else {
-          await ctx.fail({ embeds: [errorEmbed('Unknown complaint option', `\`${key}\` is not an option.`)] });
-          return;
-        }
-      } else if (!channel) {
-        channel = await resolveTextChannel(ctx.guild, token);
-      }
-    }
-  }
-
-  if (!channel) {
-    channel = settings.complaintChannelId
-      ? ctx.guild.channels.cache.get(settings.complaintChannelId) ??
-        (await ctx.guild.channels.fetch(settings.complaintChannelId).catch(() => null))
-      : ctx.channel;
-  }
-
-  if (!channel) {
-    await ctx.fail({ embeds: [errorEmbed('No channel', 'Pick a channel for the complaint panel.')] });
-    return;
-  }
-
-  try {
-    const message = await publishComplaintPanel(ctx.guild, channel, { title, description });
-    const unconfigured = listTicketTypes(ctx.guildId).filter(
-      (type) => type.kind === 'complaint' && !type.categoryId,
-    );
-
-    await ctx.reply(
-      ephemeral({
-        embeds: [
-          successEmbed(
-            'Complaint panel posted',
-            [
-              `**Complaint Against Administration** is live in ${channel} ([jump](${message.url ?? '#'})).`,
-              'The three buttons are separate ticket types, each with its own category and ping roles.',
-              unconfigured.length
-                ? `⚠️ Still missing a category: ${unconfigured.map((type) => `\`${type.key}\``).join(', ')}. Set them with \`/ticket setup\`.`
-                : 'All complaint types have a category.',
-            ].join('\n'),
-          ),
-        ],
-      }),
-    );
-  } catch (error) {
-    await ctx.fail({
-      embeds: [
-        errorEmbed(
-          'Could not post the complaint panel',
-          `Check that I can **View Channel**, **Send Messages** and **Embed Links** in ${channel}.`,
-        ),
-      ],
-    });
-  }
-}
-
-async function handleList(ctx) {
-  if (!(await requireAdmin(ctx))) return;
-
-  ensureDefaultTicketTypes(ctx.guildId);
-
-  const types = listTicketTypes(ctx.guildId);
-  const settings = getTicketSettings(ctx.guildId);
-  const counts = ticketCounts(ctx.guildId);
-  const fields = types.map((type) => ({
-    name: `${type.label} · ${type.key}`,
-    value: typeLine(type),
-  }));
-
-  await ctx.reply({
-    embeds: [
-      embed({
-        title: 'Ticket setup',
-        description: [
-          `Types: **${types.length}** · open: **${counts.open}** · archived: **${counts.closed}** · deleted: **${counts.deleted}**`,
-          `Log channel: ${channelLabel(ctx.guild, settings.logChannelId)}`,
-          `Complaint panel: ${settings.complaintMessageId ? channelLabel(ctx.guild, settings.complaintChannelId) : 'not posted'}`,
-        ].join('\n'),
-        fields,
-        footer: 'Buttons use one type each; the complaint panel is separate from the standard panel',
-      }),
-    ],
-  });
 }
 
 function ticketContext(ctx) {
@@ -905,179 +986,137 @@ async function handleTranscript(ctx) {
   }
 }
 
-async function handleReset(ctx) {
-  if (!(await requireAdmin(ctx))) return;
-
-  const rawType = ctx.isSlash ? ctx.getString('type') : ctx.args[1];
-  const key = normalizeTypeKey(rawType);
-  const confirmed = ctx.isSlash ? ctx.getBoolean('confirm') : ctx.args.includes('confirm');
-  const type = key ? getTicketType(ctx.guildId, key) : null;
-
-  if (!type) {
-    await ctx.fail({ embeds: [errorEmbed('Unknown ticket type', `No type called \`${key || '?'}\`.`)] });
-    return;
-  }
-
-  if (!confirmed) {
-    await ctx.fail({
-      embeds: [
-        warningEmbed(
-          'Confirmation needed',
-          `This deletes \`${type.key}\` and its panel. Run \`/ticket reset type:${type.key} confirm:true\`.`,
-        ),
-      ],
-    });
-    return;
-  }
-
-  const open = openTicketsFor(ctx.guildId, null, type.key).length;
-
-  if (open > 0) {
-    await ctx.fail({
-      embeds: [
-        warningEmbed(
-          'Open tickets still exist',
-          `Close the ${open} open ticket(s) of this type before deleting it.`,
-        ),
-      ],
-    });
-    return;
-  }
-
-  if (type.panelMessageId && type.panelChannelId) {
-    const channel =
-      ctx.guild.channels.cache.get(type.panelChannelId) ??
-      (await ctx.guild.channels.fetch(type.panelChannelId).catch(() => null));
-    const message = await channel?.messages?.fetch(type.panelMessageId).catch(() => null);
-    if (message) await message.delete().catch(() => null);
-  }
-
-  deleteTicketType(ctx.guildId, type.key);
-
-  await ctx.reply({
-    embeds: [successEmbed('Ticket type deleted', `\`${type.key}\` and its panel were removed.`)],
-  });
+function addButtonOptions(sub, { requireLabel = false } = {}) {
+  return sub
+    .addStringOption((option) =>
+      option.setName('key').setDescription('Short id used in the button, for example general').setRequired(true).setAutocomplete(true),
+    )
+    .addStringOption((option) =>
+      option.setName('label').setDescription('Name shown in the embed and ticket').setRequired(requireLabel),
+    )
+    .addChannelOption((option) =>
+      option
+        .setName('category')
+        .setDescription('Category where this button creates ticket channels')
+        .addChannelTypes(ChannelType.GuildCategory)
+        .setRequired(requireLabel),
+    )
+    .addStringOption((option) =>
+      option.setName('emoji').setDescription('Button emoji, for example 🎫').setRequired(false),
+    )
+    .addStringOption((option) =>
+      option.setName('button_label').setDescription('Text on the button if it differs from the label').setRequired(false),
+    )
+    .addStringOption((option) =>
+      option
+        .setName('style')
+        .setDescription('Button color')
+        .addChoices(
+          { name: 'Blue (primary)', value: 'primary' },
+          { name: 'Gray (secondary)', value: 'secondary' },
+          { name: 'Green (success)', value: 'success' },
+          { name: 'Red (danger)', value: 'danger' },
+        )
+        .setRequired(false),
+    )
+    .addStringOption((option) =>
+      option.setName('support_roles').setDescription('Roles that can see and manage this ticket (comma-separated)').setRequired(false),
+    )
+    .addStringOption((option) =>
+      option.setName('ping_roles').setDescription('Roles pinged when this ticket opens (comma-separated)').setRequired(false),
+    )
+    .addChannelOption((option) =>
+      option
+        .setName('log_channel')
+        .setDescription('Transcript and event log for this button')
+        .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
+        .setRequired(false),
+    )
+    .addStringOption((option) =>
+      option.setName('welcome').setDescription('Welcome text; supports {mention}, {user}, {server}, {type}, {number}').setRequired(false),
+    )
+    .addStringOption((option) =>
+      option.setName('name_template').setDescription('Channel name; supports {number}, {user}, {type}').setRequired(false),
+    )
+    .addIntegerOption((option) =>
+      option.setName('max_open').setDescription('Open tickets per member (1–10, default 1)').setMinValue(1).setMaxValue(10).setRequired(false),
+    )
+    .addStringOption((option) =>
+      option
+        .setName('close_action')
+        .setDescription('Delete the channel after closing, or archive it')
+        .addChoices(
+          { name: 'Delete channel', value: 'delete' },
+          { name: 'Archive channel', value: 'archive' },
+        )
+        .setRequired(false),
+    )
+    .addStringOption((option) =>
+      option.setName('color').setDescription('Embed color for this ticket, for example #5865f2 or red').setRequired(false),
+    )
+    .addIntegerOption((option) =>
+      option.setName('position').setDescription('Order on the panel (lower first)').setMinValue(0).setMaxValue(99).setRequired(false),
+    );
 }
 
 export default {
   data: new SlashCommandBuilder()
     .setName('ticket')
-    .setDescription('Ticket Tool-style panels, private ticket channels and transcripts')
+    .setDescription('A fully customizable ticket panel with private channels and transcripts')
     .setContexts(InteractionContextType.Guild)
-    .addSubcommand((sub) =>
-      sub
-        .setName('setup')
-        .setDescription('Admin: create or edit a ticket type')
-        .addStringOption((option) =>
-          option.setName('type').setDescription('Type key, for example general or complaint-mod').setRequired(true).setAutocomplete(true),
+    .addSubcommandGroup((group) =>
+      group
+        .setName('button')
+        .setDescription('Admin: add, edit or remove panel buttons')
+        .addSubcommand((sub) =>
+          addButtonOptions(
+            sub.setName('add').setDescription('Admin: add a customizable button to the panel'),
+            { requireLabel: true },
+          ),
         )
-        .addChannelOption((option) =>
-          option
-            .setName('category')
-            .setDescription('Category where this type creates channels')
-            .addChannelTypes(ChannelType.GuildCategory)
-            .setRequired(false),
+        .addSubcommand((sub) =>
+          addButtonOptions(sub.setName('edit').setDescription('Admin: change one button')),
         )
-        .addStringOption((option) =>
-          option.setName('label').setDescription('Button and panel title').setRequired(false),
-        )
-        .addStringOption((option) =>
-          option.setName('description').setDescription('Panel description').setRequired(false),
-        )
-        .addStringOption((option) =>
-          option
-            .setName('support_roles')
-            .setDescription('Roles that can see and manage this type (comma-separated)')
-            .setRequired(false),
-        )
-        .addStringOption((option) =>
-          option
-            .setName('ping_roles')
-            .setDescription('Roles pinged when this type opens (comma-separated)')
-            .setRequired(false),
-        )
-        .addChannelOption((option) =>
-          option
-            .setName('log_channel')
-            .setDescription('Transcript and event log for this type')
-            .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
-            .setRequired(false),
-        )
-        .addChannelOption((option) =>
-          option
-            .setName('panel_channel')
-            .setDescription('Default channel for this type panel')
-            .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
-            .setRequired(false),
-        )
-        .addStringOption((option) =>
-          option.setName('welcome').setDescription('Welcome text; supports {mention}, {user}, {server}, {type}, {number}').setRequired(false),
-        )
-        .addStringOption((option) =>
-          option.setName('name_template').setDescription('Channel name; supports {number}, {user}, {type}').setRequired(false),
-        )
-        .addIntegerOption((option) =>
-          option.setName('max_open').setDescription('Open tickets per member (1–10, default 1)').setMinValue(1).setMaxValue(10).setRequired(false),
-        )
-        .addStringOption((option) =>
-          option.setName('emoji').setDescription('Button emoji, for example 🎫').setRequired(false),
-        )
-        .addStringOption((option) =>
-          option.setName('color').setDescription('Panel color, for example #5865f2 or red').setRequired(false),
-        )
-        .addStringOption((option) =>
-          option
-            .setName('kind')
-            .setDescription('standard or complaint')
-            .addChoices(
-              { name: 'Standard', value: 'standard' },
-              { name: 'Complaint', value: 'complaint' },
+        .addSubcommand((sub) =>
+          sub
+            .setName('remove')
+            .setDescription('Admin: delete a button from the panel')
+            .addStringOption((option) =>
+              option.setName('key').setDescription('Button key').setRequired(true).setAutocomplete(true),
             )
-            .setRequired(false),
-        )
-        .addStringOption((option) =>
-          option
-            .setName('close_action')
-            .setDescription('Delete the channel after closing, or archive it')
-            .addChoices(
-              { name: 'Delete channel', value: 'delete' },
-              { name: 'Archive channel', value: 'archive' },
-            )
-            .setRequired(false),
+            .addBooleanOption((option) =>
+              option.setName('confirm').setDescription('Set true to confirm deletion').setRequired(true),
+            ),
         ),
     )
     .addSubcommand((sub) =>
       sub
         .setName('panel')
-        .setDescription('Admin: post a type panel')
-        .addStringOption((option) =>
-          option.setName('type').setDescription('Type key (default general)').setRequired(false).setAutocomplete(true),
-        )
+        .setDescription('Admin: edit the embed and post or refresh the panel')
         .addChannelOption((option) =>
           option
             .setName('channel')
             .setDescription('Where to post it (default: saved panel channel or this channel)')
             .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
             .setRequired(false),
-        ),
-    )
-    .addSubcommand((sub) =>
-      sub
-        .setName('complaint')
-        .setDescription('Admin: post the separate Complaint Against Administration panel')
-        .addChannelOption((option) =>
-          option
-            .setName('channel')
-            .setDescription('Where to post it (default: saved channel or this channel)')
-            .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
-            .setRequired(false),
         )
-        .addStringOption((option) => option.setName('title').setDescription('Panel title').setRequired(false))
+        .addStringOption((option) => option.setName('title').setDescription('Embed title').setRequired(false))
         .addStringOption((option) =>
-          option.setName('description').setDescription('Panel description').setRequired(false),
+          option.setName('description').setDescription('Embed description').setRequired(false),
+        )
+        .addStringOption((option) =>
+          option.setName('color').setDescription('Embed color, for example #5865f2 or red').setRequired(false),
+        )
+        .addStringOption((option) => option.setName('footer').setDescription('Embed footer').setRequired(false))
+        .addStringOption((option) =>
+          option.setName('image').setDescription('Large image URL (http/https)').setRequired(false),
+        )
+        .addStringOption((option) =>
+          option.setName('thumbnail').setDescription('Thumbnail URL (http/https)').setRequired(false),
         ),
     )
-    .addSubcommand((sub) => sub.setName('list').setDescription('Admin: show every ticket type and its setup'))
+    .addSubcommand((sub) => sub.setName('list').setDescription('Admin: show the panel and every button'))
+    .addSubcommand((sub) => sub.setName('buttons').setDescription('Admin: list every panel button'))
     .addSubcommand((sub) =>
       sub
         .setName('log')
@@ -1115,61 +1154,102 @@ export default {
         .setDescription('Rename this ticket (support team)')
         .addStringOption((option) => option.setName('name').setDescription('New channel name').setRequired(true)),
     )
-    .addSubcommand((sub) => sub.setName('transcript').setDescription('Save an HTML transcript of this ticket'))
-    .addSubcommand((sub) =>
-      sub
-        .setName('reset')
-        .setDescription('Admin: delete a ticket type and its panel')
-        .addStringOption((option) =>
-          option.setName('type').setDescription('Type key').setRequired(true).setAutocomplete(true),
-        )
-        .addBooleanOption((option) =>
-          option.setName('confirm').setDescription('Set true to confirm deletion').setRequired(true),
-        ),
-    ),
+    .addSubcommand((sub) => sub.setName('transcript').setDescription('Save an HTML transcript of this ticket')),
 
   name: 'ticket',
   aliases: ['tickets', 'ticket-tool', 'support'],
-  description: 'Ticket Tool-style panels, private ticket channels and transcripts',
+  description: 'A fully customizable ticket panel with private channels and transcripts',
   category: 'Community',
-  usage: 'ticket [setup|panel|complaint|list|log|close|claim|add|remove|rename|transcript|reset]',
+  usage: 'ticket [button|panel|list|buttons|log|close|claim|add|remove|rename|transcript]',
   cooldown: 3,
   guildOnly: true,
 
   async autocomplete(interaction) {
     const focused = interaction.options.getFocused(true);
 
-    if (!['type'].includes(focused.name)) {
+    if (!['key'].includes(focused.name)) {
       await interaction.respond([]);
       return;
     }
 
-    ensureDefaultTicketTypes(interaction.guildId);
-
     const query = String(focused.value ?? '').toLowerCase();
-    const types = listTicketTypes(interaction.guildId)
-      .filter((type) => !query || type.key.includes(query) || type.label.toLowerCase().includes(query))
+    const buttons = listTicketTypes(interaction.guildId)
+      .filter(
+        (button) =>
+          !query || button.key.includes(query) || button.label.toLowerCase().includes(query),
+      )
       .slice(0, 25)
-      .map((type) => ({ name: `${type.label} (${type.key})`, value: type.key }));
+      .map((button) => ({
+        name: `${button.buttonLabel || button.label} (${button.key})`,
+        value: button.key,
+      }));
 
-    await interaction.respond(types);
+    await interaction.respond(buttons);
   },
 
   async execute(ctx) {
-    const subcommand = ctx.isSlash ? (ctx.getSubcommand() ?? '') : (ctx.args[0] ?? '').toLowerCase();
+    if (ctx.isSlash) {
+      const group = ctx.getSubcommandGroup(false);
+
+      if (group === 'button') {
+        const action = ctx.getSubcommand(false);
+
+        if (action === 'add') return handleButtonAdd(ctx);
+        if (action === 'edit') return handleButtonEdit(ctx);
+        if (action === 'remove') return handleButtonRemove(ctx);
+
+        return ctx.reply({ embeds: [overviewEmbed()] });
+      }
+
+      const subcommand = ctx.getSubcommand(false) ?? '';
+
+      switch (subcommand) {
+        case 'panel':
+          return handlePanel(ctx);
+        case 'list':
+          return handleList(ctx);
+        case 'buttons':
+          return handleButtonList(ctx);
+        case 'log':
+          return handleLog(ctx);
+        case 'close':
+          return handleClose(ctx);
+        case 'claim':
+          return handleClaim(ctx);
+        case 'add':
+          return handleAddRemove(ctx, true);
+        case 'remove':
+          return handleAddRemove(ctx, false);
+        case 'rename':
+          return handleRename(ctx);
+        case 'transcript':
+          return handleTranscript(ctx);
+        default:
+          return ctx.reply({ embeds: [overviewEmbed()] });
+      }
+    }
+
+    const subcommand = (ctx.args[0] ?? '').toLowerCase();
+
+    if (subcommand === 'button') {
+      const action = (ctx.args[1] ?? '').toLowerCase();
+
+      if (action === 'add') return handleButtonAdd(ctx);
+      if (action === 'edit' || action === 'set') return handleButtonEdit(ctx);
+      if (action === 'remove' || action === 'delete') return handleButtonRemove(ctx);
+      if (action === 'list') return handleButtonList(ctx);
+
+      return ctx.reply({ embeds: [overviewEmbed()] });
+    }
 
     switch (subcommand) {
-      case 'setup':
-        return handleSetup(ctx);
       case 'panel':
         return handlePanel(ctx);
-      case 'complaint':
-      case 'complaints':
-      case 'administration':
-        return handleComplaint(ctx);
       case 'list':
       case 'status':
         return handleList(ctx);
+      case 'buttons':
+        return handleButtonList(ctx);
       case 'log':
         return handleLog(ctx);
       case 'close':
@@ -1184,8 +1264,6 @@ export default {
         return handleRename(ctx);
       case 'transcript':
         return handleTranscript(ctx);
-      case 'reset':
-        return handleReset(ctx);
       default:
         return ctx.reply({ embeds: [overviewEmbed()] });
     }

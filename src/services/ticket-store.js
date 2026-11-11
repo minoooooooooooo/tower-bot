@@ -1,76 +1,11 @@
 import { getDb } from '../lib/db.js';
 
-export const TICKET_KINDS = ['standard', 'complaint'];
 export const CLOSE_ACTIONS = ['delete', 'archive'];
+export const BUTTON_STYLES = ['primary', 'secondary', 'success', 'danger'];
 export const MAX_OPEN_LIMIT = 10;
 
-/** The panel is usable immediately after setup; only the category is required. */
-export const DEFAULT_TICKET_TYPES = [
-  {
-    key: 'general',
-    label: 'Open a ticket',
-    description:
-      'Need help or want to speak with the staff privately? Open a ticket and someone will answer as soon as possible.',
-    emoji: '🎫',
-    kind: 'standard',
-    nameTemplate: 'ticket-{number}',
-    welcomeMessage:
-      'Thanks for opening a ticket, {mention}. Describe your issue below and a staff member will help you soon.',
-    color: 0x5865f2,
-    maxOpen: 1,
-    closeAction: 'delete',
-    position: 0,
-  },
-  {
-    key: 'complaint-submod',
-    label: 'Complaint against sub-mod',
-    description:
-      'Report how a sub-moderator treated you. This opens a private complaint ticket for the administration team.',
-    emoji: '🛡️',
-    kind: 'complaint',
-    nameTemplate: 'complaint-submod-{number}',
-    welcomeMessage:
-      'This is a private complaint about a sub-moderator, {mention}. Explain what happened, with any evidence you have. The administration team will review it.',
-    color: 0xfee75c,
-    maxOpen: 1,
-    closeAction: 'delete',
-    position: 1,
-  },
-  {
-    key: 'complaint-mod',
-    label: 'Complaint against mod',
-    description:
-      'Report how a moderator treated you. This opens a private complaint ticket for the administration team.',
-    emoji: '⚠️',
-    kind: 'complaint',
-    nameTemplate: 'complaint-mod-{number}',
-    welcomeMessage:
-      'This is a private complaint about a moderator, {mention}. Explain what happened, with any evidence you have. The administration team will review it.',
-    color: 0xfee75c,
-    maxOpen: 1,
-    closeAction: 'delete',
-    position: 2,
-  },
-  {
-    key: 'complaint-owner',
-    label: 'Complaint against owner',
-    description:
-      'Report how the server owner treated you. This opens a private complaint ticket for the administration team.',
-    emoji: '👑',
-    kind: 'complaint',
-    nameTemplate: 'complaint-owner-{number}',
-    welcomeMessage:
-      'This is a private complaint about the server owner, {mention}. Explain what happened, with any evidence you have. The administration team will review it.',
-    color: 0xed4245,
-    maxOpen: 1,
-    closeAction: 'delete',
-    position: 3,
-  },
-];
-
-export const COMPLAINT_TYPE_KEYS = DEFAULT_TICKET_TYPES.filter(
-  (type) => type.kind === 'complaint',
-).map((type) => type.key);
+/** Rows created by the previous built-in-type version, removed once on upgrade. */
+const LEGACY_TYPE_KEYS = ['general', 'complaint-submod', 'complaint-mod', 'complaint-owner'];
 
 function parseIds(raw) {
   if (!raw) return [];
@@ -95,21 +30,19 @@ function mapType(row) {
     guildId: row.guild_id,
     key: row.key,
     label: row.label,
-    description: row.description ?? '',
     emoji: row.emoji ?? '',
-    kind: TICKET_KINDS.includes(row.kind) ? row.kind : 'standard',
     categoryId: row.category_id ?? null,
     supportRoleIds: parseIds(row.support_role_ids),
     pingRoleIds: parseIds(row.ping_role_ids),
     logChannelId: row.log_channel_id ?? null,
-    panelChannelId: row.panel_channel_id ?? null,
-    panelMessageId: row.panel_message_id ?? null,
     welcomeMessage: row.welcome_message ?? '',
     nameTemplate: row.name_template ?? 'ticket-{number}',
     maxOpen: Number(row.max_open) || 1,
     color: row.color === null || row.color === undefined ? null : Number(row.color),
     closeAction: CLOSE_ACTIONS.includes(row.close_action) ? row.close_action : 'delete',
     position: Number(row.position) || 0,
+    buttonLabel: row.button_label ?? null,
+    buttonStyle: BUTTON_STYLES.includes(row.button_style) ? row.button_style : null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -146,15 +79,6 @@ export function normalizeTypeKey(raw) {
     .slice(0, 32);
 }
 
-function defaultFor(key) {
-  return DEFAULT_TICKET_TYPES.find((type) => type.key === key) ?? DEFAULT_TICKET_TYPES[0];
-}
-
-function isDefaultType(key) {
-  return DEFAULT_TICKET_TYPES.some((type) => type.key === key);
-}
-
-/** Appends a custom type after every existing one instead of at position 0. */
 function nextTypePosition(guildId) {
   const row = getDb()
     .prepare('SELECT COALESCE(MAX(position), -1) AS value FROM ticket_types WHERE guild_id = ?')
@@ -175,50 +99,27 @@ function getTicketSettingsRow(guildId) {
 }
 
 /**
- * Creates the four shipped types once per guild. A deleted default stays
- * deleted: the seed flag is set after the first run, so `/ticket reset` is real.
+ * The first release shipped four built-in types. They are removed once so an
+ * upgraded server starts with an empty, fully custom panel.
  */
-export function ensureDefaultTicketTypes(guildId) {
-  const settings = getTicketSettingsRow(guildId);
+function cleanupLegacyTypes(guildId) {
+  const row = getTicketSettingsRow(guildId);
 
-  if (settings?.defaults_seeded) return;
+  if (!row || row.legacy_cleared) return;
 
-  const db = getDb();
-  const insert = db.prepare(
-    `INSERT INTO ticket_types
-       (guild_id, key, label, description, emoji, kind, category_id,
-        support_role_ids, ping_role_ids, log_channel_id, panel_channel_id,
-        panel_message_id, welcome_message, name_template, max_open, color,
-        close_action, position, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT (guild_id, key) DO NOTHING`,
-  );
-  const now = Date.now();
+  const placeholders = LEGACY_TYPE_KEYS.map(() => '?').join(', ');
 
-  for (const type of DEFAULT_TICKET_TYPES) {
-    insert.run(
-      guildId,
-      type.key,
-      type.label,
-      type.description,
-      type.emoji,
-      type.kind,
-      type.welcomeMessage,
-      type.nameTemplate,
-      type.maxOpen,
-      type.color,
-      type.closeAction,
-      type.position,
-      now,
-      now,
-    );
-  }
-
-  updateTicketSettings(guildId, { defaultsSeeded: true });
+  getDb()
+    .prepare(`DELETE FROM ticket_types WHERE guild_id = ? AND key IN (${placeholders})`)
+    .run(guildId, ...LEGACY_TYPE_KEYS);
+  getDb()
+    .prepare('UPDATE ticket_settings SET legacy_cleared = 1 WHERE guild_id = ?')
+    .run(guildId);
 }
 
+/** Every button on the panel, in display order. */
 export function listTicketTypes(guildId) {
-  ensureDefaultTicketTypes(guildId);
+  cleanupLegacyTypes(guildId);
 
   return getDb()
     .prepare('SELECT * FROM ticket_types WHERE guild_id = ? ORDER BY position, key')
@@ -230,7 +131,7 @@ export function getTicketType(guildId, key) {
   const normalized = normalizeTypeKey(key);
   if (!normalized) return null;
 
-  ensureDefaultTicketTypes(guildId);
+  cleanupLegacyTypes(guildId);
 
   return mapType(
     getDb()
@@ -240,115 +141,106 @@ export function getTicketType(guildId, key) {
 }
 
 /**
- * Creates or patches one type. Every column is rewritten from the merged row,
+ * Creates or patches one button. Every column is rewritten from the merged row,
  * so callers can pass only the fields they changed.
  */
 export function upsertTicketType(guildId, key, patch = {}) {
   const normalized = normalizeTypeKey(key);
-  if (!normalized) throw new Error('A ticket type needs a key');
-
-  ensureDefaultTicketTypes(guildId);
+  if (!normalized) throw new Error('A ticket button needs a key');
 
   const base = getTicketType(guildId, normalized);
-  const fallback = defaultFor(normalized);
-  const builtIn = isDefaultType(normalized);
   const next = {
-    label: base?.label ?? (builtIn ? fallback.label : humanizeKey(normalized)),
-    description: base?.description ?? (builtIn ? fallback.description : ''),
-    emoji: base?.emoji ?? fallback.emoji,
-    kind: base?.kind ?? fallback.kind,
+    label: base?.label ?? humanizeKey(normalized),
+    emoji: base?.emoji ?? '',
     categoryId: base?.categoryId ?? null,
     supportRoleIds: base?.supportRoleIds ?? [],
     pingRoleIds: base?.pingRoleIds ?? [],
     logChannelId: base?.logChannelId ?? null,
-    panelChannelId: base?.panelChannelId ?? null,
-    panelMessageId: base?.panelMessageId ?? null,
-    welcomeMessage: base?.welcomeMessage ?? fallback.welcomeMessage,
-    nameTemplate: base?.nameTemplate ?? fallback.nameTemplate,
-    maxOpen: base?.maxOpen ?? fallback.maxOpen,
-    color: base?.color ?? fallback.color,
-    closeAction: base?.closeAction ?? fallback.closeAction,
-    position: base?.position ?? (builtIn ? fallback.position : nextTypePosition(guildId)),
+    welcomeMessage: base?.welcomeMessage ?? '',
+    nameTemplate: base?.nameTemplate ?? 'ticket-{number}',
+    maxOpen: base?.maxOpen ?? 1,
+    color: base?.color ?? null,
+    closeAction: base?.closeAction ?? 'delete',
+    position: base?.position ?? nextTypePosition(guildId),
+    buttonLabel: base?.buttonLabel ?? null,
+    buttonStyle: base?.buttonStyle ?? null,
     ...patch,
   };
 
-  if (!TICKET_KINDS.includes(next.kind)) next.kind = base?.kind ?? 'standard';
   if (!CLOSE_ACTIONS.includes(next.closeAction)) {
     next.closeAction = base?.closeAction ?? 'delete';
   }
 
   next.maxOpen = Math.max(1, Math.min(MAX_OPEN_LIMIT, Number(next.maxOpen) || 1));
+  next.position = Math.max(0, Math.min(99, Math.trunc(Number(next.position) || 0)));
   next.label = String(next.label ?? normalized).trim().slice(0, 80) || normalized;
-  next.description = String(next.description ?? '').trim().slice(0, 1500);
   next.emoji = String(next.emoji ?? '').trim().slice(0, 64);
   next.welcomeMessage = String(next.welcomeMessage ?? '').trim().slice(0, 1500);
   next.nameTemplate = String(next.nameTemplate ?? 'ticket-{number}').trim().slice(0, 80);
 
+  const optionalText = (value, max) => {
+    if (value === null || value === undefined) return null;
+    const text = String(value).trim();
+    return text ? text.slice(0, max) : null;
+  };
+
+  next.buttonLabel = optionalText(next.buttonLabel, 80);
+
+  const color = Number(next.color);
+  next.color = Number.isFinite(color) ? Math.max(0, Math.min(0xffffff, color)) : base?.color ?? null;
+
+  if (next.buttonStyle !== null && next.buttonStyle !== undefined) {
+    const style = String(next.buttonStyle).toLowerCase();
+
+    next.buttonStyle = BUTTON_STYLES.includes(style) ? style : base?.buttonStyle ?? null;
+  }
+
   getDb()
     .prepare(
       `INSERT INTO ticket_types
-         (guild_id, key, label, description, emoji, kind, category_id,
-          support_role_ids, ping_role_ids, log_channel_id, panel_channel_id,
-          panel_message_id, welcome_message, name_template, max_open, color,
-          close_action, position, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         (guild_id, key, label, emoji, category_id, support_role_ids, ping_role_ids,
+          log_channel_id, welcome_message, name_template, max_open, color,
+          close_action, position, button_label, button_style, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (guild_id, key) DO UPDATE SET
          label = excluded.label,
-         description = excluded.description,
          emoji = excluded.emoji,
-         kind = excluded.kind,
          category_id = excluded.category_id,
          support_role_ids = excluded.support_role_ids,
          ping_role_ids = excluded.ping_role_ids,
          log_channel_id = excluded.log_channel_id,
-         panel_channel_id = excluded.panel_channel_id,
-         panel_message_id = excluded.panel_message_id,
          welcome_message = excluded.welcome_message,
          name_template = excluded.name_template,
          max_open = excluded.max_open,
          color = excluded.color,
          close_action = excluded.close_action,
          position = excluded.position,
+         button_label = excluded.button_label,
+         button_style = excluded.button_style,
          updated_at = excluded.updated_at`,
     )
     .run(
       guildId,
       normalized,
       next.label,
-      next.description || null,
       next.emoji || null,
-      next.kind,
       next.categoryId || null,
       encodeIds(next.supportRoleIds),
       encodeIds(next.pingRoleIds),
       next.logChannelId || null,
-      next.panelChannelId || null,
-      next.panelMessageId || null,
       next.welcomeMessage || null,
       next.nameTemplate,
       next.maxOpen,
       next.color ?? null,
       next.closeAction,
       next.position,
+      next.buttonLabel,
+      next.buttonStyle,
       base?.createdAt ?? Date.now(),
       Date.now(),
     );
 
   return getTicketType(guildId, normalized);
-}
-
-export function saveTicketPanel(guildId, key, { channelId, messageId }) {
-  return upsertTicketType(guildId, key, {
-    panelChannelId: channelId ?? null,
-    panelMessageId: messageId ?? null,
-  });
-}
-
-export function clearTicketPanel(guildId, key) {
-  return upsertTicketType(guildId, key, {
-    panelChannelId: null,
-    panelMessageId: null,
-  });
 }
 
 export function deleteTicketType(guildId, key) {
@@ -368,20 +260,22 @@ function mapSettings(row) {
   return {
     guildId: row?.guild_id ?? null,
     logChannelId: row?.log_channel_id ?? null,
-    complaintChannelId: row?.complaint_channel_id ?? null,
-    complaintMessageId: row?.complaint_message_id ?? null,
-    complaintTitle: row?.complaint_title ?? '',
-    complaintDescription: row?.complaint_description ?? '',
-    complaintColor:
-      row?.complaint_color === null || row?.complaint_color === undefined
-        ? null
-        : Number(row.complaint_color),
-    defaultsSeeded: Boolean(row?.defaults_seeded),
+    panelChannelId: row?.panel_channel_id ?? null,
+    panelMessageId: row?.panel_message_id ?? null,
+    panelTitle: row?.panel_title ?? '',
+    panelDescription: row?.panel_description ?? '',
+    panelColor:
+      row?.panel_color === null || row?.panel_color === undefined ? null : Number(row.panel_color),
+    panelFooter: row?.panel_footer ?? '',
+    panelImage: row?.panel_image ?? '',
+    panelThumbnail: row?.panel_thumbnail ?? '',
+    legacyCleared: row ? Boolean(row.legacy_cleared) : true,
     updatedAt: row?.updated_at ?? null,
   };
 }
 
 export function getTicketSettings(guildId) {
+  cleanupLegacyTypes(guildId);
   return mapSettings(getTicketSettingsRow(guildId));
 }
 
@@ -391,29 +285,35 @@ export function updateTicketSettings(guildId, patch = {}) {
   getDb()
     .prepare(
       `INSERT INTO ticket_settings
-         (guild_id, log_channel_id, complaint_channel_id, complaint_message_id,
-          complaint_title, complaint_description, complaint_color,
-          defaults_seeded, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         (guild_id, log_channel_id, panel_channel_id, panel_message_id,
+          panel_title, panel_description, panel_color, panel_footer,
+          panel_image, panel_thumbnail, legacy_cleared, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (guild_id) DO UPDATE SET
          log_channel_id = excluded.log_channel_id,
-         complaint_channel_id = excluded.complaint_channel_id,
-         complaint_message_id = excluded.complaint_message_id,
-         complaint_title = excluded.complaint_title,
-         complaint_description = excluded.complaint_description,
-         complaint_color = excluded.complaint_color,
-         defaults_seeded = excluded.defaults_seeded,
+         panel_channel_id = excluded.panel_channel_id,
+         panel_message_id = excluded.panel_message_id,
+         panel_title = excluded.panel_title,
+         panel_description = excluded.panel_description,
+         panel_color = excluded.panel_color,
+         panel_footer = excluded.panel_footer,
+         panel_image = excluded.panel_image,
+         panel_thumbnail = excluded.panel_thumbnail,
+         legacy_cleared = excluded.legacy_cleared,
          updated_at = excluded.updated_at`,
     )
     .run(
       guildId,
       next.logChannelId || null,
-      next.complaintChannelId || null,
-      next.complaintMessageId || null,
-      next.complaintTitle || null,
-      next.complaintDescription || null,
-      next.complaintColor ?? null,
-      next.defaultsSeeded ? 1 : 0,
+      next.panelChannelId || null,
+      next.panelMessageId || null,
+      next.panelTitle || null,
+      next.panelDescription || null,
+      next.panelColor ?? null,
+      next.panelFooter || null,
+      next.panelImage || null,
+      next.panelThumbnail || null,
+      next.legacyCleared ? 1 : 0,
       Date.now(),
     );
 

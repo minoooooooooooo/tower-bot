@@ -13,11 +13,9 @@ import {
 import { COLORS, embed, errorEmbed, successEmbed } from '../lib/embeds.js';
 import { createLogger } from '../lib/logger.js';
 import {
-  COMPLAINT_TYPE_KEYS,
   claimTicket,
   closeTicketRecord,
   createTicket,
-  ensureDefaultTicketTypes,
   getTicketByChannel,
   getTicketSettings,
   getTicketType,
@@ -26,7 +24,6 @@ import {
   nextTicketNumber,
   openTicketsFor,
   reopenTicketRecord,
-  saveTicketPanel,
   setTicketTranscript,
   updateTicketSettings,
 } from './ticket-store.js';
@@ -99,61 +96,62 @@ function applyEmoji(button, emoji) {
   return button;
 }
 
+const BUTTON_STYLE_VALUES = {
+  primary: ButtonStyle.Primary,
+  secondary: ButtonStyle.Secondary,
+  success: ButtonStyle.Success,
+  danger: ButtonStyle.Danger,
+};
+
+/** Custom style wins; a plain ticket button is blue by default. */
+export function buttonStyleFor(type) {
+  return BUTTON_STYLE_VALUES[type?.buttonStyle] ?? ButtonStyle.Primary;
+}
+
 export function typeButton(type) {
   const button = new ButtonBuilder()
     .setCustomId(`${TICKET_PREFIX}open:${type.key}`)
-    .setLabel(String(type.label || type.key).slice(0, 80))
-    .setStyle(type.kind === 'complaint' ? ButtonStyle.Danger : ButtonStyle.Primary);
+    .setLabel(String(type.buttonLabel || type.label || type.key).slice(0, 80))
+    .setStyle(buttonStyleFor(type));
 
   return applyEmoji(button, type.emoji);
 }
 
-/** Standard panel: one embed, one button, fully derived from the type. */
-export function buildTypePanel(type) {
-  const description = [
-    type.description,
-    '',
-    'Press the button below to open a private ticket.',
-  ]
-    .filter((line) => line !== null && line !== undefined)
-    .join('\n');
+export const DEFAULT_PANEL_TITLE = 'Open a ticket';
+export const DEFAULT_PANEL_DESCRIPTION =
+  'Choose the option that fits your issue. Each button opens a private ticket with the right team.';
+export const DEFAULT_PANEL_FOOTER = 'Pick the option that matches your issue';
 
-  return {
-    embeds: [
-      embed({
-        title: type.label,
-        description,
-        color: type.color ?? COLORS.primary,
-        footer: 'One private ticket per member at a time',
-      }),
-    ],
-    components: [new ActionRowBuilder().addComponents(typeButton(type))],
-    allowedMentions: { parse: [] },
-  };
+/** Discord allows five buttons per row and five rows per message. */
+export function buttonRows(types) {
+  const rows = [];
+
+  for (let index = 0; index < Math.min(types.length, 25); index += 5) {
+    rows.push(
+      new ActionRowBuilder().addComponents(...types.slice(index, index + 5).map(typeButton)),
+    );
+  }
+
+  return rows;
 }
 
-export const DEFAULT_COMPLAINT_DESCRIPTION =
-  'This panel is for complaints about the server administration. Choose the rank of the person you are complaining about: each option opens a private ticket in its own category and alerts a different team.';
-
-/** The separate "Complaint Against Administration" panel. */
-export function buildComplaintPanel(guildId) {
-  ensureDefaultTicketTypes(guildId);
-
+/** The single customizable panel: one embed and every configured button. */
+export function buildPanel(guildId) {
   const settings = getTicketSettings(guildId);
-  const types = listTicketTypes(guildId).filter((type) => type.kind === 'complaint');
-  const fallbackKeys = COMPLAINT_TYPE_KEYS.map((key) => getTicketType(guildId, key)).filter(Boolean);
-  const buttons = (types.length ? types : fallbackKeys).slice(0, 5).map(typeButton);
+  const types = listTicketTypes(guildId);
 
   return {
     embeds: [
       embed({
-        title: settings.complaintTitle || 'Complaint Against Administration',
-        description: settings.complaintDescription || DEFAULT_COMPLAINT_DESCRIPTION,
-        color: settings.complaintColor ?? COLORS.danger,
-        footer: 'Choose the rank of the person you are complaining about',
+        title: settings.panelTitle || DEFAULT_PANEL_TITLE,
+        description: settings.panelDescription || DEFAULT_PANEL_DESCRIPTION,
+        color: settings.panelColor ?? COLORS.primary,
+        footer: settings.panelFooter || DEFAULT_PANEL_FOOTER,
+        image: settings.panelImage || undefined,
+        thumbnail: settings.panelThumbnail || undefined,
       }),
     ],
-    components: buttons.length ? [new ActionRowBuilder().addComponents(...buttons)] : [],
+    components: buttonRows(types),
     allowedMentions: { parse: [] },
   };
 }
@@ -163,66 +161,46 @@ async function fetchMessage(channel, messageId) {
   return channel.messages.fetch(messageId).catch(() => null);
 }
 
+function clampText(value, max) {
+  if (value === null || value === undefined) return null;
+  const text = String(value).trim();
+  return text ? text.slice(0, max) : null;
+}
+
 /**
- * Publishes or edits a type panel. Re-posting is idempotent: the stored message
+ * Publishes or edits the panel. Re-posting is idempotent: the stored message
  * is edited in place, and a panel left in another channel is removed so the
  * server does not end up with two live panels.
  */
-export async function publishTypePanel(guild, type, channel) {
-  const payload = buildTypePanel(type);
-  let message = null;
+export async function publishPanel(guild, channel, patch = {}) {
+  const mapped = {};
 
-  if (type.panelMessageId && type.panelChannelId === channel.id) {
-    const existing = await fetchMessage(channel, type.panelMessageId);
+  if (patch.title !== undefined) mapped.panelTitle = clampText(patch.title, 256);
+  if (patch.description !== undefined) mapped.panelDescription = clampText(patch.description, 4096);
+  if (patch.color !== undefined) mapped.panelColor = patch.color;
+  if (patch.footer !== undefined) mapped.panelFooter = clampText(patch.footer, 2048);
+  if (patch.image !== undefined) mapped.panelImage = clampText(patch.image, 512);
+  if (patch.thumbnail !== undefined) mapped.panelThumbnail = clampText(patch.thumbnail, 512);
 
-    if (existing) {
-      message = await existing.edit(payload);
-    }
-  }
-
-  if (!message && type.panelMessageId && type.panelChannelId !== channel.id) {
-    const oldChannel =
-      guild.channels.cache.get(type.panelChannelId) ??
-      (await guild.channels.fetch(type.panelChannelId).catch(() => null));
-    const old = await fetchMessage(oldChannel, type.panelMessageId);
-
-    if (old) await old.delete().catch(() => null);
-  }
-
-  if (!message) {
-    message = await channel.send(payload);
-  }
-
-  saveTicketPanel(guild.id, type.key, { channelId: channel.id, messageId: message.id });
-  return message;
-}
-
-export async function publishComplaintPanel(guild, channel, { title, description } = {}) {
-  const settings = getTicketSettings(guild.id);
-  const patch = {};
-
-  if (title !== undefined) patch.complaintTitle = title;
-  if (description !== undefined) patch.complaintDescription = description;
-
-  if (Object.keys(patch).length > 0) updateTicketSettings(guild.id, patch);
+  if (Object.keys(mapped).length > 0) updateTicketSettings(guild.id, mapped);
 
   const current = getTicketSettings(guild.id);
-  const payload = buildComplaintPanel(guild.id);
+  const payload = buildPanel(guild.id);
   let message = null;
 
-  if (current.complaintMessageId && current.complaintChannelId === channel.id) {
-    const existing = await fetchMessage(channel, current.complaintMessageId);
+  if (current.panelMessageId && current.panelChannelId === channel.id) {
+    const existing = await fetchMessage(channel, current.panelMessageId);
 
     if (existing) {
       message = await existing.edit(payload);
     }
   }
 
-  if (!message && current.complaintMessageId && current.complaintChannelId !== channel.id) {
+  if (!message && current.panelMessageId && current.panelChannelId !== channel.id) {
     const oldChannel =
-      guild.channels.cache.get(current.complaintChannelId) ??
-      (await guild.channels.fetch(current.complaintChannelId).catch(() => null));
-    const old = await fetchMessage(oldChannel, current.complaintMessageId);
+      guild.channels.cache.get(current.panelChannelId) ??
+      (await guild.channels.fetch(current.panelChannelId).catch(() => null));
+    const old = await fetchMessage(oldChannel, current.panelMessageId);
 
     if (old) await old.delete().catch(() => null);
   }
@@ -232,8 +210,8 @@ export async function publishComplaintPanel(guild, channel, { title, description
   }
 
   updateTicketSettings(guild.id, {
-    complaintChannelId: channel.id,
-    complaintMessageId: message.id,
+    panelChannelId: channel.id,
+    panelMessageId: message.id,
   });
 
   return message;
@@ -266,7 +244,7 @@ async function resolveCategory(guild, categoryId) {
 
   if (!category || category.type !== ChannelType.GuildCategory) {
     throw new TicketError(
-      'The configured ticket category no longer exists. An admin can fix it with `/ticket setup`.',
+      'The configured ticket category no longer exists. An admin can fix it with `/ticket button edit`.',
     );
   }
 
@@ -345,11 +323,11 @@ async function logTicket(guild, type, payload) {
 export async function createTicketChannel({ guild, user, typeKey }) {
   const type = getTicketType(guild.id, typeKey);
 
-  if (!type) throw new TicketError('That ticket type no longer exists.');
+  if (!type) throw new TicketError('That ticket button no longer exists.');
 
   if (!type.categoryId) {
     throw new TicketError(
-      `**${type.label}** is not configured yet. An admin needs to run \`/ticket setup type:${type.key} category:#category\`.`,
+      `**${type.label}** has no category yet. An admin needs to run \`/ticket button edit key:${type.key} category:#category\`.`,
     );
   }
 
@@ -411,7 +389,7 @@ export async function createTicketChannel({ guild, user, typeKey }) {
         description: renderWelcome(type, { user, guild, number }),
         color: type.color ?? COLORS.primary,
         fields: [
-          { name: 'Type', value: type.label, inline: true },
+          { name: 'Option', value: type.label, inline: true },
           { name: 'Opened by', value: `<@${user.id}>`, inline: true },
         ],
         footer: 'Use the buttons below to claim or close this ticket',
