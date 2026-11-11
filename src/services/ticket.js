@@ -414,7 +414,10 @@ export async function createTicketChannel({ guild, user, typeKey }) {
   }
 
   const pingIds = type.pingRoleIds.length ? type.pingRoleIds : type.supportRoleIds;
-  const ping = pingIds.map((id) => `<@&${id}>`).join(' ');
+  // Mentions inside an embed never notify, so the opener and the ping roles go in
+  // the message content. allowedMentions keeps it to exactly those roles plus the
+  // opener, instead of parsing everything the welcome text happens to contain.
+  const mentions = [`<@${user.id}>`, ...pingIds.map((id) => `<@&${id}>`)].join(' ');
   const buttons = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(`${TICKET_PREFIX}claim:${channel.id}`)
@@ -427,7 +430,7 @@ export async function createTicketChannel({ guild, user, typeKey }) {
   );
 
   await channel.send({
-    content: ping || undefined,
+    content: mentions,
     embeds: [
       embed({
         title: `Ticket #${padTicketNumber(number)}`,
@@ -441,7 +444,7 @@ export async function createTicketChannel({ guild, user, typeKey }) {
       }),
     ],
     components: [buttons],
-    allowedMentions: { parse: [], roles: pingIds },
+    allowedMentions: { parse: [], roles: pingIds, users: [user.id] },
   }).catch(async (error) => {
     markTicketDeleted(ticket.id);
     await channel.delete('Could not post the ticket welcome message').catch(() => null);
