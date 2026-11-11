@@ -557,6 +557,8 @@ const SCHEMA = `
 
   -- One row per ticket. The channel id is how buttons and commands find the
   -- owning ticket after a restart; status is open, closed (archived) or deleted.
+  -- Numbers are unique per button, not per guild: two buttons may both hand out
+  -- #1 because each has its own counter (see ticket_types.number_start).
   CREATE TABLE IF NOT EXISTS tickets (
     id                    INTEGER PRIMARY KEY AUTOINCREMENT,
     guild_id              TEXT    NOT NULL,
@@ -571,8 +573,7 @@ const SCHEMA = `
     closed_by             TEXT,
     closed_at             INTEGER,
     close_reason          TEXT,
-    transcript_message_id TEXT,
-    UNIQUE (guild_id, number)
+    transcript_message_id TEXT
   );
 
   CREATE INDEX IF NOT EXISTS idx_tickets_channel
@@ -580,6 +581,9 @@ const SCHEMA = `
 
   CREATE INDEX IF NOT EXISTS idx_tickets_status
     ON tickets (guild_id, status, created_at DESC);
+
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_tickets_number
+    ON tickets (guild_id, type_key, number);
 `;
 
 // Columns added after the first release. `CREATE TABLE IF NOT EXISTS` does not
@@ -717,6 +721,70 @@ function migrateLegacyWelcomeGifs(db) {
 }
 
 /**
+ * Ticket numbers used to be unique per guild (`UNIQUE (guild_id, number)`), from
+ * when every button shared one counter. Buttons now count on their own, so two
+ * buttons legitimately hand out the same number and the old constraint aborted
+ * the insert *after* the channel was created. Rebuild the table once: SQLite
+ * cannot drop a table-level constraint in place.
+ */
+function migrateTicketNumberScope(db) {
+  const row = db
+    .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'tickets'")
+    .get();
+
+  if (!row?.sql || !/UNIQUE\s*\(\s*guild_id\s*,\s*number\s*\)/i.test(row.sql)) return;
+
+  db.exec('BEGIN');
+
+  try {
+    db.exec(`
+      CREATE TABLE tickets_v2 (
+        id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+        guild_id              TEXT    NOT NULL,
+        channel_id            TEXT,
+        number                INTEGER NOT NULL,
+        type_key              TEXT    NOT NULL,
+        opener_id             TEXT    NOT NULL,
+        opener_tag            TEXT,
+        status                TEXT    NOT NULL DEFAULT 'open',
+        claimed_by            TEXT,
+        created_at            INTEGER NOT NULL,
+        closed_by             TEXT,
+        closed_at             INTEGER,
+        close_reason          TEXT,
+        transcript_message_id TEXT
+      );
+
+      INSERT INTO tickets_v2
+        (id, guild_id, channel_id, number, type_key, opener_id, opener_tag,
+         status, claimed_by, created_at, closed_by, closed_at, close_reason,
+         transcript_message_id)
+      SELECT
+         id, guild_id, channel_id, number, type_key, opener_id, opener_tag,
+         status, claimed_by, created_at, closed_by, closed_at, close_reason,
+         transcript_message_id
+      FROM tickets;
+
+      DROP TABLE tickets;
+      ALTER TABLE tickets_v2 RENAME TO tickets;
+
+      CREATE INDEX IF NOT EXISTS idx_tickets_channel
+        ON tickets (guild_id, channel_id);
+      CREATE INDEX IF NOT EXISTS idx_tickets_status
+        ON tickets (guild_id, status, created_at DESC);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_tickets_number
+        ON tickets (guild_id, type_key, number);
+    `);
+
+    db.exec('COMMIT');
+    logger.info('Migrated SQLite: ticket numbers are now unique per button');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
+/**
  * Older builds only stored `tracking_since`. Seed the two coverage dates so
  * commands can read them unconditionally; a completed backfill moves
  * `messages_since` further back later.
@@ -752,6 +820,7 @@ export function getDb() {
   database.exec('PRAGMA busy_timeout = 5000');
   database.exec(SCHEMA);
   applyMigrations(database);
+  migrateTicketNumberScope(database);
   migrateActivitySince(database);
   migrateWatchTerms(database);
   migrateLegacyWelcomeGifs(database);

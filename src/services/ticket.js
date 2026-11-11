@@ -408,7 +408,9 @@ export async function createTicketChannel({ guild, user, typeKey }) {
     });
   } catch (error) {
     await channel.delete('Could not record the ticket').catch(() => null);
-    throw error;
+    throw new TicketError(
+      `I created the ticket channel but could not record it: ${error.message}`,
+    );
   }
 
   const pingIds = type.pingRoleIds.length ? type.pingRoleIds : type.supportRoleIds;
