@@ -699,12 +699,21 @@ export async function closeTicketChannel({ guild, channel, ticket, type, actor, 
   const hidden = await setOpenerAccess(channel, ticket, false);
 
   try {
+    const buildStarted = Date.now();
     const transcript = await createTranscript(channel, ticket, type);
+    const builtMs = Date.now() - buildStarted;
+    const logStarted = Date.now();
     const log = await sendTranscript(guild, ticket, type, transcript, {
       title: 'Ticket closed',
       description: `#${padTicketNumber(ticket.number)} · ${type?.label ?? ticket.typeKey}`,
       color: COLORS.danger,
     });
+
+    logger.info(
+      `Ticket #${padTicketNumber(ticket.number)} transcript: ${transcript.messages} message(s) in ${builtMs} ms; log ${
+        log ? `written in ${Date.now() - logStarted} ms` : 'skipped'
+      }`,
+    );
 
     closeTicketRecord(ticket.id, {
       closedBy: actor?.id ?? 'unknown',
