@@ -44,6 +44,7 @@ import {
   padTicketNumber,
   publishPanel,
   refreshPanels,
+  reopenTicketChannel,
   saveTicketTranscript,
   sanitizeChannelName,
 } from '../../services/ticket.js';
@@ -201,6 +202,7 @@ function overviewEmbed() {
       '',
       '**Member commands**',
       '`/ticket close [reason]` — close the ticket you are in',
+      '`/ticket reopen` — reopen the closed ticket you are in (support team)',
       '`/ticket claim` — claim or unclaim a ticket (support team)',
       '`/ticket transcript` — save the transcript (opener or support team)',
       '`/ticket add user:@member` / `/ticket remove user:@member` — manage access (support team)',
@@ -1207,6 +1209,20 @@ function ticketContext(ctx) {
  * several buttons the key is required so the right category/roles are picked.
  */
 async function handleOpen(ctx) {
+  const current = getTicketByChannel(ctx.guildId, ctx.channelId);
+
+  if (current) {
+    await ctx.fail({
+      embeds: [
+        errorEmbed(
+          'Already in a ticket',
+          'Use `/ticket reopen` to reopen this ticket, or `/ticket close` to close it. `/ticket open` creates a ticket in a normal channel.',
+        ),
+      ],
+    });
+    return;
+  }
+
   const buttons = listTicketTypes(ctx.guildId);
 
   if (buttons.length === 0) {
@@ -1305,6 +1321,70 @@ async function handleOpen(ctx) {
     if (ctx.isSlash) await ctx.editReply({ embeds: [embed] }).catch(() => null);
     else await ctx.reply({ embeds: [embed] }).catch(() => null);
   }
+}
+
+/**
+ * `/ticket reopen` (prefix `:-ticket reopen`) reopens the closed ticket in the
+ * current channel. `/ticket close` closes an open ticket; the two are opposites.
+ */
+async function handleReopen(ctx) {
+  let context;
+
+  try {
+    context = ticketContext(ctx);
+  } catch (error) {
+    await ctx.fail({ embeds: [errorEmbed('Not a ticket', error.message)] });
+    return;
+  }
+
+  const { ticket, type } = context;
+
+  if (!isStaffMember(ctx.guild, ctx.member, type)) {
+    await ctx.fail({
+      embeds: [errorEmbed('Missing permissions', 'Only the support team can reopen a ticket.')],
+    });
+    return;
+  }
+
+  if (ticket.status === 'open') {
+    await ctx.fail({
+      embeds: [errorEmbed('Already open', 'This ticket is already open. Use `/ticket close` to close it.')],
+    });
+    return;
+  }
+
+  if (ctx.isSlash) await ctx.defer({ ephemeral: true });
+  else await ctx.typing();
+
+  try {
+    await reopenTicketChannel({
+      guild: ctx.guild,
+      channel: ctx.channel,
+      ticket,
+      type,
+    });
+  } catch (error) {
+    const embed = errorEmbed(
+      'Could not reopen the ticket',
+      error instanceof TicketError ? error.message : 'Something went wrong.',
+    );
+
+    if (ctx.isSlash) await ctx.editReply({ embeds: [embed] }).catch(() => null);
+    else await ctx.reply({ embeds: [embed] }).catch(() => null);
+    return;
+  }
+
+  const payload = {
+    embeds: [
+      successEmbed(
+        'Ticket reopened',
+        `Ticket #${padTicketNumber(ticket.number)} is open again.`,
+      ),
+    ],
+  };
+
+  if (ctx.isSlash) await ctx.editReply(payload);
+  else await ctx.reply(payload);
 }
 
 /**
@@ -1889,6 +1969,9 @@ export default {
         .setDescription('Close the ticket in this channel')
         .addStringOption((option) => option.setName('reason').setDescription('Optional close reason').setRequired(false)),
     )
+    .addSubcommand((sub) =>
+      sub.setName('reopen').setDescription('Reopen the closed ticket in this channel (support team)'),
+    )
     .addSubcommand((sub) => sub.setName('claim').setDescription('Claim or unclaim this ticket (support team)'))
     .addSubcommand((sub) =>
       sub
@@ -1925,7 +2008,7 @@ export default {
   aliases: ['tickets', 'ticket-tool', 'support'],
   description: 'A fully customizable ticket panel with private channels and transcripts',
   category: 'Community',
-  usage: 'ticket [button add|edit|remove | panel add|edit|post|list|remove | number|list|buttons|log|open|close|claim|add|remove|rename|delete|transcript]',
+  usage: 'ticket [button add|edit|remove | panel add|edit|post|list|remove | number|list|buttons|log|open|close|reopen|claim|add|remove|rename|delete|transcript]',
   cooldown: 3,
   guildOnly: true,
 
@@ -2026,6 +2109,8 @@ export default {
           return handleOpen(ctx);
         case 'close':
           return handleClose(ctx);
+        case 'reopen':
+          return handleReopen(ctx);
         case 'claim':
           return handleClaim(ctx);
         case 'add':
@@ -2086,6 +2171,8 @@ export default {
         return handleOpen(ctx);
       case 'close':
         return handleClose(ctx);
+      case 'reopen':
+        return handleReopen(ctx);
       case 'claim':
         return handleClaim(ctx);
       case 'add':
