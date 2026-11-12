@@ -717,7 +717,11 @@ export async function closeTicketChannel({ guild, channel, ticket, type, actor, 
 
   await channel.setName(closedName).catch(() => null);
   await channel.permissionOverwrites
-    ?.edit?.(ticket.openerId, { SendMessages: false })
+    ?.edit?.(ticket.openerId, {
+      ViewChannel: false,
+      SendMessages: false,
+      ReadMessageHistory: false,
+    })
     .catch(() => null);
 
   await channel
