@@ -294,6 +294,25 @@ async function resolveCategory(guild, categoryId) {
   return category;
 }
 
+/**
+ * Moves and renames a ticket channel in one PATCH. Discord's channel-edit bucket
+ * is small, so a separate setParent followed by setName can make the second call
+ * wait on a 429 for minutes while the bot keeps "typing".
+ */
+async function updateChannelLayout(channel, { name, category }) {
+  if (category) {
+    try {
+      await channel.edit({ name, parent: category.id, lockPermissions: false });
+
+      return;
+    } catch (error) {
+      logger.warn(`Could not move the ticket channel: ${error.message}`);
+    }
+  }
+
+  await channel.setName(name).catch(() => null);
+}
+
 function permissionOverwrites(guild, type, openerId) {
   const allow = [
     PermissionFlagsBits.ViewChannel,
@@ -735,19 +754,18 @@ export async function closeTicketChannel({ guild, channel, ticket, type, actor, 
     }
 
     const closedName = sanitizeChannelName(`closed-${channel.name}`);
+    let closedCategory = null;
 
     if (type?.closedCategoryId) {
       try {
-        const closedCategory = await resolveCategory(guild, type.closedCategoryId);
-
-        await channel.setParent(closedCategory.id, { lockPermissions: false });
+        closedCategory = await resolveCategory(guild, type.closedCategoryId);
       } catch (error) {
         // A deleted category must not block closing; the ticket simply stays put.
         logger.warn(`Could not move the closed ticket: ${error.message}`);
       }
     }
 
-    await channel.setName(closedName).catch(() => null);
+    await updateChannelLayout(channel, { name: closedName, category: closedCategory });
     if (!hidden) await setOpenerAccess(channel, ticket, false);
 
     await channel
@@ -778,19 +796,18 @@ export async function closeTicketChannel({ guild, channel, ticket, type, actor, 
 export async function reopenTicketChannel({ guild, channel, ticket, type }) {
   const reopened = reopenTicketRecord(ticket.id);
   const name = channelNameFor(type, { username: ticket.openerTag?.split('#')[0] }, ticket.number);
+  let category = null;
 
   if (type?.categoryId) {
     try {
-      const category = await resolveCategory(guild, type.categoryId);
-
-      await channel.setParent(category.id, { lockPermissions: false });
+      category = await resolveCategory(guild, type.categoryId);
     } catch (error) {
       // Keep the reopen working even if the category was deleted meanwhile.
       logger.warn(`Could not move the reopened ticket: ${error.message}`);
     }
   }
 
-  await channel.setName(name).catch(() => null);
+  await updateChannelLayout(channel, { name, category });
   await channel.permissionOverwrites
     ?.edit?.(ticket.openerId, {
       SendMessages: true,
