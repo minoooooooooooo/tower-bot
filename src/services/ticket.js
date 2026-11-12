@@ -666,81 +666,104 @@ function closedButtons(channelId) {
   );
 }
 
+async function setOpenerAccess(channel, ticket, allow) {
+  try {
+    await channel.permissionOverwrites?.edit?.(ticket.openerId, {
+      ViewChannel: allow,
+      SendMessages: allow,
+      ReadMessageHistory: allow,
+    });
+
+    return true;
+  } catch (error) {
+    logger.warn(
+      `Could not ${allow ? 'restore' : 'hide'} ticket #${padTicketNumber(ticket.number)} for the opener: ${error.message}`,
+    );
+
+    return false;
+  }
+}
+
 /**
- * Closes a ticket. The transcript is written first; if a log channel exists and
- * the type is set to delete, the channel is removed. Without a log channel the
- * ticket is archived instead, so history is never silently destroyed.
+ * Closes a ticket. The opener is hidden before the transcript is collected, so a
+ * slow transcript never leaves the member watching the ticket. The transcript is
+ * written first; if a log channel exists and the type is set to delete, the
+ * channel is removed. Without a log channel the ticket is archived instead, so
+ * history is never silently destroyed.
  */
 export async function closeTicketChannel({ guild, channel, ticket, type, actor, reason }) {
   if (ticket.status !== 'open') {
     throw new TicketError('This ticket is already closed. Reopen it first.');
   }
 
-  const transcript = await createTranscript(channel, ticket, type);
-  const log = await sendTranscript(guild, ticket, type, transcript, {
-    title: 'Ticket closed',
-    description: `#${padTicketNumber(ticket.number)} · ${type?.label ?? ticket.typeKey}`,
-    color: COLORS.danger,
-  });
+  const hidden = await setOpenerAccess(channel, ticket, false);
 
-  closeTicketRecord(ticket.id, {
-    closedBy: actor?.id ?? 'unknown',
-    reason: reason || null,
-  });
+  try {
+    const transcript = await createTranscript(channel, ticket, type);
+    const log = await sendTranscript(guild, ticket, type, transcript, {
+      title: 'Ticket closed',
+      description: `#${padTicketNumber(ticket.number)} · ${type?.label ?? ticket.typeKey}`,
+      color: COLORS.danger,
+    });
 
-  let mode = log && (type?.closeAction ?? 'delete') === 'delete' ? 'delete' : 'archive';
+    closeTicketRecord(ticket.id, {
+      closedBy: actor?.id ?? 'unknown',
+      reason: reason || null,
+    });
 
-  if (mode === 'delete') {
-    try {
-      await channel.delete(`Ticket closed by ${actor?.tag ?? actor?.id ?? 'staff'}`);
-      markTicketDeleted(ticket.id);
-      return { mode, transcript, logged: Boolean(log) };
-    } catch (error) {
-      logger.warn(`Could not delete the ticket channel: ${error.message}`);
-      mode = 'archive';
-      // Fall through to the archive path so the ticket is not left open.
+    let mode = log && (type?.closeAction ?? 'delete') === 'delete' ? 'delete' : 'archive';
+
+    if (mode === 'delete') {
+      try {
+        await channel.delete(`Ticket closed by ${actor?.tag ?? actor?.id ?? 'staff'}`);
+        markTicketDeleted(ticket.id);
+        return { mode, transcript, logged: Boolean(log) };
+      } catch (error) {
+        logger.warn(`Could not delete the ticket channel: ${error.message}`);
+        mode = 'archive';
+        // Fall through to the archive path so the ticket is not left open.
+      }
     }
-  }
 
-  const closedName = sanitizeChannelName(`closed-${channel.name}`);
+    const closedName = sanitizeChannelName(`closed-${channel.name}`);
 
-  if (type?.closedCategoryId) {
-    try {
-      const closedCategory = await resolveCategory(guild, type.closedCategoryId);
+    if (type?.closedCategoryId) {
+      try {
+        const closedCategory = await resolveCategory(guild, type.closedCategoryId);
 
-      await channel.setParent(closedCategory.id, { lockPermissions: false });
-    } catch (error) {
-      // A deleted category must not block closing; the ticket simply stays put.
-      logger.warn(`Could not move the closed ticket: ${error.message}`);
+        await channel.setParent(closedCategory.id, { lockPermissions: false });
+      } catch (error) {
+        // A deleted category must not block closing; the ticket simply stays put.
+        logger.warn(`Could not move the closed ticket: ${error.message}`);
+      }
     }
+
+    await channel.setName(closedName).catch(() => null);
+    if (!hidden) await setOpenerAccess(channel, ticket, false);
+
+    await channel
+      .send({
+        embeds: [
+          embed({
+            title: 'Ticket closed',
+            description: reason
+              ? `Closed by <@${actor?.id}>.\n**Reason:** ${reason}`
+              : `Closed by <@${actor?.id}>.`,
+            color: COLORS.danger,
+            footer: log ? 'A transcript was saved to the log channel' : 'No log channel is set',
+          }),
+        ],
+        components: [closedButtons(channel.id)],
+      })
+      .catch(() => null);
+
+    return { mode, transcript, logged: Boolean(log) };
+  } catch (error) {
+    // The ticket is still open, so give the opener their channel back.
+    if (hidden) await setOpenerAccess(channel, ticket, true);
+
+    throw error;
   }
-
-  await channel.setName(closedName).catch(() => null);
-  await channel.permissionOverwrites
-    ?.edit?.(ticket.openerId, {
-      ViewChannel: false,
-      SendMessages: false,
-      ReadMessageHistory: false,
-    })
-    .catch(() => null);
-
-  await channel
-    .send({
-      embeds: [
-        embed({
-          title: 'Ticket closed',
-          description: reason
-            ? `Closed by <@${actor?.id}>.\n**Reason:** ${reason}`
-            : `Closed by <@${actor?.id}>.`,
-          color: COLORS.danger,
-          footer: log ? 'A transcript was saved to the log channel' : 'No log channel is set',
-        }),
-      ],
-      components: [closedButtons(channel.id)],
-    })
-    .catch(() => null);
-
-  return { mode, transcript, logged: Boolean(log) };
 }
 
 export async function reopenTicketChannel({ guild, channel, ticket, type }) {
