@@ -15,6 +15,7 @@ import {
   MAX_NUMBER_START,
   MAX_PANELS,
   claimTicket,
+  markTicketDeleted,
   countPanelButtons,
   deleteTicketPanel,
   deleteTicketType,
@@ -37,6 +38,7 @@ import {
 import {
   TicketError,
   closeTicketChannel,
+  createTicketChannel,
   ephemeral,
   isStaffMember,
   padTicketNumber,
@@ -201,6 +203,10 @@ function overviewEmbed() {
       '`/ticket close [reason]` — close the ticket you are in',
       '`/ticket claim` — claim or unclaim a ticket (support team)',
       '`/ticket transcript` — save the transcript (opener or support team)',
+      '`/ticket add user:@member` / `/ticket remove user:@member` — manage access (support team)',
+      '`/ticket open [key] [user]` — open a ticket for a member (support team)',
+      '`/ticket rename name:...` — rename this ticket (support team)',
+      '`/ticket delete confirm:true` — delete this channel without a transcript (support team)',
       '',
       '**Panels**',
       '`/ticket panel add key:support label:Support channel:#support` — create a panel',
@@ -1195,6 +1201,175 @@ function ticketContext(ctx) {
   return { ticket, type: getTicketType(ctx.guildId, ticket.typeKey) };
 }
 
+/**
+ * `/ticket open [key] [user]` (prefix `:-ticket open [key] [@user]`) opens a
+ * ticket on behalf of a member. Without a key the only button is used; with
+ * several buttons the key is required so the right category/roles are picked.
+ */
+async function handleOpen(ctx) {
+  const buttons = listTicketTypes(ctx.guildId);
+
+  if (buttons.length === 0) {
+    await ctx.fail({
+      embeds: [
+        errorEmbed(
+          'No ticket buttons yet',
+          'Create one with `/ticket button add key:help label:Help category:#tickets`.',
+        ),
+      ],
+    });
+    return;
+  }
+
+  let rawKey;
+  let target;
+
+  if (ctx.isSlash) {
+    rawKey = ctx.getString('key');
+    target = ctx.getMember('user') ?? ctx.getUser('user') ?? ctx.member ?? ctx.user;
+  } else {
+    const { flags, rest } = parseFlagTokens(ctx.args.slice(1));
+    const mention = rest.find((entry) => /^<@!?\d+>$/.test(entry));
+    const plain = rest.find((entry) => !/^<@!?\d+>$/.test(entry));
+
+    rawKey = flags.key ?? flags.button ?? plain;
+
+    if (flags.user ?? mention) {
+      target = await resolveMember(ctx.guild, flags.user ?? mention, ctx.message).catch(
+        () => null,
+      );
+
+      if (!target) {
+        await ctx.fail({ embeds: [errorEmbed('Member not found', 'Mention the member the ticket is for.')] });
+        return;
+      }
+    } else {
+      target = ctx.member ?? ctx.user;
+    }
+  }
+
+  const wanted = normalizeTypeKey(rawKey ?? '');
+  const type = wanted
+    ? getTicketType(ctx.guildId, wanted)
+    : buttons.length === 1
+      ? buttons[0]
+      : null;
+
+  if (!type) {
+    await ctx.fail({
+      embeds: [
+        errorEmbed(
+          'Pick a button',
+          `This server has several ticket buttons. Use \`/ticket open key:<key>\` with one of: ${buttons.map((button) => `\`${button.key}\``).join(', ')}.`,
+        ),
+      ],
+    });
+    return;
+  }
+
+  if (!isStaffMember(ctx.guild, ctx.member, type)) {
+    await ctx.fail({
+      embeds: [errorEmbed('Missing permissions', 'Only the support team can open a ticket for someone.')],
+    });
+    return;
+  }
+
+  const opener = target?.user ?? target ?? ctx.user;
+
+  if (ctx.isSlash) await ctx.defer({ ephemeral: true });
+
+  try {
+    const { ticket, channel } = await createTicketChannel({
+      guild: ctx.guild,
+      user: opener,
+      typeKey: type.key,
+    });
+    const payload = {
+      embeds: [
+        successEmbed(
+          'Ticket opened',
+          `Ticket #${padTicketNumber(ticket.number)} for <@${opener.id}>: <#${channel.id}>.`,
+        ),
+      ],
+      allowedMentions: { parse: [] },
+    };
+
+    if (ctx.isSlash) await ctx.editReply(payload);
+    else await ctx.reply(payload);
+  } catch (error) {
+    const embed = errorEmbed(
+      'Could not open the ticket',
+      error instanceof TicketError ? error.message : 'Something went wrong.',
+    );
+
+    if (ctx.isSlash) await ctx.editReply({ embeds: [embed] }).catch(() => null);
+    else await ctx.reply({ embeds: [embed] }).catch(() => null);
+  }
+}
+
+/**
+ * `/ticket delete confirm:true` force-deletes the current ticket channel. The
+ * regular close flow keeps a transcript; this is the "remove it now" escape
+ * hatch, so it asks for confirmation and says the transcript is skipped.
+ */
+async function handleTicketDelete(ctx) {
+  let context;
+
+  try {
+    context = ticketContext(ctx);
+  } catch (error) {
+    await ctx.fail({ embeds: [errorEmbed('Not a ticket', error.message)] });
+    return;
+  }
+
+  const { ticket, type } = context;
+
+  if (!isStaffMember(ctx.guild, ctx.member, type)) {
+    await ctx.fail({
+      embeds: [errorEmbed('Missing permissions', 'Only the support team can delete a ticket.')],
+    });
+    return;
+  }
+
+  const confirmed = ctx.isSlash
+    ? Boolean(ctx.getBoolean('confirm'))
+    : ctx.args.includes('confirm') ||
+      parseFlagTokens(ctx.args.slice(1)).flags.confirm !== undefined;
+
+  if (!confirmed) {
+    await ctx.fail({
+      embeds: [
+        warningEmbed(
+          'Confirmation needed',
+          `This deletes ticket #${padTicketNumber(ticket.number)} without a transcript. Run \`/ticket delete confirm:true\` (prefix \`:-ticket delete confirm\`) to delete it.`,
+        ),
+      ],
+    });
+    return;
+  }
+
+  if (ctx.isSlash) await ctx.defer({ ephemeral: true });
+  else await ctx.typing();
+
+  try {
+    await ctx.channel.delete(`Ticket deleted by ${ctx.user.tag ?? ctx.user.id}`);
+  } catch (error) {
+    await ctx.fail({ embeds: [errorEmbed('Could not delete the ticket', error.message)] });
+    return;
+  }
+
+  markTicketDeleted(ticket.id);
+
+  const payload = {
+    embeds: [
+      successEmbed('Ticket deleted', `Ticket #${padTicketNumber(ticket.number)} was deleted.`),
+    ],
+  };
+
+  if (ctx.isSlash) await ctx.editReply(payload).catch(() => null);
+  else if (ctx.user.send) await ctx.user.send(payload).catch(() => null);
+}
+
 async function handleClose(ctx) {
   let context;
 
@@ -1692,6 +1867,24 @@ export default {
     )
     .addSubcommand((sub) =>
       sub
+        .setName('open')
+        .setDescription('Open a ticket for a member (support team)')
+        .addStringOption((option) =>
+          option
+            .setName('key')
+            .setDescription('Which ticket button (default: the only one)')
+            .setAutocomplete(true)
+            .setRequired(false),
+        )
+        .addUserOption((option) =>
+          option
+            .setName('user')
+            .setDescription('Member the ticket is for (default: you)')
+            .setRequired(false),
+        ),
+    )
+    .addSubcommand((sub) =>
+      sub
         .setName('close')
         .setDescription('Close the ticket in this channel')
         .addStringOption((option) => option.setName('reason').setDescription('Optional close reason').setRequired(false)),
@@ -1715,13 +1908,24 @@ export default {
         .setDescription('Rename this ticket (support team)')
         .addStringOption((option) => option.setName('name').setDescription('New channel name').setRequired(true)),
     )
-    .addSubcommand((sub) => sub.setName('transcript').setDescription('Save an HTML transcript of this ticket')),
+    .addSubcommand((sub) => sub.setName('transcript').setDescription('Save an HTML transcript of this ticket'))
+    .addSubcommand((sub) =>
+      sub
+        .setName('delete')
+        .setDescription('Delete this ticket channel without a transcript (support team)')
+        .addBooleanOption((option) =>
+          option
+            .setName('confirm')
+            .setDescription('Set true to delete the channel now')
+            .setRequired(false),
+        ),
+    ),
 
   name: 'ticket',
   aliases: ['tickets', 'ticket-tool', 'support'],
   description: 'A fully customizable ticket panel with private channels and transcripts',
   category: 'Community',
-  usage: 'ticket [button add|edit|remove | panel add|edit|post|list|remove | number|list|buttons|log|close|claim|add|remove|rename|transcript]',
+  usage: 'ticket [button add|edit|remove | panel add|edit|post|list|remove | number|list|buttons|log|open|close|claim|add|remove|rename|delete|transcript]',
   cooldown: 3,
   guildOnly: true,
 
@@ -1818,6 +2022,8 @@ export default {
           return handleNumber(ctx);
         case 'log':
           return handleLog(ctx);
+        case 'open':
+          return handleOpen(ctx);
         case 'close':
           return handleClose(ctx);
         case 'claim':
@@ -1828,6 +2034,8 @@ export default {
           return handleAddRemove(ctx, false);
         case 'rename':
           return handleRename(ctx);
+        case 'delete':
+          return handleTicketDelete(ctx);
         case 'transcript':
           return handleTranscript(ctx);
         default:
@@ -1873,6 +2081,9 @@ export default {
         return handleNumber(ctx);
       case 'log':
         return handleLog(ctx);
+      case 'open':
+      case 'create':
+        return handleOpen(ctx);
       case 'close':
         return handleClose(ctx);
       case 'claim':
@@ -1883,6 +2094,8 @@ export default {
         return handleAddRemove(ctx, false);
       case 'rename':
         return handleRename(ctx);
+      case 'delete':
+        return handleTicketDelete(ctx);
       case 'transcript':
         return handleTranscript(ctx);
       default:
