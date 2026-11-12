@@ -48,6 +48,7 @@ function mapType(row) {
     emoji: row.emoji ?? '',
     panelKey: row.panel_key || DEFAULT_PANEL_KEY,
     categoryId: row.category_id ?? null,
+    closedCategoryId: row.closed_category_id ?? null,
     supportRoleIds: parseIds(row.support_role_ids),
     pingRoleIds: parseIds(row.ping_role_ids),
     logChannelId: row.log_channel_id ?? null,
@@ -466,6 +467,7 @@ export function upsertTicketType(guildId, key, patch = {}) {
     emoji: base?.emoji ?? '',
     panelKey: requestedPanel,
     categoryId: base?.categoryId ?? null,
+    closedCategoryId: base?.closedCategoryId ?? null,
     supportRoleIds: base?.supportRoleIds ?? [],
     pingRoleIds: base?.pingRoleIds ?? [],
     logChannelId: base?.logChannelId ?? null,
@@ -499,6 +501,7 @@ export function upsertTicketType(guildId, key, patch = {}) {
   next.nameTemplate = String(next.nameTemplate ?? 'ticket-{number}').trim().slice(0, 80);
 
   next.buttonLabel = optionalText(next.buttonLabel, 80);
+  next.closedCategoryId = next.closedCategoryId ? String(next.closedCategoryId) : null;
   next.color = clampColor(next.color, base?.color ?? null);
 
   if (next.buttonStyle !== null && next.buttonStyle !== undefined) {
@@ -510,16 +513,17 @@ export function upsertTicketType(guildId, key, patch = {}) {
   getDb()
     .prepare(
       `INSERT INTO ticket_types
-         (guild_id, key, label, emoji, panel_key, category_id, support_role_ids,
-          ping_role_ids, log_channel_id, welcome_message, name_template, max_open,
-          number_start, color, close_action, position, button_label, button_style,
-          created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         (guild_id, key, label, emoji, panel_key, category_id, closed_category_id,
+          support_role_ids, ping_role_ids, log_channel_id, welcome_message,
+          name_template, max_open, number_start, color, close_action, position,
+          button_label, button_style, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (guild_id, key) DO UPDATE SET
          label = excluded.label,
          emoji = excluded.emoji,
          panel_key = excluded.panel_key,
          category_id = excluded.category_id,
+         closed_category_id = excluded.closed_category_id,
          support_role_ids = excluded.support_role_ids,
          ping_role_ids = excluded.ping_role_ids,
          log_channel_id = excluded.log_channel_id,
@@ -541,6 +545,7 @@ export function upsertTicketType(guildId, key, patch = {}) {
       next.emoji || null,
       next.panelKey,
       next.categoryId || null,
+      next.closedCategoryId || null,
       encodeIds(next.supportRoleIds),
       encodeIds(next.pingRoleIds),
       next.logChannelId || null,

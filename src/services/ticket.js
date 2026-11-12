@@ -704,6 +704,17 @@ export async function closeTicketChannel({ guild, channel, ticket, type, actor, 
 
   const closedName = sanitizeChannelName(`closed-${channel.name}`);
 
+  if (type?.closedCategoryId) {
+    try {
+      const closedCategory = await resolveCategory(guild, type.closedCategoryId);
+
+      await channel.setParent(closedCategory.id, { lockPermissions: false });
+    } catch (error) {
+      // A deleted category must not block closing; the ticket simply stays put.
+      logger.warn(`Could not move the closed ticket: ${error.message}`);
+    }
+  }
+
   await channel.setName(closedName).catch(() => null);
   await channel.permissionOverwrites
     ?.edit?.(ticket.openerId, { SendMessages: false })
@@ -728,9 +739,20 @@ export async function closeTicketChannel({ guild, channel, ticket, type, actor, 
   return { mode, transcript, logged: Boolean(log) };
 }
 
-export async function reopenTicketChannel({ channel, ticket, type }) {
+export async function reopenTicketChannel({ guild, channel, ticket, type }) {
   const reopened = reopenTicketRecord(ticket.id);
   const name = channelNameFor(type, { username: ticket.openerTag?.split('#')[0] }, ticket.number);
+
+  if (type?.categoryId) {
+    try {
+      const category = await resolveCategory(guild, type.categoryId);
+
+      await channel.setParent(category.id, { lockPermissions: false });
+    } catch (error) {
+      // Keep the reopen working even if the category was deleted meanwhile.
+      logger.warn(`Could not move the reopened ticket: ${error.message}`);
+    }
+  }
 
   await channel.setName(name).catch(() => null);
   await channel.permissionOverwrites
@@ -987,7 +1009,7 @@ async function handleReopen(interaction, channelId) {
 
     if (!channel) throw new TicketError('The ticket channel no longer exists.');
 
-    await reopenTicketChannel({ channel, ticket, type });
+    await reopenTicketChannel({ guild: interaction.guild, channel, ticket, type });
     await interaction.editReply({ content: 'The ticket was reopened.' });
   } catch (error) {
     await interaction.editReply({

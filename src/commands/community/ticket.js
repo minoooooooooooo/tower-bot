@@ -174,6 +174,7 @@ function buttonLine(button) {
   return [
     `**${button.buttonLabel || button.label}** · \`${button.key}\``,
     `Panel: \`${button.panelKey}\` · Category: ${button.categoryId ? `<#${button.categoryId}>` : '⚠️ not set'}`,
+    `Closed tickets: ${button.closedCategoryId ? `moved to <#${button.closedCategoryId}>` : 'stay in the ticket category'}`,
     `Style: ${button.buttonStyle ?? 'primary'} · Max open: ${button.maxOpen} · Close: ${button.closeAction}`,
     `Numbering: ${button.numberStart ? `starts at ${button.numberStart}` : 'from 1'}`,
     `Support: ${roleList(button.supportRoleIds)} · Ping: ${roleList(button.pingRoleIds)}`,
@@ -208,7 +209,7 @@ function overviewEmbed() {
       '`/ticket panel list` — show every panel',
       '',
       '**Buttons**',
-      '`/ticket button add key:help label:Help panel:support category:#tickets` — create a button',
+      '`/ticket button add key:help label:Help panel:support category:#tickets closed_category:#closed` — create a button',
       '`/ticket button edit key:help panel:support ...` — change it or move it',
       '`/ticket button remove key:help confirm:true` — delete it',
       '`/ticket number key:help start:100` — start that button’s tickets at 100',
@@ -257,6 +258,15 @@ async function readButtonOptions(ctx, startIndex) {
       }
 
       patch.categoryId = category.id;
+    }
+
+    const closedCategory = ctx.getChannel('closed_category');
+    if (closedCategory) {
+      if (closedCategory.type !== ChannelType.GuildCategory) {
+        throw new TicketError('Pick a Discord category for closed tickets.');
+      }
+
+      patch.closedCategoryId = closedCategory.id;
     }
 
     const support = ctx.getString('support_roles');
@@ -309,6 +319,13 @@ async function readButtonOptions(ctx, startIndex) {
     if (flags.category !== undefined) {
       const category = await resolveCategory(ctx.guild, flags.category);
       patch.categoryId = category?.id ?? null;
+    }
+    if (flags.closed_category !== undefined || flags.closed !== undefined) {
+      const category = await resolveCategory(
+        ctx.guild,
+        flags.closed_category ?? flags.closed,
+      );
+      patch.closedCategoryId = category?.id ?? null;
     }
     if (flags.support !== undefined || flags.support_roles !== undefined) {
       patch.supportRoleIds = await resolveRoleList(ctx.guild, flags.support ?? flags.support_roles);
@@ -1464,6 +1481,13 @@ function addButtonOptions(sub, { requireLabel = false } = {}) {
         .setDescription('Category where this button creates ticket channels')
         .addChannelTypes(ChannelType.GuildCategory)
         .setRequired(requireLabel),
+    )
+    .addChannelOption((option) =>
+      option
+        .setName('closed_category')
+        .setDescription('Category that closed tickets are moved to (default: stay)')
+        .addChannelTypes(ChannelType.GuildCategory)
+        .setRequired(false),
     )
     .addStringOption((option) =>
       option
