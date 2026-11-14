@@ -14,6 +14,9 @@ const PAGE_SIZE = 100;
 const MAX_SCAN = 2000;
 const TWO_WEEKS_MS = 14 * 24 * 60 * 60 * 1000;
 
+/** How long a prefix run leaves its command and confirmation visible. */
+const PREFIX_LIFETIME_MS = 2000;
+
 function ephemeral(payload) {
   return { ...payload, flags: MessageFlags.Ephemeral };
 }
@@ -161,6 +164,27 @@ async function deleteMessages(channel, messages) {
   }
 
   return deleted;
+}
+
+/**
+ * Prefix and alias runs leave two traces in the channel: the command itself and
+ * the confirmation. Both are removed a moment after the clear, so a purge does
+ * not leave a "cleared" banner behind. Slash replies are ephemeral, so nothing
+ * is scheduled for them.
+ */
+function tidyPrefixRun(...messages) {
+  const timer = setTimeout(() => {
+    for (const message of messages) {
+      if (!message?.deletable) continue;
+
+      message.delete().catch((error) => {
+        logger.debug(`Could not delete a clear message: ${error.message}`);
+      });
+    }
+  }, PREFIX_LIFETIME_MS);
+
+  // Never keep the process alive just to delete these two messages.
+  timer.unref?.();
 }
 
 function confirmation({ deleted, found, amount, user, channel, hitOld, scanned, scanLimit }) {
@@ -333,7 +357,8 @@ export default {
     if (ctx.isSlash) {
       await ctx.editReply(body);
     } else {
-      await ctx.send(body);
+      const sent = await ctx.send(body);
+      tidyPrefixRun(ctx.message, sent);
     }
   },
 };

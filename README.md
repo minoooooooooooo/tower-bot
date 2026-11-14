@@ -341,7 +341,8 @@ Required Discord permissions: `/mute` and `/unmute` need **Manage Roles**; `/tim
 - When filtering by a member, the bot reads further back through history (up to 2,000 messages) until it finds the requested number.
 - Amounts over 100 are split into batches of 100. The maximum is 1,000 per command.
 - Ping the **member**, not a role — a role mention is rejected (`Unknown member`) rather than treated as "everyone".
-- The command's own message is **never deleted**: `:-clear 1` removes the message above it, and with a member filter the command is skipped too. For slash commands there is no command message to skip.
+- The command's own message is **never counted**: `:-clear 1` removes the message above it, and with a member filter the command is skipped too. For slash commands there is no command message to skip.
+- After a prefix or alias run, the command message and the bot's confirmation are deleted **2 seconds** later, so the channel is left clean. Slash replies are ephemeral and vanish on their own.
 
 ## Exile (prison)
 
