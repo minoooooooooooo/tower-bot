@@ -19,7 +19,7 @@ Address** and **Auto Update** are for.
 | Repository | <https://github.com/minoooooooooooo/tower-bot> |
 | Visibility | public — so **no** username or token goes in the egg |
 | Branch | `main` |
-| Files tracked | 45 (code + docs; `.env`, `data/`, `dist/`, `node_modules/`, `.tools/` all ignored) |
+| Files tracked | code + docs + assets (`.env`, `data/`, `dist/`, `node_modules/`, `.tools/`, `.tcc/` all ignored) |
 | Pushed | 2026-10-31 |
 
 Steps 1–2 of the migration below are done; **step 3 onwards still needs the

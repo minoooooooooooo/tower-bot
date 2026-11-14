@@ -22,6 +22,17 @@ async function main() {
 
   logger.info(`Runtime Node ${process.versions.node}`);
 
+  // Tower Control Center: apply a staged database restore / undo a failed
+  // deployment before the bot opens its database. Never allowed to stop the
+  // bot from starting.
+  try {
+    const { bootGuard } = await import('./tcc/tcc-agent.mjs');
+    const { fileURLToPath } = await import('node:url');
+    bootGuard({ root: fileURLToPath(new URL('..', import.meta.url)) });
+  } catch (error) {
+    logger.warn(`Tower Control Center boot guard skipped: ${error.message}`);
+  }
+
   await import('./index.js');
 }
 

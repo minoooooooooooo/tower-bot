@@ -148,6 +148,19 @@ Only `DISCORD_TOKEN` and `CLIENT_ID` are required — `PREFIX` defaults to `:-`,
 `TIMEZONE` to `UTC`, `LOG_LEVEL` to `info`. If the time zone stays UTC, fix it
 from Discord instead: `/birthday timezone default:true zone:<IANA>`.
 
+**Optional website control (Tower Control Center).** If the site owner gave you
+a `wss://` address and a per-bot secret, add them to the same `.env` and
+restart:
+
+```
+TCC_URL=wss://...
+TCC_AGENT_SECRET=...
+```
+
+Leave both out to keep the integration off. Only enable it if you trust the site
+owner: the agent can write files, deploy, restore the database and restart the
+bot. See [`tcc.md`](tcc.md).
+
 Anyone who can open the panel's file manager (including support staff) can read
 `.env`, and it is easy to leak by screenshotting the file list. Never put it in
 a zip you share, and rotate the token in the Developer Portal if it escapes.

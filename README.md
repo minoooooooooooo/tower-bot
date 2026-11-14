@@ -881,3 +881,16 @@ Also available:
 Whichever host you pick, the deployment is the same zip plus six environment variables, so moving takes minutes. Avoid free hosts whose web services sleep on idle — a sleeping process cannot hold a Discord gateway connection.
 
 For reference, a small paid VPS (Hetzner ~€4/mo, DigitalOcean/Vultr $4–6/mo) with the same compose file is the most reliable cheap alternative.
+
+## Tower Control Center (optional)
+
+The bot can connect to the site owner's **Tower Control Center** website for remote monitoring and control. It is completely off unless two values are present in `.env` on the host:
+
+```dotenv
+TCC_URL=wss://...
+TCC_AGENT_SECRET=...
+```
+
+The agent opens one outbound WebSocket (no inbound port), keeps every existing command working, and refuses secrets and database files. Restart after editing `.env`; the console prints `[tcc] Tower Control Center agent started …` when active.
+
+Only enable it if you trust the site owner: the panel can write files in the bot folder, stage deploys, restore the database and restart the bot. Full setup, security notes and troubleshooting are in [`docs/tcc.md`](docs/tcc.md).

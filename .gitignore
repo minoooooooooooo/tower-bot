@@ -19,6 +19,9 @@ Thumbs.db
 # SQLite data
 data/
 
+# Tower Control Center runtime state (agent secret, staged restores)
+.tcc/
+
 # Build output
 dist/
 build.json

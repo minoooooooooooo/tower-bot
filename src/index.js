@@ -7,6 +7,7 @@ import { reportDiscordReachability } from './lib/net-check.js';
 import { stopActivityTracking } from './services/activity.js';
 import { stopBackfill } from './services/activity-backfill.js';
 import { stopEmojiBackfill } from './services/emoji-backfill.js';
+import { startTowerAgent } from './tcc/adapter.js';
 
 const logger = createLogger('bot');
 
@@ -39,6 +40,13 @@ for (const event of await loadEvents(config.eventsDir)) {
 
   if (event.once) client.once(event.name, handler);
   else client.on(event.name, handler);
+}
+
+// Tower Control Center agent. Does nothing unless TCC_URL and TCC_AGENT_SECRET are set.
+try {
+  startTowerAgent(client);
+} catch (error) {
+  logger.error('Tower Control Center agent failed to start (the bot continues without it)', error);
 }
 
 client.on('error', (error) => logger.error('Client error', error));
