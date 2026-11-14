@@ -20,6 +20,14 @@ const client = new Client({
     GatewayIntentBits.MessageContent,
   ],
   partials: [Partials.Channel],
+  rest: {
+    // Renaming a channel is limited to a couple of edits per ten minutes.
+    // By default discord.js waits for the bucket to reset, which can stall a
+    // ticket close for minutes. Reject the edit immediately instead, so callers
+    // can skip the rename and carry on.
+    rejectOnRateLimit: (data) =>
+      String(data.method).toUpperCase() === 'PATCH' && data.route === '/channels/:id',
+  },
 });
 
 const { commands, aliases } = await loadCommands(config.commandsDir);

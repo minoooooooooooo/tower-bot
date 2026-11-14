@@ -7,6 +7,7 @@ import {
   ModalBuilder,
   MessageFlags,
   PermissionFlagsBits,
+  RateLimitError,
   TextInputBuilder,
   TextInputStyle,
 } from 'discord.js';
@@ -295,22 +296,41 @@ async function resolveCategory(guild, categoryId) {
 }
 
 /**
- * Moves and renames a ticket channel in one PATCH. Discord's channel-edit bucket
- * is small, so a separate setParent followed by setName can make the second call
- * wait on a 429 for minutes while the bot keeps "typing".
+ * Moves a ticket channel. A missing category must not block the close, so the
+ * channel simply stays where it is. Parent-only edits are not subject to the
+ * name/topic sublimit.
  */
-async function updateChannelLayout(channel, { name, category }) {
-  if (category) {
-    try {
-      await channel.edit({ name, parent: category.id, lockPermissions: false });
+async function moveTicketChannel(channel, category) {
+  if (!category) return;
+
+  try {
+    await channel.setParent(category.id, { lockPermissions: false });
+  } catch (error) {
+    logger.warn(`Could not move the ticket channel: ${error.message}`);
+  }
+}
+
+/**
+ * Renames a ticket channel, but gives up immediately when Discord's channel-edit
+ * limit is active. `rest.rejectOnRateLimit` turns the usual multi-minute wait
+ * into an instant `RateLimitError`, so a close never appears stuck on "typing".
+ */
+async function renameTicketChannel(channel, name) {
+  try {
+    await channel.setName(name);
+  } catch (error) {
+    if (error instanceof RateLimitError || error?.name === 'RateLimitError') {
+      const seconds = Math.max(1, Math.round((error.retryAfter ?? 0) / 1000));
+
+      logger.warn(
+        `Skipped renaming ticket channel ${channel.id}; Discord's channel-edit limit is active for another ${seconds}s`,
+      );
 
       return;
-    } catch (error) {
-      logger.warn(`Could not move the ticket channel: ${error.message}`);
     }
-  }
 
-  await channel.setName(name).catch(() => null);
+    logger.warn(`Could not rename the ticket channel: ${error.message}`);
+  }
 }
 
 function permissionOverwrites(guild, type, openerId) {
@@ -765,7 +785,8 @@ export async function closeTicketChannel({ guild, channel, ticket, type, actor, 
       }
     }
 
-    await updateChannelLayout(channel, { name: closedName, category: closedCategory });
+    await moveTicketChannel(channel, closedCategory);
+    await renameTicketChannel(channel, closedName);
     if (!hidden) await setOpenerAccess(channel, ticket, false);
 
     await channel
@@ -807,7 +828,8 @@ export async function reopenTicketChannel({ guild, channel, ticket, type }) {
     }
   }
 
-  await updateChannelLayout(channel, { name, category });
+  await moveTicketChannel(channel, category);
+  await renameTicketChannel(channel, name);
   await channel.permissionOverwrites
     ?.edit?.(ticket.openerId, {
       SendMessages: true,
@@ -858,8 +880,8 @@ async function ticketContext(guild, channelId) {
   return { ticket, type: getTicketType(guild.id, ticket.typeKey) };
 }
 
-function canClose(guild, member, ticket, type) {
-  return ticket.openerId === member?.id || isStaffMember(guild, member, type);
+function canClose(member) {
+  return Boolean(member?.permissions?.has(PermissionFlagsBits.ManageGuild));
 }
 
 async function handleOpen(interaction, typeKey) {
@@ -953,10 +975,10 @@ async function handleClaim(interaction, channelId) {
 
 async function handleCloseButton(interaction, channelId) {
   try {
-    const { ticket, type } = await ticketContext(interaction.guild, channelId);
+    await ticketContext(interaction.guild, channelId);
 
-    if (!canClose(interaction.guild, interaction.member, ticket, type)) {
-      throw new TicketError('Only the ticket opener or the support team can close this ticket.');
+    if (!canClose(interaction.member)) {
+      throw new TicketError('Only admins can close tickets.');
     }
 
     const modal = new ModalBuilder()
@@ -1127,8 +1149,8 @@ export async function handleTicketModal(interaction) {
   try {
     const { ticket, type } = await ticketContext(interaction.guild, channelId);
 
-    if (!canClose(interaction.guild, interaction.member, ticket, type)) {
-      throw new TicketError('Only the ticket opener or the support team can close this ticket.');
+    if (!canClose(interaction.member)) {
+      throw new TicketError('Only admins can close tickets.');
     }
 
     const channel = await loadChannel(interaction.guild, channelId);
