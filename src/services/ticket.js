@@ -880,10 +880,6 @@ async function ticketContext(guild, channelId) {
   return { ticket, type: getTicketType(guild.id, ticket.typeKey) };
 }
 
-function canClose(member) {
-  return Boolean(member?.permissions?.has(PermissionFlagsBits.ManageGuild));
-}
-
 async function handleOpen(interaction, typeKey) {
   await interaction.deferReply(ephemeral({}));
 
@@ -975,10 +971,10 @@ async function handleClaim(interaction, channelId) {
 
 async function handleCloseButton(interaction, channelId) {
   try {
-    await ticketContext(interaction.guild, channelId);
+    const { type } = await ticketContext(interaction.guild, channelId);
 
-    if (!canClose(interaction.member)) {
-      throw new TicketError('Only admins can close tickets.');
+    if (!isStaffMember(interaction.guild, interaction.member, type)) {
+      throw new TicketError('Only the support team can close tickets.');
     }
 
     const modal = new ModalBuilder()
@@ -1149,8 +1145,8 @@ export async function handleTicketModal(interaction) {
   try {
     const { ticket, type } = await ticketContext(interaction.guild, channelId);
 
-    if (!canClose(interaction.member)) {
-      throw new TicketError('Only admins can close tickets.');
+    if (!isStaffMember(interaction.guild, interaction.member, type)) {
+      throw new TicketError('Only the support team can close tickets.');
     }
 
     const channel = await loadChannel(interaction.guild, channelId);

@@ -60,7 +60,7 @@ exactly as before. `src/boot.js` calls `bootGuard()` before the database opens
 (staged restore / automatic rollback of a failed deploy); `src/index.js` calls
 `startTowerAgent(client)` after commands and events load, inside `try/catch`.
 The zip's older `src/index.js` and `src/boot.js` were **not** copied — the repo
-keeps `rest.rejectOnRateLimit` and the admin-only ticket close. `.tcc/` is
+keeps `rest.rejectOnRateLimit` and its own ticket-close guard. `.tcc/` is
 runtime state and is git-ignored. Setup and security notes:
 [`tcc.md`](tcc.md).
 
@@ -480,9 +480,10 @@ Behavior that must be preserved:
   ping roles and the bot are allowed. Staff is the owner, Administrator, Manage
   Server, Manage Channels, or a support/ping role. Claiming is idempotent: the
   same staff member pressing Claim again unclaims it.
-- **Close is admin-only:** `/ticket close`, the **Close** button and its modal
-  require **Manage Server** (the owner always counts). The opener and support
-  roles are refused, so members cannot close their own tickets.
+- **Close needs the support team:** `/ticket close`, the **Close** button and its
+  modal accept the server owner, **Manage Server**, **Manage Channels**, or a
+  member holding the button's support/ping roles. The opener — and anyone else —
+  is refused, so members cannot close their own tickets.
 - **Close safety:** hide the opener first, then collect the transcript and close
   the row. Delete only when a log channel exists *and* the button uses
   `close_action = delete`; if the transcript send fails, or no log is set, the

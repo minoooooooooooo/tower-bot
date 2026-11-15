@@ -1462,9 +1462,9 @@ async function handleClose(ctx) {
 
   const { ticket, type } = context;
 
-  if (!isAdmin(ctx)) {
+  if (!isStaffMember(ctx.guild, ctx.member, type)) {
     await ctx.fail({
-      embeds: [errorEmbed('Missing permissions', 'Only admins can close tickets.')],
+      embeds: [errorEmbed('Missing permissions', 'Only the support team can close tickets.')],
     });
     return;
   }
