@@ -1567,7 +1567,7 @@ async function ticketMember(ctx) {
     : await resolveMember(ctx.guild, token, ctx.message).catch(() => null);
 
   if (!member) throw new TicketError('Member not found.');
-  if (member.user?.bot) throw new TicketError('That member is a bot.');
+  if (member.user?.bot) throw new TicketError('Bots cannot be added to a ticket. Pick a person instead.');
 
   return member;
 }
@@ -1592,7 +1592,7 @@ async function handleAddRemove(ctx, add) {
   try {
     member = await ticketMember(ctx);
   } catch (error) {
-    await ctx.fail({ embeds: [errorEmbed('Member not found', error.message)] });
+    await ctx.fail({ embeds: [errorEmbed('Invalid member', error.message)] });
     return;
   }
 
