@@ -403,15 +403,21 @@ const SCHEMA = `
     good_behavior INTEGER NOT NULL DEFAULT 0,
     show_birthday INTEGER NOT NULL DEFAULT 1,
     background   TEXT,
+    coins        INTEGER NOT NULL DEFAULT 0,
+    level_coins_paid INTEGER NOT NULL DEFAULT 0,
+    xp_penalty   INTEGER NOT NULL DEFAULT 0,
+    xp_seen      INTEGER NOT NULL DEFAULT 0,
     created_at   INTEGER NOT NULL,
     updated_at   INTEGER NOT NULL,
     PRIMARY KEY (guild_id, user_id)
   );
 
-  -- One row per guild, so one-time imports (the exile history) never run twice.
+  -- One row per guild, so one-time imports (the exile history, the coin
+  -- backfill) never run twice.
   CREATE TABLE IF NOT EXISTS profile_meta (
     guild_id        TEXT PRIMARY KEY,
     exile_seeded_at INTEGER,
+    coins_seeded_at INTEGER,
     updated_at      INTEGER NOT NULL
   );
 
@@ -615,6 +621,11 @@ const COLUMN_MIGRATIONS = [
   ['command_aliases', 'channel_mode', 'TEXT'],
   ['profiles', 'show_birthday', 'INTEGER NOT NULL DEFAULT 1'],
   ['profiles', 'background', 'TEXT'],
+  ['profiles', 'coins', 'INTEGER NOT NULL DEFAULT 0'],
+  ['profiles', 'level_coins_paid', 'INTEGER NOT NULL DEFAULT 0'],
+  ['profiles', 'xp_penalty', 'INTEGER NOT NULL DEFAULT 0'],
+  ['profiles', 'xp_seen', 'INTEGER NOT NULL DEFAULT 0'],
+  ['profile_meta', 'coins_seeded_at', 'INTEGER'],
 ];
 
 function applyMigrations(db) {

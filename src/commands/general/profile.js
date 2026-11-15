@@ -19,6 +19,7 @@ import {
 } from '../../services/profile-backgrounds.js';
 import { renderProfileCard } from '../../services/profile-card.js';
 import {
+  ensureCoinBackfill,
   ensureExileBackfill,
   profileStats,
 } from '../../services/profile-store.js';
@@ -177,6 +178,13 @@ export default {
       memberIds(ctx.guild),
       linkedPoints(client, ctx.guildId),
     ]);
+
+    try {
+      ensureCoinBackfill(ctx.guildId, linked);
+    } catch {
+      // A failed backfill must not stop the card from rendering.
+    }
+
     const stats = profileStats(ctx.guildId, user.id, ids, linked);
     const activity = memberStats(ctx.guildId, user.id);
     const status = {

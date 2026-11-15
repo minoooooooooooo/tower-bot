@@ -6,10 +6,12 @@ import {
 import { COLORS, embed, errorEmbed } from '../../lib/embeds.js';
 import { resolveUser } from '../../lib/resolve.js';
 import { displayNameOf } from '../../lib/targets.js';
+import { linkedPoints } from '../../services/ebot-vex.js';
 import {
   MAX_TITLE_LENGTH,
   addProfilePoints,
   displayedPunishments,
+  ensureCoinBackfill,
   ensureExileBackfill,
   getProfile,
   levelFor,
@@ -37,6 +39,8 @@ const FIELDS = {
   behavior_points: 'goodBehavior',
   behaviour_points: 'goodBehavior',
   good: 'goodBehavior',
+  coins: 'coins',
+  coin: 'coins',
 };
 
 function summaryLines(before, after, changes) {
@@ -69,6 +73,10 @@ function summaryLines(before, after, changes) {
     );
   }
 
+  if (changes.coins) {
+    lines.push(`**Coins:** ${before.coins} → ${after.coins}`);
+  }
+
   return lines;
 }
 
@@ -80,6 +88,7 @@ function currentBlock(profile) {
     `**Nightmare:** ${profile.nightmare} · **Vex:** ${profile.vex} · **XP:** ${xp} (level ${levelFor(xp)})`,
     `**Punishments:** ${displayedPunishments(profile)} (${profile.punishMini} mini points)`,
     `**Good behavior:** ${profile.goodBehavior}`,
+    `**Coins:** ${profile.coins}`,
   ].join('\n');
 }
 
@@ -96,6 +105,7 @@ function slashChanges(ctx) {
     vex: ctx.getInteger('vex') ?? 0,
     punishMini: ctx.getInteger('punishment') ?? 0,
     goodBehavior: ctx.getInteger('behavior') ?? 0,
+    coins: ctx.getInteger('coins') ?? 0,
   };
 
   if (title !== undefined) {
@@ -115,6 +125,7 @@ function prefixChanges(tokens) {
     vex: 0,
     punishMini: 0,
     goodBehavior: 0,
+    coins: 0,
   };
 
   if (String(tokens[0] ?? '').toLowerCase() === 'title') {
@@ -130,7 +141,7 @@ function prefixChanges(tokens) {
     if (!field) {
       return {
         changes,
-        problem: `\`${tokens[index]}\` is not a field. Use **nightmare**, **vex**, **punishment**, **behavior**, or **title**.`,
+        problem: `\`${tokens[index]}\` is not a field. Use **nightmare**, **vex**, **punishment**, **behavior**, **coins**, or **title**.`,
       };
     }
 
@@ -153,7 +164,8 @@ function hasChange(changes) {
     changes.nightmare !== 0 ||
     changes.vex !== 0 ||
     changes.punishMini !== 0 ||
-    changes.goodBehavior !== 0
+    changes.goodBehavior !== 0 ||
+    changes.coins !== 0
   );
 }
 
@@ -195,6 +207,12 @@ export default {
         .setName('behavior')
         .setDescription('Add or subtract good behavior points')
         .setRequired(false),
+    )
+    .addIntegerOption((option) =>
+      option
+        .setName('coins')
+        .setDescription('Add or subtract coins, e.g. 25 or -10')
+        .setRequired(false),
     ),
 
   name: 'profile-edit',
@@ -202,7 +220,7 @@ export default {
   description: 'Edit a member’s profile title and points',
   category: 'Moderation',
   usage:
-    'profile-edit <@member> [title <text>] [nightmare <±n>] [vex <±n>] [punishment <±n>] [behavior <±n>]',
+    'profile-edit <@member> [title <text>] [nightmare <±n>] [vex <±n>] [punishment <±n>] [behavior <±n>] [coins <±n>]',
   cooldown: 2,
   guildOnly: true,
   permissions: ['ManageGuild'],
@@ -250,16 +268,30 @@ export default {
       (await ctx.guild.members.fetch(user.id).catch(() => null));
     const name = displayNameOf(user, member);
 
+    let linked = null;
+
+    try {
+      linked = client ? await linkedPoints(client, ctx.guildId) : null;
+    } catch {
+      // Without the linked balances the edit still works on the stored points.
+    }
+
     try {
       ensureExileBackfill(ctx.guildId);
+      ensureCoinBackfill(ctx.guildId, linked);
     } catch {
-      // Editing still works when the one-time import cannot run.
+      // Editing still works when the one-time imports cannot run.
     }
 
     const before = getProfile(ctx.guildId, user.id);
 
     if (!hasChange(changes)) {
-      const stats = profileStats(ctx.guildId, user.id, [...ctx.guild.members.cache.keys()]);
+      const stats = profileStats(
+        ctx.guildId,
+        user.id,
+        [...ctx.guild.members.cache.keys()],
+        linked,
+      );
 
       await ctx.reply(
         ephemeral({
@@ -280,15 +312,24 @@ export default {
       setProfileTitle(ctx.guildId, user.id, changes.title);
     }
 
-    const after = addProfilePoints(ctx.guildId, user.id, {
+    addProfilePoints(ctx.guildId, user.id, {
       nightmare: changes.nightmare,
       vex: changes.vex,
       punishMini: changes.punishMini,
       goodBehavior: changes.goodBehavior,
+      coins: changes.coins,
     });
 
+    // Reading the profile back settles the punishment toll and any level-up
+    // coins, so the confirmation shows the balance the card will show.
+    const stats = profileStats(
+      ctx.guildId,
+      user.id,
+      [...ctx.guild.members.cache.keys()],
+      linked,
+    );
+    const after = getProfile(ctx.guildId, user.id);
     const lines = summaryLines(before, after, changes);
-    const xp = xpFor(after);
 
     await ctx.reply(
       ephemeral({
@@ -303,7 +344,9 @@ export default {
                 value: currentBlock(after),
               },
             ],
-            footer: `XP: ${xp} · Level ${levelFor(xp)} · ${progressFor(xp)} / 100`,
+            footer:
+              `XP: ${stats.xp} · Level ${stats.level} · ${stats.progress} / 100` +
+              ` · Coins ${stats.coins}`,
           }),
         ],
       }),

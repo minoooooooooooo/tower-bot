@@ -69,7 +69,7 @@ Both run `src/boot.js`, which checks the Node version before loading the bot and
 | `/color [primary] [secondary]` | `:-colour` | Recolor or clear the highest role that only you have |
 | `/colors` | `:-colours`, `:-palette` | List every color name in Arabic and English |
 | `/top [messages\|voice] [all\|7d\|30d] [per page]` | `:-leaderboard`, `:-ranking` | Rank members by messages or voice time, 10 per page with paging buttons |
-| `/rank [per page]` | `:-rank`, `:-levels`, `:-levelboard`, `:-ranks` | Rank members by level, Vex points and Nightmare points, 10 per page |
+| `/rank [per page]` | `:-rank`, `:-levels`, `:-levelboard`, `:-ranks` | Rank members by level, coins, Vex points and Nightmare points, 10 per page |
 | `/topchannels [all\|7d\|30d] [limit]` | `:-channels`, `:-top-channels` | Rank text channels by messages sent |
 | `/compare <@member> <@member> [all\|7d\|30d]` | `:-versus`, `:-vs` | Compare two members’ messages and voice time |
 | `/serverstats` | `:-activity`, `:-serveractivity`, `:-sstats` | Server activity totals, top member and top channel |
@@ -97,7 +97,7 @@ Both run `src/boot.js`, which checks the Node version before loading the bot and
 | `/perm grant\|revoke <@role> <command>` | `:-perms`, `:-commandperm` | Let a role run a command without its Discord permission |
 | `/nickname [user] [name]` | `:-nick` | Change your own nickname; **Manage Nicknames** to rename someone else; empty or `reset` clears |
 | `/role toggle\|add\|remove <@role> [user]` | `:-roles` | Add, remove or toggle a role for you or a member; `bulk` covers every human or bot (**Manage Roles**) |
-| `/profile-edit <@member> ...` | `:-editprofile`, `:-profile-points` | Set the title and add or subtract profile points (Manage Server, grantable) |
+| `/profile-edit <@member> ...` | `:-editprofile`, `:-profile-points` | Set the title and add or subtract profile points and coins (Manage Server, grantable) |
 | `/exile <@member> [level] [reason]` | `:-jail`, `:-prison` | Give a member an exile role and hide the server from them |
 | `/exile-release <@member> [reason]` | `:-unjail`, `:-unexile` | Remove a member's exile role |
 | `/exile-setup <@role> [#except ...]` | — | Hide every channel from a role, except the listed ones |
@@ -144,7 +144,7 @@ Role names are searched, not just matched exactly: `:-role سكان` finds **س�
 
 `/profile` (prefix `:-profile`, aliases `:-card` and `:-profilecard`) renders a 1868×1200 PNG for you or the member you mention. The reply is the image alone — no embed text. Members who have left still render their stored numbers, but their rank is empty. Arabic nicknames are shaped and drawn right to left with the bundled Noto Sans Arabic; the labels on the card stay English.
 
-`/rank` (prefix `:-rank`, `:-levels`, `:-levelboard`, `:-ranks`) is the level leaderboard: member, level, Vex points and Nightmare points, ordered by level and then total points. It pages 10 members at a time with the same buttons as `/top`. Because `/rank` is a real command, `:-rank` reaches it even though `/top` still lists `rank` among its aliases; a command name always beats an alias.
+`/rank` (prefix `:-rank`, `:-levels`, `:-levelboard`, `:-ranks`) is the level leaderboard: member, level, coins, Vex points and Nightmare points, ordered by level and then total points. It pages 10 members at a time with the same buttons as `/top`. Because `/rank` is a real command, `:-rank` reaches it even though `/top` still lists `rank` among its aliases; a command name always beats an alias.
 
 | Field | How it is worked out |
 |---|---|
@@ -152,11 +152,14 @@ Role names are searched, not just matched exactly: `:-role سكان` finds **س�
 | Rank | Nightmare + vex among current members, including linked-bot points. Ties share a rank; 0 points has no rank; members who left are not ranked |
 | Level | `floor(xp / 100) + 1` |
 | XP bar | `xp % 100`, painted over the template track, from `0 / 100` to `99 / 100` |
+| Coins | 5 per level gained (level 1 pays nothing); staff can add or subtract with `/profile-edit` |
 | Nightmare, Vex | Staff points, plus the linked-bot balances when those are configured |
 | Punishments | `floor(punishment mini points / 7)` |
 | Good behavior | Manual points added or subtracted by staff |
 
-XP is `floor((nightmare + vex) / 5)`.
+XP is `floor((nightmare + vex) / 5)` minus the punishment toll. Each time the raw XP reaches a new high-water mark, 2 XP per displayed punishment is deducted from that gain (7 mini points = 1 punishment). The deduction is capped at the XP gained, so a card never goes backwards, and 3 punishments turn a `+10 XP` gain into `+4`. Points members already had were not charged when the rule was introduced.
+
+Coins are paid once per level: reaching level `L` means `5 × (L − 1)` coins in total. Everybody who had already levelled was backfilled once at startup (linked-bot points included), and a member who loses a level and regains it is not paid twice.
 
 ### Backgrounds
 
@@ -246,6 +249,8 @@ Every punishment the bot actually applies adds raw mini points; a refused or fai
 
 Repeating a punishment while it is still active counts once: a mute when the Muted role is already there, a timeout while one is running, and a ban for someone already banned add nothing. An exile's points follow the highest level it reached: raising the level adds only the difference, while lowering it or repeating it adds nothing. A fresh punishment after release or expiry counts again.
 
+Punishment points are not only cosmetic: every new XP gain costs 2 XP per displayed punishment, so a member with 3 punishments needs 106 XP to advance a level instead of 100. See the table under [Profile cards](#profile-cards) for the exact rule.
+
 Existing exile rows are imported once per guild at their own level's value (`main` 0, levels 1–9 their number, level 10 = ten punishments), the first time `/profile`, `/profile-edit` or `/exile` runs. Mutes, timeouts, kicks and bans have no history table, so they start at zero.
 
 ### Editing
@@ -253,12 +258,12 @@ Existing exile rows are imported once per guild at their own level's value (`mai
 `/profile-edit` requires **Manage Server** and can be opened to a role with `/perm grant @Role profile-edit`.
 
 ```text
-/profile-edit user:@member title:The Keeper nightmare:10 vex:-5 punishment:7 behavior:3
+/profile-edit user:@member title:The Keeper nightmare:10 vex:-5 punishment:7 behavior:3 coins:25
 :-profile-edit @member title The Keeper
-:-profile-edit @member nightmare +10 vex -5 punishment +7 behavior -2
+:-profile-edit @member nightmare +10 vex -5 punishment +7 behavior -2 coins +25
 ```
 
-Values are deltas, not replacements. Every stored field is clamped at zero, so a correction can empty a field but never push it negative. The `punishment` option is raw mini points (`7` is one displayed punishment). `title:reset` (or `:-profile-edit @member title reset`) clears the title.
+Values are deltas, not replacements. Every stored field is clamped at zero, so a correction can empty a field but never push it negative. The `punishment` option is raw mini points (`7` is one displayed punishment). `title:reset` (or `:-profile-edit @member title reset`) clears the title. `coins` works like the other fields: `coins:25` adds 25 and `coins:-10` takes 10 away.
 
 ## Activity stats
 
@@ -809,7 +814,7 @@ src/
     birthday-roles.js   role add/remove with permission-safe errors
     birthday-greetings.js greeting rendering, preview, delivery + dedupe
     birthday-scheduler.js per-member reconciliation + scheduler
-    profile-store.js    points, titles, XP/level math, punishment weights, rank
+    profile-store.js    points, titles, coins, XP/level math, punishment weights, rank
     profile-card.js     canvas renderer: template, fonts, panels, XP bar
     welcome-store.js    welcome settings, per-style text and GIFs
     welcome-styles.js   the six card layouts and their text pieces

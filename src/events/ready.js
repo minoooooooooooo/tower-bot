@@ -6,6 +6,8 @@ import { createLogger } from '../lib/logger.js';
 import { startBirthdayScheduler } from '../services/birthday-scheduler.js';
 import { startSummaryScheduler } from '../services/summary-scheduler.js';
 import { startModerationScheduler } from '../services/moderation-scheduler.js';
+import { linkedPoints } from '../services/ebot-vex.js';
+import { ensureCoinBackfill } from '../services/profile-store.js';
 import {
   reconcileVoiceSessions,
   startActivityHeartbeat,
@@ -36,6 +38,20 @@ export default {
     } catch (error) {
       // Stats are useful but never worth blocking startup.
       logger.error('Could not start activity tracking', error);
+    }
+
+    // Pay the levels members already earned once, before their first card view.
+    for (const guild of client.guilds.cache.values()) {
+      try {
+        const linked = await linkedPoints(client, guild.id);
+        const seeded = ensureCoinBackfill(guild.id, linked);
+
+        if (seeded > 0) {
+          logger.info(`Backfilled coins for ${seeded} profile(s) in ${guild.id}`);
+        }
+      } catch (error) {
+        logger.warn(`Could not backfill coins for ${guild.id}: ${error.message}`);
+      }
     }
 
     if (!config.clientId) {

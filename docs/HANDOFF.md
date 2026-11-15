@@ -1,6 +1,6 @@
 # Handoff — Discord bot
 
-Last updated: 2026-11-14. Read this before continuing work. It exists so a fresh
+Last updated: 2026-11-15. Read this before continuing work. It exists so a fresh
 OpenCode session can resume without the original conversation.
 
 ## Status
@@ -64,6 +64,30 @@ keeps `rest.rejectOnRateLimit` and the admin-only ticket close. `.tcc/` is
 runtime state and is git-ignored. Setup and security notes:
 [`tcc.md`](tcc.md).
 
+**Coins and punishment XP (added 2026-11-15).** `assets/profile/card.png` is now
+template v5: the old RANK panel split into **COINS** (wide, left), **LEVEL**
+(narrow) and **RANK** (small, right); the other panels and the XP track did not
+move. The six panels are still controlled by `PANELS` / `PANEL_LABELS` in
+`src/services/profile-card.js`, and the background ladder was not touched.
+
+Members earn **5 coins per level** (level 1 pays nothing, so level `L` means
+`5 × (L − 1)` coins). Existing members are backfilled once per guild at startup
+(`ensureCoinBackfill`, flagged by `profile_meta.coins_seeded_at`, linked-bot
+points included). `/profile-edit` gained a `coins` option (prefix field `coins`
+or `coin`) that works like the other points, and `/profile` (COINS panel) and
+`/rank` (per-row coins) display the balance.
+
+Punishment points now cost XP. The profile row stores `xp_penalty` (XP taken so
+far) and `xp_seen` (high-water raw XP). Every time raw XP `floor((nightmare +
+vex) / 5)` reaches a new high, the gain is reduced by `2 × displayed
+punishments` XP, capped at the gain, so nobody goes backwards. 3 punishments
+turn a +10 XP gain into +4. `xpFor()` subtracts the penalty everywhere (level,
+XP bar, rank, backgrounds), the first observation of a profile seeds history
+instead of charging it, and staff point corrections never lower the high-water
+mark (no double charging when linked bots fail and recover). SQLite columns
+`coins`, `level_coins_paid`, `xp_penalty`, `xp_seen` are added by
+`COLUMN_MIGRATIONS`.
+
 ## What exists
 
 | Command | Aliases | Notes |
@@ -74,7 +98,7 @@ runtime state and is git-ignored. Setup and security notes:
 | `/color [primary] [secondary]` | `colour` | Recolor or clear the highest role that only you have |
 | `/colors` | `colours`, `palette` | Every color name in Arabic and English |
 | `/top [messages\|voice] [all\|7d\|30d] [limit]` | `leaderboard`, `ranking`, `rank` | Member activity ranking |
-| `/rank [per page]` | `rank`, `levels`, `levelboard`, `ranks` | Member level ranking with Vex and Nightmare points |
+| `/rank [per page]` | `rank`, `levels`, `levelboard`, `ranks` | Member level ranking with coins, Vex and Nightmare points |
 | `/topchannels [all\|7d\|30d] [limit]` | `channels`, `top-channels` | Text-channel ranking by messages |
 | `/compare <@member> <@member> [period]` | `versus`, `vs` | Messages and voice time side by side |
 | `/serverstats` | `activity`, `serveractivity`, `sstats` | Server totals, top member and top channel |
@@ -87,7 +111,7 @@ runtime state and is git-ignored. Setup and security notes:
 | `/ticket <sub>` | `tickets`, `ticket-tool`, `support` | Named customizable panels with your own buttons, private channels, claim/close and HTML transcripts |
 | `/clear <amount> [user]` | `purge`, `prune` | Bulk-delete recent messages, optionally from one member |
 | `/avatar [user]` | `av`, `pfp` | Global + per-server avatar |
-| `/profile [user]` | `card`, `profilecard` | Generated PNG card: title, rank, level, points, XP |
+| `/profile [user]` | `card`, `profilecard` | Generated PNG card: title, coins, rank, level, points, XP |
 | `/banner [user]` | `userbanner` | Profile banner, fetched fresh |
 | `/server-avatar [server]` | `serverav`, `servericon`, `sicon` | Server icon; another server only if the bot is in it |
 | `/server-banner [server]` | `serverbanner`, `sbanner` | Server banner; another server only if the bot is in it |

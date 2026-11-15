@@ -10,7 +10,7 @@ import { formatNumber, rankBadge } from '../../lib/activity-format.js';
 import { embed, warningEmbed } from '../../lib/embeds.js';
 import { createLogger } from '../../lib/logger.js';
 import { linkedPoints } from '../../services/ebot-vex.js';
-import { rankedProfiles } from '../../services/profile-store.js';
+import { ensureCoinBackfill, rankedProfiles } from '../../services/profile-store.js';
 
 const logger = createLogger('rank');
 
@@ -90,7 +90,8 @@ function buildPage(rows, state) {
   const lines = rows.slice(start, start + state.pageSize).map(
     (row, index) =>
       `\u200E${rankBadge(start + index)} <@${row.userId}>\u200E — ` +
-      `Level **${row.level}** · Vex **${formatNumber(row.vex)}** · ` +
+      `Level **${row.level}** · Coins **${formatNumber(row.coins)}** · ` +
+      `Vex **${formatNumber(row.vex)}** · ` +
       `Nightmare **${formatNumber(row.nightmare)}**`,
   );
 
@@ -204,6 +205,13 @@ export default {
       currentMemberIds(ctx.guild),
       linkedPoints(client, ctx.guildId),
     ]);
+
+    try {
+      ensureCoinBackfill(ctx.guildId, linked);
+    } catch {
+      // The leaderboard still renders when the one-time import cannot run.
+    }
+
     const rows = rankedProfiles(ctx.guildId, memberIds, linked);
     const state = { page: 1, pageSize };
     const built = buildPage(rows, state);

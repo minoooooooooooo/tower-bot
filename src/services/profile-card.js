@@ -23,8 +23,9 @@ const TITLE_BOX = { left: 860, right: 1750, baseline: 198 };
 
 // Label positions are baked into the artwork; only the values are drawn.
 const PANELS = {
-  rank: { x: 622, y: 292, width: 576, height: 162 },
-  level: { x: 1222, y: 292, width: 573, height: 162 },
+  coins: { x: 622, y: 292, width: 576, height: 162 },
+  level: { x: 1222, y: 292, width: 272, height: 162 },
+  rank: { x: 1519, y: 292, width: 276, height: 162 },
   vex: { x: 622, y: 482, width: 576, height: 166 },
   nightmare: { x: 1222, y: 482, width: 573, height: 166 },
   punishments: { x: 622, y: 676, width: 576, height: 166 },
@@ -45,8 +46,9 @@ const CUSTOM_LAYOUT = {
 
 const PANEL_LABELS = {
   title: 'TITLE',
-  rank: 'RANK',
+  coins: 'COINS',
   level: 'LEVEL',
+  rank: 'RANK',
   vex: 'VEX POINT',
   nightmare: 'NIGHTMARE POINTS',
   punishments: 'PUNISHMENTS',
@@ -904,8 +906,9 @@ export async function renderProfileCard({ member, stats, status = null, backgrou
   drawName(ctx, member);
 
   drawTitle(ctx, stats.title);
-  drawPanelValue(ctx, PANELS.rank, stats.rank ? `#${stats.rank}` : '');
+  drawPanelValue(ctx, PANELS.coins, formatNumber(stats.coins));
   drawPanelValue(ctx, PANELS.level, stats.level);
+  drawPanelValue(ctx, PANELS.rank, stats.rank ? `#${stats.rank}` : '');
   drawPanelValue(ctx, PANELS.vex, formatNumber(stats.vex));
   drawPanelValue(ctx, PANELS.nightmare, formatNumber(stats.nightmare));
   drawPanelValue(ctx, PANELS.punishments, formatNumber(stats.punishments));

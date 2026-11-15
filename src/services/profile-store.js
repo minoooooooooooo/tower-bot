@@ -35,6 +35,15 @@ export const POINTS_PER_XP = 5;
 /** Every level costs exactly this much XP. */
 export const XP_PER_LEVEL = 100;
 
+/** Each level gained pays this many coins; level 1 is the starting level. */
+export const COINS_PER_LEVEL = 5;
+
+/**
+ * Every XP gain costs this much XP per displayed punishment. A member with 3
+ * punishments turns a +10 XP gain into +4.
+ */
+export const XP_PENALTY_PER_PUNISHMENT = 2;
+
 export const MAX_TITLE_LENGTH = 32;
 
 const EMPTY_PROFILE = Object.freeze({
@@ -45,13 +54,38 @@ const EMPTY_PROFILE = Object.freeze({
   goodBehavior: 0,
   showBirthday: true,
   background: null,
+  coins: 0,
+  levelCoinsPaid: 0,
+  xpPenalty: 0,
+  xpSeen: 0,
   createdAt: null,
   updatedAt: null,
 });
 
-// Seeding the exile history is a one-time import per guild. Caching the answer
-// keeps the common path (a mute, a profile view) from touching the meta table.
+// Seeding the exile history and the coin backfill is a one-time job per guild.
+// Caching the answer keeps the common path (a mute, a profile view) from
+// touching the meta table.
 const seededGuilds = new Set();
+const coinSeededGuilds = new Set();
+const coinSeededCache = new Map();
+
+/**
+ * Whether this guild already ran the one-time coin import. Until it has, a
+ * profile's first observation seeds its history instead of charging the
+ * punishment toll; afterwards a row without a paid level is simply new.
+ */
+function coinsSeeded(guildId) {
+  if (coinSeededGuilds.has(guildId)) return true;
+  if (coinSeededCache.has(guildId)) return coinSeededCache.get(guildId);
+
+  const row = getDb()
+    .prepare('SELECT coins_seeded_at FROM profile_meta WHERE guild_id = ?')
+    .get(guildId);
+  const seeded = Boolean(row?.coins_seeded_at);
+
+  coinSeededCache.set(guildId, seeded);
+  return seeded;
+}
 
 function toProfile(row) {
   if (!row) return { ...EMPTY_PROFILE };
@@ -64,6 +98,10 @@ function toProfile(row) {
     goodBehavior: row.good_behavior,
     showBirthday: row.show_birthday !== 0,
     background: row.background ?? null,
+    coins: Number(row.coins) || 0,
+    levelCoinsPaid: Number(row.level_coins_paid) || 0,
+    xpPenalty: Number(row.xp_penalty) || 0,
+    xpSeen: Number(row.xp_seen) || 0,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -74,7 +112,8 @@ export function getProfile(guildId, userId) {
   const row = getDb()
     .prepare(
       `SELECT title, nightmare, vex, punish_mini, good_behavior, show_birthday,
-              background, created_at, updated_at
+              background, coins, level_coins_paid, xp_penalty, xp_seen,
+              created_at, updated_at
          FROM profiles WHERE guild_id = ? AND user_id = ?`,
     )
     .get(guildId, userId);
@@ -97,13 +136,14 @@ function upsertProfile(db, guildId, userId, now) {
 export function addProfilePoints(
   guildId,
   userId,
-  { nightmare = 0, vex = 0, punishMini = 0, goodBehavior = 0 } = {},
+  { nightmare = 0, vex = 0, punishMini = 0, goodBehavior = 0, coins = 0 } = {},
 ) {
   const deltas = {
     nightmare: Math.trunc(Number(nightmare) || 0),
     vex: Math.trunc(Number(vex) || 0),
     punish_mini: Math.trunc(Number(punishMini) || 0),
     good_behavior: Math.trunc(Number(goodBehavior) || 0),
+    coins: Math.trunc(Number(coins) || 0),
   };
 
   const db = getDb();
@@ -120,6 +160,7 @@ export function addProfilePoints(
               vex = MAX(0, vex + ?),
               punish_mini = MAX(0, punish_mini + ?),
               good_behavior = MAX(0, good_behavior + ?),
+              coins = MAX(0, coins + ?),
               updated_at = ?
         WHERE guild_id = ? AND user_id = ?`,
     ).run(
@@ -127,6 +168,7 @@ export function addProfilePoints(
       deltas.vex,
       deltas.punish_mini,
       deltas.good_behavior,
+      deltas.coins,
       now,
       guildId,
       userId,
@@ -328,8 +370,121 @@ export function ensureExileBackfill(guildId) {
   return users.size;
 }
 
-export function xpFor(profile) {
+/** Total coins a member has earned by reaching `level` (level 1 pays nothing). */
+export function coinsForLevel(level) {
+  const number = Math.trunc(Number(level) || 0);
+  return Math.max(0, number - 1) * COINS_PER_LEVEL;
+}
+
+/**
+ * Imports the coin balance of everybody who already levelled once per guild.
+ *
+ * The balance is the same one level-ups would have produced: 5 coins for every
+ * level above 1. `linked` (the optional `{ vex, nightmare }` maps from the
+ * linked bots) is folded in so the imported level matches the card. The
+ * high-water XP mark is stored too, so nobody is charged the punishment toll
+ * retroactively for experience they already had.
+ */
+export function ensureCoinBackfill(guildId, linked = null) {
+  if (coinSeededGuilds.has(guildId)) return 0;
+
+  const db = getDb();
+  const existing = db
+    .prepare('SELECT coins_seeded_at FROM profile_meta WHERE guild_id = ?')
+    .get(guildId);
+
+  if (existing?.coins_seeded_at) {
+    coinSeededGuilds.add(guildId);
+    coinSeededCache.set(guildId, true);
+    return 0;
+  }
+
+  const now = Date.now();
+  const rows = db
+    .prepare(
+      `SELECT user_id, nightmare, vex, coins, level_coins_paid
+         FROM profiles WHERE guild_id = ?`,
+    )
+    .all(guildId);
+  const stored = new Map(rows.map((row) => [row.user_id, row]));
+
+  // Members without a row can still hold linked points, so they are included.
+  const ids = new Set(stored.keys());
+
+  for (const points of [linked?.vex, linked?.nightmare]) {
+    for (const id of Object.keys(points ?? {})) ids.add(id);
+  }
+
+  const seeded = [];
+
+  for (const id of ids) {
+    const row = stored.get(id);
+
+    // A row that already settled its level keeps its balance.
+    if (row && row.level_coins_paid > 0) continue;
+
+    const nightmare = (row?.nightmare ?? 0) + (linked?.nightmare?.[id] ?? 0);
+    const vex = (row?.vex ?? 0) + (linked?.vex?.[id] ?? 0);
+    const xp = Math.floor((nightmare + vex) / POINTS_PER_XP);
+
+    if (!row && xp <= 0) continue;
+
+    const level = levelFor(xp);
+
+    seeded.push({
+      id,
+      coins: Math.max(Number(row?.coins) || 0, coinsForLevel(level)),
+      level,
+      xp,
+    });
+  }
+
+  const update = db.prepare(
+    `UPDATE profiles
+        SET coins = ?, level_coins_paid = ?, xp_seen = ?, updated_at = ?
+      WHERE guild_id = ? AND user_id = ?`,
+  );
+
+  db.exec('BEGIN');
+
+  try {
+    db.prepare(
+      `INSERT INTO profile_meta (guild_id, coins_seeded_at, updated_at)
+       VALUES (?, ?, ?)
+       ON CONFLICT (guild_id) DO UPDATE SET
+         coins_seeded_at = excluded.coins_seeded_at,
+         updated_at = excluded.updated_at`,
+    ).run(guildId, now, now);
+
+    for (const entry of seeded) {
+      upsertProfile(db, guildId, entry.id, now);
+      update.run(entry.coins, entry.level, entry.xp, now, guildId, entry.id);
+    }
+
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+
+  coinSeededGuilds.add(guildId);
+  coinSeededCache.set(guildId, true);
+  return seeded.length;
+}
+
+/** XP earned by the raw points alone, before the punishment toll. */
+export function rawXpFor(profile) {
   return Math.floor((profile.nightmare + profile.vex) / POINTS_PER_XP);
+}
+
+/**
+ * XP after the punishment toll. `xpPenalty` only grows when experience is
+ * gained, so an old punishment never rewrites history — it makes the next
+ * gains smaller.
+ */
+export function xpFor(profile) {
+  const penalty = Math.max(0, Math.trunc(Number(profile.xpPenalty) || 0));
+  return Math.max(0, rawXpFor(profile) - penalty);
 }
 
 export function levelFor(xp) {
@@ -343,6 +498,111 @@ export function progressFor(xp) {
 
 export function displayedPunishments(profile) {
   return Math.floor(profile.punishMini / PUNISHMENT_POINTS_PER_UNIT);
+}
+
+/**
+ * Works out the coin balance and the punishment toll without touching the
+ * database. `stored` is a profile from `getProfile`; `linked` is the optional
+ * `{ vex, nightmare }` maps from the linked bots; `seeded` says whether the
+ * guild already ran the one-time import.
+ *
+ * Before the import has run, the first time a profile is seen its history is
+ * seeded instead of charged: existing points, including linked ones, were
+ * earned before the system existed. Once the import is done, a new profile has
+ * no history, so its first gain is charged like any other. Every new XP
+ * high-water mark pays `2 × punishments` XP, capped at the XP gained so a
+ * member never goes backwards.
+ */
+function applySettlement(stored, linked, userId, seeded) {
+  const profile = withLinkedPoints(stored, linked, userId);
+  const xp = rawXpFor(profile);
+
+  let coins = stored.coins;
+  let levelCoinsPaid = stored.levelCoinsPaid;
+  let xpPenalty = stored.xpPenalty;
+  let xpSeen = stored.xpSeen;
+  let changed = false;
+
+  const fresh = !seeded && levelCoinsPaid <= 0 && xpSeen <= 0;
+
+  if (xp > xpSeen) {
+    if (fresh) {
+      const level = levelFor(xp);
+      coins = Math.max(coins, coinsForLevel(level));
+      levelCoinsPaid = level;
+    } else {
+      const gained = xp - xpSeen;
+      const toll = Math.min(
+        gained,
+        displayedPunishments(profile) * XP_PENALTY_PER_PUNISHMENT,
+      );
+
+      if (toll > 0) xpPenalty += toll;
+    }
+
+    xpSeen = xp;
+    changed = true;
+  }
+
+  const level = levelFor(Math.max(0, xp - xpPenalty));
+
+  if (level > levelCoinsPaid) {
+    coins += Math.max(0, level - Math.max(levelCoinsPaid, 1)) * COINS_PER_LEVEL;
+    levelCoinsPaid = level;
+    changed = true;
+  }
+
+  if (!changed) return { profile: stored, changed: false };
+
+  return {
+    profile: { ...stored, coins, levelCoinsPaid, xpPenalty, xpSeen },
+    changed: true,
+  };
+}
+
+function writeSettlement(db, guildId, userId, profile, now) {
+  upsertProfile(db, guildId, userId, now);
+  db.prepare(
+    `UPDATE profiles
+        SET coins = ?, level_coins_paid = ?, xp_penalty = ?, xp_seen = ?,
+            updated_at = ?
+      WHERE guild_id = ? AND user_id = ?`,
+  ).run(
+    profile.coins,
+    profile.levelCoinsPaid,
+    profile.xpPenalty,
+    profile.xpSeen,
+    now,
+    guildId,
+    userId,
+  );
+}
+
+/** Settles one member and stores the result. Never throws into a card render. */
+function settleProfile(guildId, userId, linked = null) {
+  const stored = getProfile(guildId, userId);
+  const settled = applySettlement(stored, linked, userId, coinsSeeded(guildId));
+
+  if (!settled.changed) return stored;
+
+  try {
+    const db = getDb();
+    const now = Date.now();
+
+    db.exec('BEGIN');
+
+    try {
+      writeSettlement(db, guildId, userId, settled.profile, now);
+      db.exec('COMMIT');
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
+  } catch (error) {
+    logger.warn(`Could not settle coins for ${userId}: ${error.message}`);
+  }
+
+  return { ...settled.profile };
 }
 
 /**
@@ -367,7 +627,8 @@ function withLinkedPoints(profile, linked, userId) {
  * Linked points count here exactly as they do on the card.
  */
 export function profileLevel(guildId, userId, linked = null) {
-  return levelFor(xpFor(withLinkedPoints(getProfile(guildId, userId), linked, userId)));
+  const settled = settleProfile(guildId, userId, linked);
+  return levelFor(xpFor(withLinkedPoints(settled, linked, userId)));
 }
 
 /**
@@ -382,12 +643,14 @@ export function rankedProfiles(guildId, memberIds, linked = null) {
   const present = new Set(memberIds);
   const local = new Map(
     getDb()
-      .prepare('SELECT user_id, nightmare, vex FROM profiles WHERE guild_id = ?')
+      .prepare(
+        `SELECT title, user_id, nightmare, vex, punish_mini, good_behavior,
+                show_birthday, background, coins, level_coins_paid, xp_penalty,
+                xp_seen, created_at, updated_at
+           FROM profiles WHERE guild_id = ?`,
+      )
       .all(guildId)
-      .map((row) => [
-        row.user_id,
-        { nightmare: Number(row.nightmare) || 0, vex: Number(row.vex) || 0 },
-      ]),
+      .map((row) => [row.user_id, toProfile(row)]),
   );
 
   const ids = new Set(local.keys());
@@ -397,29 +660,57 @@ export function rankedProfiles(guildId, memberIds, linked = null) {
   }
 
   const rows = [];
+  const pending = new Map();
+  const seeded = coinsSeeded(guildId);
 
   for (const id of ids) {
     if (!present.has(id)) continue;
 
-    const stored = local.get(id);
-    const nightmare = (stored?.nightmare ?? 0) + (linked?.nightmare?.[id] ?? 0);
-    const vex = (stored?.vex ?? 0) + (linked?.vex?.[id] ?? 0);
-    const score = nightmare + vex;
+    const settled = applySettlement(
+      local.get(id) ?? { ...EMPTY_PROFILE },
+      linked,
+      id,
+      seeded,
+    );
+
+    if (settled.changed) pending.set(id, settled.profile);
+
+    const profile = withLinkedPoints(settled.profile, linked, id);
+    const score = profile.nightmare + profile.vex;
 
     // A zero-score member is level 1 with nothing to show; the card gives them
     // no rank either, so they stay out of the list.
     if (score <= 0) continue;
 
-    const xp = xpFor({ nightmare, vex });
+    const xp = xpFor(profile);
 
     rows.push({
       userId: id,
-      nightmare,
-      vex,
+      nightmare: profile.nightmare,
+      vex: profile.vex,
+      coins: profile.coins,
       score,
       level: levelFor(xp),
       progress: progressFor(xp),
     });
+  }
+
+  if (pending.size > 0) {
+    const db = getDb();
+    const now = Date.now();
+
+    db.exec('BEGIN');
+
+    try {
+      for (const [id, profile] of pending) {
+        writeSettlement(db, guildId, id, profile, now);
+      }
+
+      db.exec('COMMIT');
+    } catch (error) {
+      db.exec('ROLLBACK');
+      logger.warn(`Could not settle the rank page: ${error.message}`);
+    }
   }
 
   rows.sort(
@@ -487,8 +778,8 @@ export function rankFor(guildId, userId, memberIds, score, linked = null) {
  * entered.
  */
 export function profileStats(guildId, userId, memberIds, linked = null) {
-  const stored = getProfile(guildId, userId);
-  const profile = withLinkedPoints(stored, linked, userId);
+  const settled = settleProfile(guildId, userId, linked);
+  const profile = withLinkedPoints(settled, linked, userId);
   const score = profile.nightmare + profile.vex;
   const xp = xpFor(profile);
 
