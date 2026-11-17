@@ -34,7 +34,7 @@ undeletable. The server was deleted and recreated; the new node logged in on the
 first attempt. Current state (boot 10:29 UTC): Node **26.12.1**, `Logged in as
 11/10#8627`, `SQLite ready at /home/container/data/bot.db`, scheduler running,
 slash commands registered instantly in "𝗧𝗵𝗲 𝗧𝗼𝘄𝗲𝗿 v2". The process now loads
-**46 commands / 8 events** (birthday, welcome, clear, colors, color, activity,
+**48 commands / 8 events** (birthday, welcome, clear, colors, color, activity,
 emoji stats, profile lookups and cards, backgrounds, nicknames, roles, moderation, summary, watch,
 glossary, autoreport, alias, tickets, and the six exile commands). The profile cards add `@napi-rs/canvas`, so the panel
 must run an install on the next restart before `/profile` can import.
@@ -77,6 +77,25 @@ points included). `/profile-edit` gained a `coins` option (prefix field `coins`
 or `coin`) that works like the other points, and `/profile` (COINS panel) and
 `/rank` (per-row coins) display the balance.
 
+**Coin transfers (added 2026-11-17).** `/coins` (prefix `:-coins`, aliases
+`coin`, `balance`, `wallet`) reads the caller's balance, another member's
+balance (`/coins user:@member`, `:-coins @member`), or sends coins
+(`/coins user:@member amount:50`, `:-coins @member 50`). The balance view and a
+transfer both run `ensureCoinBackfill` + `settleProfile` first, so the shown
+number includes a level the member just reached. Transfers go through
+`transferCoins` in `src/services/profile-store.js`: one SQLite transaction, the
+sender's balance read and checked inside it, so a refusal leaves both sides
+untouched; bots, self-pay and members who left are refused in the command;
+every success is logged.
+
+`/coins-config` (prefix `:-coins-config`, aliases `coin-config`, `coinsconfig`)
+is the management switch: `on`, `off` or `status` (**Manage Server**, grantable
+through `/perm grant`). The state lives in the `coin_settings` table
+(`guild_id`, `transfer_enabled`, `updated_at`; a missing row means on), read by
+`transferEnabled()` and written by `setTransferEnabled()`. Turning transfers off
+only blocks `transferCoins` calls from `/coins`; balances stay readable and no
+balance changes.
+
 Punishment points now cost XP. The profile row stores `xp_penalty` (XP taken so
 far) and `xp_seen` (high-water raw XP). Every time raw XP `floor((nightmare +
 vex) / 5)` reaches a new high, the gain is reduced by `2 × displayed
@@ -112,6 +131,8 @@ mark (no double charging when linked bots fail and recover). SQLite columns
 | `/clear <amount> [user]` | `purge`, `prune` | Bulk-delete recent messages, optionally from one member |
 | `/avatar [user]` | `av`, `pfp` | Global + per-server avatar |
 | `/profile [user]` | `card`, `profilecard` | Generated PNG card: title, coins, rank, level, points, XP |
+| `/coins [user] [amount]` | `coin`, `balance`, `wallet` | Own balance, another member's balance, or a transfer |
+| `/coins-config [on\|off\|status]` | `coin-config`, `coinsconfig` | Turn coin transfers on/off (Manage Server, grantable) |
 | `/banner [user]` | `userbanner` | Profile banner, fetched fresh |
 | `/server-avatar [server]` | `serverav`, `servericon`, `sicon` | Server icon; another server only if the bot is in it |
 | `/server-banner [server]` | `serverbanner`, `sbanner` | Server banner; another server only if the bot is in it |
@@ -818,7 +839,7 @@ Behavior that must be preserved:
 ## Verification used so far
 
 - `node --check` across all `src/**/*.js`.
-- Load test with a fake token: 46 commands, 8 events, clean login failure.
+- Load test with a fake token: 48 commands, 8 events, clean login failure.
 - Date math: Feb 29 in leap/non-leap years, timezone date shift (`America/New_York`), year rollover.
 - Scheduler: role added on birthday, removed the next day, removed immediately when the birthday is deleted.
 - Command paths: set (valid/invalid), list, next, today, remove, admin guards, role set/clear, timezone invalid/valid.
@@ -829,7 +850,7 @@ Behavior that must be preserved:
 - Profile/status integration test on a temp DB (126 checks): schema and `show_birthday` migration, points/titles/rank, card PNG dimensions and XP pixels, status-block artwork visibility and presence-dot colours, long/Arabic values, `/profile` slash and prefix replies, `/profile-edit`, birthday visibility defaults, the `/birthday show` slash/prefix toggle, exile level points (per-level backfill, `main` = 0, level 10 = ten punishments, escalation deltas, no subtraction on a downgrade), and linked-bot points (`profileStats`/`rankFor` adding `{ vex, nightmare }` to the stored numbers and the ranking).
 - Nickname/role integration test with fake guild/member/role objects (107 checks): `/nickname` slash and prefix self-renames, reset words and an empty name, renaming another member with and without **Manage Nicknames**, mention targeting, the bot renaming itself, the server owner, hierarchy and bot-permission refusals, the 32-character cap, escaped markdown in the confirmation, and API failure messages; `/role` schema and Manage Roles default, toggle on/off, `+`/`-` in every accepted position, the words `add`/`remove`, idempotent add/remove, spaced role names, partial Arabic name search (`سكان` → `سكان البرج`), `@`-prefixed search, starts-with outranking contains, an ambiguous word (`رون`) refused with every candidate listed and nothing changed, a word with no match, member targeting, slash toggle/add/remove, `all`/`bots` bulk add/remove/toggle with skip and failure counts, `@everyone`/managed/higher-role refusals, higher-member refusal, missing bot permission, unknown role, usage text, and no-ping payloads.
 - Alias integration test on a temp DB (142 checks): store roundtrip, guild scoping, normalization (diacritics, alef variants, case, upsert in place), remove/clear, table creation; channel rules (allow/deny storage, mode switching clears the old list, removing the last channel resets, clear, category and thread inheritance, cache invalidation, cleanup on remove/clear); dispatch (`مسح 100` → `clear` with `["100"]`, quotes, no arguments, ordinary chat not hijacked, unknown word, missing permission stays silent, owner-only refused for others and allowed for the owner, broken target explained, slash-only target explained, a real command name outranks an alias and the alias returns when that command is removed, allow/deny silence incl. threads and the prefixed form); `messageCreate` for the bare and `:-`-prefixed forms with real commands unaffected; the command surface (add/update/remove/list, channel allow/deny/remove/clear/list, slash options and autocomplete, one-word/punctuation/emoji/length validation, command-name and built-in-alias refusal, unknown command, slash-only and `alias` targets, Manage Server guard on add/remove/channel but not list, prefixed and slashed command input cleaned, common-word warning, the 50-alias limit with updates still allowed, empty list, usage text, broken-row marker, footer count), `help <command>` merging custom aliases with built-ins (no aliases, merged field, resolving a custom alias, other commands excluded, built-in duplicate printed once), and the slash schema.
-- `node src/boot.js` with a fake token logs the runtime version, loads 46 commands / 8 events, then fails login cleanly with `TokenInvalid`.
+- `node src/boot.js` with a fake token logs the runtime version, loads 48 commands / 8 events, then fails login cleanly with `TokenInvalid`.
 - TCC smoke test: the same boot with no TCC values loads normally (agent inert); with `TCC_URL=wss://…` and `TCC_AGENT_SECRET` set the agent starts without throwing, and a non-`wss://` URL disables it with a warning. The agent has no startup network dependency, so a backend outage cannot stop the bot.
 - Welcome integration test on a temp DB (207 checks): style metadata (six keys, modal inputs ≤5, unique keys, label/default limits, known placeholders), settings/text/gif store roundtrips (JSON `enabled`, last style, per-style GIF, per-piece override, clear one/all), style selection (random never repeats, stays inside the enabled set, rotate cycles and wraps, single pins, disabled style falls back, empty list means all), all six payloads (ledger rows/date/count/timestamp, classic thumbnail/fields/shared labels/GIF, poster banner→splash→icon fallback and GIF precedence, story floor, whisper two lines without timestamp, concierge link buttons and the welcome-channel fallback), a GIF on every style, overrides and blank-override fallback, unknown style fallback, ping rules (`allowedMentions` = new member only, title mentions still ping from content), ordinal helper, `guildMemberAdd` (posts once, records the style, skips bots, skips without a channel, failed send keeps `last_style`), and the command surface (channel set/clear + admin guard, mode validation, toggle + last-style guard, list with GIF markers, ephemeral preview, per-style gif set/show/invalid/clear, modal open and prefill, prefix edit redirect, reset one/all, links, overview) including modal submit (save, default-detection, empty clears, unknown placeholder warning, title/footer mention warning, GIF saved per style from any card's modal, invalid GIF rejecting the whole submit, admin guard) and the slash schema. A separate migration script moves a legacy `welcome_settings.gif_url` into `welcome_gifs` on boot.
 - Report integration test on a temp DB with a stubbed `fetch` (260 checks): windowed history reads (only the requested range, oldest-first, cap + truncation flag), transcript format and chunking, `normalizeSummary` against drifted model output (strings for objects, unknown keys, overlong text, item caps), single-call vs map-reduce paths (progress callback, merge call content, glossary and focus reaching the prompt), provider failures (retry on 5xx, non-JSON reply, 429 with the provider message and retry-after in `aiProblemHint`, fenced/prose JSON extraction), summary-channel store roundtrip and clear, saved-report roundtrip and guild scoping, glossary upsert/remove/clear and prompt formatting, keyword normalization (diacritics, alef variants, case), whole-word matching for Latin and Arabic, term CRUD and duplicates, channel alert payload (jump link, keywords, an @everyone ping in content outside the embed, quote), skips for bots/empty/unrelated text, quiet-window throttling, missing/deleted-channel handling, HTML export (RTL detection, action items, print stylesheet, safe filename, HTML escaping), and the command surfaces (missing key hint, targeted-without-focus, hours bounds, prefix run posting + storage + export button, management-channel routing, private run, slash run, channel config + Manage Server guard, export file, history list, watch add/list/remove/validation, glossary add/list/guard) plus the five new tables.

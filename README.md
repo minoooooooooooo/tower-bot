@@ -79,6 +79,8 @@ Both run `src/boot.js`, which checks the Node version before loading the bot and
 | `/emojibackfill [start\|status\|cancel]` | `:-importemojis`, `:-emojihistory` | Import older messages into the emoji stats (owner-only) |
 | `/avatar [user]` | `:-av`, `:-pfp` | Show a member's global and per-server avatar |
 | `/profile [user]` | `:-card`, `:-profilecard` | Generated profile card: status, role and point panels |
+| `/coins [user] [amount]` | `:-coin`, `:-balance`, `:-wallet` | Show your balance, show another member's, or send coins to a member |
+| `/coins-config [on\|off\|status]` | `:-coin-config`, `:-coinsconfig` | Turn coin transfers between members on or off (Manage Server, grantable) |
 | `/background <subcommand>` | `:-bg`, `:-theme`, `:-wallpaper` | Pick an unlocked card design or upload a custom wallpaper |
 | `/banner [user]` | `:-userbanner` | Show a member's profile banner |
 | `/server-avatar [server]` | `:-serverav`, `:-servericon`, `:-sicon` | Show a server icon, including another server the bot is in |
@@ -160,6 +162,20 @@ Role names are searched, not just matched exactly: `:-role سكان` finds **س�
 XP is `floor((nightmare + vex) / 5)` minus the punishment toll. Each time the raw XP reaches a new high-water mark, 2 XP per displayed punishment is deducted from that gain (7 mini points = 1 punishment). The deduction is capped at the XP gained, so a card never goes backwards, and 3 punishments turn a `+10 XP` gain into `+4`. Points members already had were not charged when the rule was introduced.
 
 Coins are paid once per level: reaching level `L` means `5 × (L − 1)` coins in total. Everybody who had already levelled was backfilled once at startup (linked-bot points included), and a member who loses a level and regains it is not paid twice.
+
+### Spending coins
+
+`/coins` (prefix `:-coins`, aliases `:-coin`, `:-balance`, `:-wallet`) reads:
+
+| Form | Result |
+|---|---|
+| `/coins` or `:-coins` | Your own balance |
+| `/coins user:@member` or `:-coins @member` | That member's balance |
+| `/coins user:@member amount:50` or `:-coins @member 50` | Send 50 coins to that member |
+
+A transfer is atomic: the sender's balance is checked first, so an amount larger than the balance changes nothing. The command refuses bots, yourself and members who have left the server. Every transfer is logged with the sender, the recipient and the amount.
+
+Coin transfers are on by default. `/coins-config off` (prefix `:-coins-config off`, **Manage Server**, grantable with `/perm grant`) stops transfers while leaving balances readable; `/coins-config on` turns them back on and `/coins-config status` shows the current state. Turning transfers off does not touch any balance.
 
 ### Backgrounds
 

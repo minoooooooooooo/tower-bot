@@ -183,6 +183,90 @@ export function addProfilePoints(
   return getProfile(guildId, userId);
 }
 
+/** Whether members may send coins to each other in this guild. Defaults to on. */
+export function transferEnabled(guildId) {
+  const row = getDb()
+    .prepare('SELECT transfer_enabled FROM coin_settings WHERE guild_id = ?')
+    .get(guildId);
+
+  return row ? row.transfer_enabled !== 0 : true;
+}
+
+/** Turns coin transfers on or off for this guild. */
+export function setTransferEnabled(guildId, enabled) {
+  const now = Date.now();
+
+  getDb()
+    .prepare(
+      `INSERT INTO coin_settings (guild_id, transfer_enabled, updated_at)
+       VALUES (?, ?, ?)
+       ON CONFLICT (guild_id) DO UPDATE SET
+         transfer_enabled = excluded.transfer_enabled,
+         updated_at = excluded.updated_at`,
+    )
+    .run(guildId, enabled ? 1 : 0, now);
+
+  return Boolean(enabled);
+}
+
+/**
+ * Moves coins between two members. The whole move is one transaction, and the
+ * sender's balance is checked first, so a failed transfer leaves both sides
+ * untouched. Returns the new balances.
+ */
+export function transferCoins(guildId, fromUserId, toUserId, amount) {
+  const value = Number(amount);
+
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    return { ok: false, reason: 'amount' };
+  }
+
+  if (fromUserId === toUserId) {
+    return { ok: false, reason: 'self' };
+  }
+
+  const db = getDb();
+  const now = Date.now();
+  const read = db.prepare(
+    'SELECT coins FROM profiles WHERE guild_id = ? AND user_id = ?',
+  );
+  let fromBalance = 0;
+  let toBalance = 0;
+
+  db.exec('BEGIN');
+
+  try {
+    upsertProfile(db, guildId, fromUserId, now);
+    upsertProfile(db, guildId, toUserId, now);
+
+    const balance = Number(read.get(guildId, fromUserId)?.coins) || 0;
+
+    if (balance < value) {
+      db.exec('ROLLBACK');
+      return { ok: false, reason: 'funds', balance };
+    }
+
+    const target = Number(read.get(guildId, toUserId)?.coins) || 0;
+    const update = db.prepare(
+      `UPDATE profiles SET coins = ?, updated_at = ?
+        WHERE guild_id = ? AND user_id = ?`,
+    );
+
+    update.run(balance - value, now, guildId, fromUserId);
+    update.run(target + value, now, guildId, toUserId);
+
+    db.exec('COMMIT');
+    fromBalance = balance - value;
+    toBalance = target + value;
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+
+  logger.info(`Coins: ${fromUserId} sent ${value} to ${toUserId} in ${guildId}`);
+  return { ok: true, fromBalance, toBalance };
+}
+
 /** Sets or clears the title. `null` makes the card show "No Title". */
 export function setProfileTitle(guildId, userId, title) {
   const cleaned = title === null || title === undefined
@@ -579,7 +663,7 @@ function writeSettlement(db, guildId, userId, profile, now) {
 }
 
 /** Settles one member and stores the result. Never throws into a card render. */
-function settleProfile(guildId, userId, linked = null) {
+export function settleProfile(guildId, userId, linked = null) {
   const stored = getProfile(guildId, userId);
   const settled = applySettlement(stored, linked, userId, coinsSeeded(guildId));
 

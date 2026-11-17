@@ -421,6 +421,13 @@ const SCHEMA = `
     updated_at      INTEGER NOT NULL
   );
 
+  -- Coin transfers are on by default; a guild can turn them off.
+  CREATE TABLE IF NOT EXISTS coin_settings (
+    guild_id         TEXT PRIMARY KEY,
+    transfer_enabled INTEGER NOT NULL DEFAULT 1,
+    updated_at       INTEGER NOT NULL
+  );
+
   -- Dry-run counterpart to activity_backfill. It walks the same channels but
   -- only counts what it sees, so the totals can be checked without writing.
   CREATE TABLE IF NOT EXISTS activity_backfill_audit (
