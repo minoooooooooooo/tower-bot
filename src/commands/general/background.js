@@ -5,6 +5,7 @@ import {
   SlashCommandBuilder,
 } from 'discord.js';
 import { createLogger } from '../../lib/logger.js';
+import { config } from '../../config.js';
 import { COLORS, embed, errorEmbed, infoEmbed, successEmbed } from '../../lib/embeds.js';
 import { resolveUser } from '../../lib/resolve.js';
 import { linkedPoints } from '../../services/ebot-vex.js';
@@ -31,6 +32,7 @@ import {
   profileLevel,
   setProfileBackground,
 } from '../../services/profile-store.js';
+import { ownedBackgroundIds } from '../../services/store.js';
 
 const logger = createLogger('background');
 
@@ -99,35 +101,46 @@ function attachmentOf(ctx) {
   );
 }
 
-function selectionState(ctx, stored, level, hasCustom) {
+function selectionState(ctx, stored, level, hasCustom, owned) {
   const selected = resolveBackground({
     selected: stored.background,
     level,
     hasCustom,
     customPath: hasCustom ? customWallpaperPath(ctx.guildId, ctx.user.id) : null,
+    owned,
   });
 
   const requestedTier = backgroundById(stored.background);
   const lockedTier =
-    requestedTier && !isBackgroundUnlocked(requestedTier, level) ? requestedTier : null;
+    requestedTier && !isBackgroundUnlocked(requestedTier, level, owned) ? requestedTier : null;
   const customMissing = stored.background === CUSTOM_ID && !hasCustom;
 
   return { selected, lockedTier, customMissing };
 }
 
-function listEmbed(ctx, level, stored, hasCustom) {
-  const { selected, lockedTier, customMissing } = selectionState(ctx, stored, level, hasCustom);
-  const unlocked = new Set(unlockedBackgrounds(level).map((background) => background.id));
+function listEmbed(ctx, level, stored, hasCustom, owned) {
+  const { selected, lockedTier, customMissing } = selectionState(ctx, stored, level, hasCustom, owned);
+  const unlocked = new Set(unlockedBackgrounds(level, owned).map((background) => background.id));
+  const storeHint = ctx.isSlash ? '/store buy item:' : `${config.prefix}store buy `;
 
   const lines = BACKGROUNDS.map((background) => {
     const current =
       stored.background === background.id || (!stored.background && background.id === 'default');
     const mark = current ? '➡️' : unlocked.has(background.id) ? '✅' : '🔒';
-    const levelText = background.id === 'default' ? 'always' : `level ${background.level}`;
-    const lock = unlocked.has(background.id)
-      ? ''
-      : ` · ${formatPoints(pointsForLevel(background.level))} points`;
-    const price = background.price > 0 ? ` · ${formatPoints(background.price)} points to buy` : '';
+    const levelText =
+      background.id === 'default'
+        ? 'always'
+        : background.price > 0
+          ? 'store design'
+          : `level ${background.level}`;
+    const lock =
+      background.price > 0 || unlocked.has(background.id)
+        ? ''
+        : ` · ${formatPoints(pointsForLevel(background.level))} points`;
+    const price =
+      background.price > 0 && !unlocked.has(background.id)
+        ? ` · ${formatPoints(background.price)} coins · buy with \`${storeHint}design:${background.id}\``
+        : '';
 
     return `${mark} **${background.name}** — ${levelText}${lock}${price}`;
   });
@@ -182,18 +195,20 @@ async function handleList(ctx, client) {
   const level = await levelOf(ctx, client, ctx.user.id);
   const hasCustom = hasCustomWallpaper(ctx.guildId, ctx.user.id);
   const stored = getProfile(ctx.guildId, ctx.user.id);
+  const owned = ownedBackgroundIds(ctx.guildId, ctx.user.id);
 
   // Apply the newest free design before showing the ladder, so a member who
   // just crossed a level sees the same pick their card will use.
   stored.background = syncAutoBackground(ctx.guildId, ctx.user.id, level, { hasCustom });
 
-  const payload = { embeds: [listEmbed(ctx, level, stored, hasCustom)] };
+  const payload = { embeds: [listEmbed(ctx, level, stored, hasCustom, owned)] };
   await respond(ctx, payload);
 }
 
 async function handleSet(ctx, client, query) {
   const raw = String(query ?? '').trim();
   const level = await levelOf(ctx, client, ctx.user.id);
+  const owned = ownedBackgroundIds(ctx.guildId, ctx.user.id);
 
   if (!raw) {
     await respond(ctx, {
@@ -253,26 +268,26 @@ async function handleSet(ctx, client, query) {
     return;
   }
 
-  if (!isBackgroundUnlocked(background, level)) {
+  if (!isBackgroundUnlocked(background, level, owned)) {
+    if (background.price > 0) {
+      await respond(ctx, {
+        embeds: [
+          errorEmbed(
+            'Not unlocked yet',
+            `**${background.name}** is a store design and costs **${formatPoints(background.price)}** coins. ` +
+              `Buy it with \`${ctx.isSlash ? '/store buy item:' : `${config.prefix}store buy `}design:${background.id}\`.`,
+          ),
+        ],
+      });
+      return;
+    }
+
     await respond(ctx, {
       embeds: [
         errorEmbed(
           'Still locked',
           `**${background.name}** unlocks at level **${background.level}** ` +
             `(${formatPoints(pointsForLevel(background.level))} points). You are level ${level}.`,
-        ),
-      ],
-    });
-    return;
-  }
-
-  if (background.price > 0) {
-    await respond(ctx, {
-      embeds: [
-        errorEmbed(
-          'Not available yet',
-          `**${background.name}** is part of the purchase collection. ` +
-            'Buying designs is not enabled yet.',
         ),
       ],
     });

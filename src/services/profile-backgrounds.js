@@ -297,12 +297,16 @@ export function backgroundById(id) {
   return BACKGROUNDS.find((background) => background.id === id) ?? null;
 }
 
-export function isBackgroundUnlocked(background, level) {
-  return Boolean(background) && background.level <= Math.max(1, Number(level) || 1);
+export function isBackgroundUnlocked(background, level, owned = null) {
+  if (!background) return false;
+  if (owned?.has?.(background.id)) return true;
+  if (Array.isArray(owned) && owned.includes(background.id)) return true;
+
+  return background.level <= Math.max(1, Number(level) || 1);
 }
 
-export function unlockedBackgrounds(level) {
-  return BACKGROUNDS.filter((background) => isBackgroundUnlocked(background, level));
+export function unlockedBackgrounds(level, owned = null) {
+  return BACKGROUNDS.filter((background) => isBackgroundUnlocked(background, level, owned));
 }
 
 /** The cheapest design that is still locked, or null when everything is open. */
@@ -397,7 +401,8 @@ export function syncAutoBackground(guildId, userId, level, { hasCustom = false }
 /**
  * Turns the stored preference into something the renderer understands. A design
  * the member has since fallen below falls back to Classic rather than showing
- * something they no longer earn. An uploaded wallpaper stays available once it
+ * something they no longer earn. A design bought from the store stays
+ * available at any level. An uploaded wallpaper stays available once it
  * exists, so a temporary point correction does not delete it.
  */
 export function resolveBackground({
@@ -405,6 +410,7 @@ export function resolveBackground({
   level = 1,
   hasCustom = false,
   customPath = null,
+  owned = null,
 } = {}) {
   if (selected === CUSTOM_ID && hasCustom && customPath) {
     return {
@@ -419,7 +425,7 @@ export function resolveBackground({
 
   const background = backgroundById(selected);
 
-  if (isBackgroundUnlocked(background, level)) {
+  if (isBackgroundUnlocked(background, level, owned)) {
     return {
       kind: background.theme ? 'tier' : 'default',
       ...background,

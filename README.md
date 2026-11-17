@@ -81,6 +81,8 @@ Both run `src/boot.js`, which checks the Node version before loading the bot and
 | `/profile [user]` | `:-card`, `:-profilecard` | Generated profile card: status, role and point panels |
 | `/coins [user] [amount]` | `:-coin`, `:-balance`, `:-wallet` | Show your balance, show another member's, or send coins to a member |
 | `/coins-config [on\|off\|status]` | `:-coin-config`, `:-coinsconfig` | Turn coin transfers between members on or off (Manage Server, grantable) |
+| `/store [browse\|buy\|owned]` | `:-shop` | Spend coins on designs, XP, good behaviour, a title, a custom role or an emoji |
+| `/store-config <subcommand>` | `:-store-admin`, `:-shop-config` | Set prices, hide items, clear a member's purchases (Manage Server) |
 | `/background <subcommand>` | `:-bg`, `:-theme`, `:-wallpaper` | Pick an unlocked card design or upload a custom wallpaper |
 | `/banner [user]` | `:-userbanner` | Show a member's profile banner |
 | `/server-avatar [server]` | `:-serverav`, `:-servericon`, `:-sicon` | Show a server icon, including another server the bot is in |
@@ -177,6 +179,43 @@ A transfer is atomic: the sender's balance is checked first, so an amount larger
 
 Coin transfers are on by default. `/coins-config off` (prefix `:-coins-config off`, **Manage Server**, grantable with `/perm grant`) stops transfers while leaving balances readable; `/coins-config on` turns them back on and `/coins-config status` shows the current state. Turning transfers off does not touch any balance.
 
+### Store
+
+`/store` (prefix `:-store`, alias `:-shop`) lists everything for sale with your balance; `/store buy <item>` spends coins and delivers the item immediately; `/store owned` shows what you have bought. The same key works from both styles:
+
+```
+:-store
+:-store buy xp-10
+:-store buy profile-title The Keeper
+:-store buy custom-role Sunset #ff8800
+:-store buy emoji-slot tower_star      (attach the image)
+:-store owned
+```
+
+| Item | Default price | What you get |
+|---|---|---|
+| `xp-10` | 40 | +10 XP (50 Nightmare points). Punishments still tax the gain. |
+| `behavior-25` | 30 | +25 good behaviour points |
+| `profile-title` | 60 | Sets the title on your card (buy again to change it) |
+| `emoji-slot` | 75 | The bot uploads an emoji you provide (max 3 per member) |
+| `custom-role` | 120 | A role with your name and colour, created and assigned (one per member) |
+| `design:<id>` | design's `price` | Unlocks a paid card design for good |
+
+A purchase is charged and recorded in one database transaction. If the delivery then fails — no free emoji slot, missing **Manage Roles**, a Discord error — the coins are refunded automatically and the record is marked `refunded`, so nobody pays for an item they did not get. Role names are 1–32 characters, emoji names use letters, numbers and `_`, and emoji images are limited to 256 KB (PNG, JPEG, WebP or GIF); everything is checked before the coins are taken.
+
+`/store-config` (prefix `:-store-config`, **Manage Server**, grantable) changes a server's prices and visibility without touching the code:
+
+| Form | Result |
+|---|---|
+| `/store-config list` | Every item with its price, visibility and sales |
+| `/store-config price item:xp-10 price:25` | Charge 25 coins (0 makes it free) |
+| `/store-config disable item:emoji-slot` | Hide an item; balances and existing purchases are untouched |
+| `/store-config enable item:emoji-slot` | Put it back on sale |
+| `/store-config reset item:xp-10` | Back to the default price and visibility |
+| `/store-config reset-user user:@member [item]` | Clear a member's purchases so they can buy again |
+
+Paid backgrounds are not in the catalogue until you add them: give a design in [`assets/profile/backgrounds/backgrounds.json`](assets/profile/backgrounds/backgrounds.json) a `"price"` and the store lists it as `design:<id>` on the next restart. No code change is needed.
+
 ### Backgrounds
 
 A new free design unlocks every five levels and **equips itself automatically** when the member reaches its level. The member can still switch to any unlocked design with `/background set`; the next free unlock replaces a lower automatic pick. The classic artwork is always available.
@@ -194,7 +233,7 @@ A new free design unlocks every five levels and **equips itself automatically** 
 | 45 | Prismatic | 22,000 |
 | 50 | Celestial + custom wallpaper | 24,500 |
 
-The ladder is data, not code: edit [`assets/profile/backgrounds/backgrounds.json`](assets/profile/backgrounds/backgrounds.json) and push, or create `data/backgrounds.json` on the host (it overrides the bundled file) and restart. Each entry has `id`, `name`, `level`, an optional `price`, an optional `auto`, an optional `artMode`, and a `theme` (`from`, `to`, `accent`). To move Ember to level 3, change its `level` to `3`. To add a purchasable design, give it `"price": 250` and `"auto": false`; it unlocks at its level but never equips itself, and `/background set` refuses it until a purchase system exists.
+The ladder is data, not code: edit [`assets/profile/backgrounds/backgrounds.json`](assets/profile/backgrounds/backgrounds.json) and push, or create `data/backgrounds.json` on the host (it overrides the bundled file) and restart. Each entry has `id`, `name`, `level`, an optional `price`, an optional `auto`, an optional `artMode`, and a `theme` (`from`, `to`, `accent`). To move Ember to level 3, change its `level` to `3`. A design with `"price": 250` and `"auto": false` is sold in the [store](#store) as `design:<id>`: it never equips itself, and `/background set` refuses it until the member buys it.
 
 Each tier now ships with its own picture in `assets/profile/backgrounds/` (`tier-05` … `tier-50`), so the ten designs already look different. The bot draws the panels, labels and XP track over the picture, which keeps their positions fixed. If a tier file is ever missing, the bot falls back to tinting `card.png` with that tier's `theme`.
 

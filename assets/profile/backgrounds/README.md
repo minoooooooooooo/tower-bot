@@ -46,6 +46,15 @@ matches the art.
 
 `wallpaper` art has none of those constraints; the bot adds the UI.
 
+## Paid designs
+
+An entry with `"price": 250` is not part of the free ladder: it never
+auto-equips, `/background set` refuses it until it is bought, and the store
+lists it as `design:<id>` for that many coins. `"auto": false` is implied by a
+price. Buying it writes a purchase row, so the unlock survives restarts and
+point corrections. Remove the `price` (and restart) to take a design off sale
+again; members who already bought it keep it.
+
 ## Default designs
 
 | Id | Level | Design |

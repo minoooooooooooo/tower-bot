@@ -428,6 +428,34 @@ const SCHEMA = `
     updated_at       INTEGER NOT NULL
   );
 
+  -- Store overrides. The items themselves live in src/services/store-catalog.js;
+  -- a row here only changes one guild's price or hides an item.
+  CREATE TABLE IF NOT EXISTS store_items (
+    guild_id   TEXT    NOT NULL,
+    item_key   TEXT    NOT NULL,
+    price      INTEGER,
+    enabled    INTEGER,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (guild_id, item_key)
+  );
+
+  -- One row per purchase. status goes pending -> fulfilled, or
+  -- pending -> refunded when the delivery fails after the coins were taken.
+  CREATE TABLE IF NOT EXISTS store_purchases (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    guild_id   TEXT    NOT NULL,
+    user_id    TEXT    NOT NULL,
+    item_key   TEXT    NOT NULL,
+    price      INTEGER NOT NULL,
+    status     TEXT    NOT NULL,
+    detail     TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS store_purchases_member
+    ON store_purchases (guild_id, user_id, item_key);
+
   -- Dry-run counterpart to activity_backfill. It walks the same channels but
   -- only counts what it sees, so the totals can be checked without writing.
   CREATE TABLE IF NOT EXISTS activity_backfill_audit (

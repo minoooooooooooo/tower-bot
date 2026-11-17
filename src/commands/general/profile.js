@@ -23,6 +23,7 @@ import {
   ensureExileBackfill,
   profileStats,
 } from '../../services/profile-store.js';
+import { ownedBackgroundIds } from '../../services/store.js';
 
 const logger = createLogger('profile');
 
@@ -213,6 +214,7 @@ export default {
         level: stats.level,
         hasCustom,
         customPath: hasCustom ? customWallpaperPath(ctx.guildId, user.id) : null,
+        owned: ownedBackgroundIds(ctx.guildId, user.id),
       });
       const buffer = await renderProfileCard({
         member: cardMember,
