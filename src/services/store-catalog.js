@@ -8,7 +8,9 @@ import { BACKGROUNDS } from './profile-backgrounds.js';
  *
  * `price` is in coins. `limit` is how many fulfilled purchases one member may
  * hold (0 means unlimited). `needs` tells the command which extra inputs the
- * item wants: `name`, `color`, `image`.
+ * item wants: `name`, `color`, `image`. `stackable` items can be bought in a
+ * quantity (`/store buy <key> quantity:5`), which multiplies both the price and
+ * the `amount` delivered.
  */
 
 export const STORE_TYPE_LABELS = {
@@ -36,13 +38,14 @@ export const STORE_ITEMS = [
     summary: 'Adds 10 XP (50 Nightmare points). Punishments still tax the gain.',
   },
   {
-    key: 'behavior-25',
+    key: 'behavior-1',
     type: 'behavior',
-    name: '25 good behaviour points',
-    price: 30,
-    amount: 25,
+    name: '1 good behaviour point',
+    price: 100,
+    amount: 1,
     limit: 0,
-    summary: 'Adds 25 good behaviour points to your card.',
+    stackable: true,
+    summary: 'Adds one good behaviour point to your card. Buy several at once with a quantity.',
   },
   {
     key: 'profile-title',

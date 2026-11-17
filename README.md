@@ -186,20 +186,23 @@ Coin transfers are on by default. `/coins-config off` (prefix `:-coins-config of
 ```
 :-store
 :-store buy xp-10
+:-store buy behavior-1 5                 (5 points, 500 coins)
 :-store buy profile-title The Keeper
 :-store buy custom-role Sunset #ff8800
-:-store buy emoji-slot tower_star      (attach the image)
+:-store buy emoji-slot tower_star        (attach the image)
 :-store owned
 ```
 
 | Item | Default price | What you get |
 |---|---|---|
 | `xp-10` | 40 | +10 XP (50 Nightmare points). Punishments still tax the gain. |
-| `behavior-25` | 30 | +25 good behaviour points |
+| `behavior-1` | 100 | +1 good behaviour point (stackable: buy a quantity at once) |
 | `profile-title` | 60 | Sets the title on your card (buy again to change it) |
 | `emoji-slot` | 75 | The bot uploads an emoji you provide (max 3 per member) |
 | `custom-role` | 120 | A role with your name and colour, created and assigned (one per member) |
 | `design:<id>` | design's `price` | Unlocks a paid card design for good |
+
+Stackable items charge the unit price times the quantity. Use `/store buy item:behavior-1 quantity:5` or `:-store buy behavior-1 5` for five points in one purchase (limit 100 per buy); everything else is one per purchase.
 
 A purchase is charged and recorded in one database transaction. If the delivery then fails — no free emoji slot, missing **Manage Roles**, a Discord error — the coins are refunded automatically and the record is marked `refunded`, so nobody pays for an item they did not get. Role names are 1–32 characters, emoji names use letters, numbers and `_`, and emoji images are limited to 256 KB (PNG, JPEG, WebP or GIF); everything is checked before the coins are taken.
 

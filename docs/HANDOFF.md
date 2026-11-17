@@ -99,7 +99,7 @@ balance changes.
 **Store (added 2026-11-17).** `/store` (prefix `:-store`, alias `shop`) browses
 the catalogue, `buy` spends coins and delivers, `owned` lists a member's
 purchases. The catalogue is code: `src/services/store-catalog.js` holds the
-static items (`xp-10`, `behavior-25`, `profile-title`, `emoji-slot`,
+static items (`xp-10`, `behavior-1`, `profile-title`, `emoji-slot`,
 `custom-role`) and derives one `design:<id>` item from every manifest design
 whose `price > 0`. Adding an item is one object there plus a `case` in
 `deliver()`; adding a paid design is only a `price` in `backgrounds.json`.
@@ -120,8 +120,11 @@ Delivery is immediate (the user chose this): the bot creates and assigns the
 role (`Manage Roles`), or uploads the emoji (`Manage Expressions`, 256 KB,
 checked against the guild's boost-tier slots), and refunds with a clear message
 when Discord refuses. Good behaviour and XP purchases call `addProfilePoints`
-(25 points, or `10 × POINTS_PER_XP` Nightmare points for `xp-10`), and the title
-purchase calls `setProfileTitle`.
+(one point per `behavior-1`, or `10 × POINTS_PER_XP` Nightmare points for
+`xp-10`), and the title purchase calls `setProfileTitle`. Items with
+`stackable: true` (`behavior-1`) also accept a `quantity` (`1`–`100`), which
+multiplies both the price and the delivered amount; `buyStoreItem` stores the
+total in `store_purchases.price`, so sales totals stay correct.
 
 Paid designs are continuously owned: `ownedBackgroundIds()` feeds
 `isBackgroundUnlocked(background, level, owned)` and `resolveBackground({...,

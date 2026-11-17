@@ -60,9 +60,10 @@ function itemLine(item, owned) {
   const bought = item.type === 'background' && owned?.has(item.backgroundId);
   const mark = bought ? '✅' : '•';
   const limit = item.limit > 0 ? ` · max ${item.limit}` : '';
+  const stack = item.stackable ? ' each' : '';
 
   return (
-    `${mark} \`${item.key}\` — **${item.name}** · ${formatNumber(item.price)} coins${limit}` +
+    `${mark} \`${item.key}\` — **${item.name}** · ${formatNumber(item.price)} coins${stack}${limit}` +
     `${bought ? ' · owned' : ''}${needsText(item)}`
   );
 }
@@ -212,11 +213,15 @@ function successText(result, ctx) {
           `**+${formatNumber(detail.xp ?? item.amount)} XP** is on your card. ` +
           'Existing punishments still tax new XP.',
       };
-    case 'behavior':
+    case 'behavior': {
+      const points = detail.points ?? item.amount;
       return {
         title: 'Good behaviour added',
-        description: `**+${formatNumber(detail.points ?? item.amount)} good behaviour points** are on your card.`,
+        description: `**+${formatNumber(points)} good behaviour ${
+          points === 1 ? 'point' : 'points'
+        }** are on your card.`,
       };
+    }
     case 'title':
       return {
         title: 'Title updated',
@@ -266,7 +271,8 @@ const FAILURES = {
   funds: (result) => ({
     title: 'Not enough coins',
     description:
-      `**${result.item.name}** costs **${formatNumber(result.item.price)}** coins and you have ` +
+      `**${result.item.name}**${result.quantity > 1 ? ` × ${result.quantity}` : ''} costs ` +
+      `**${formatNumber(result.totalPrice ?? result.item.price)}** coins and you have ` +
       `**${formatNumber(result.balance)}**.`,
   }),
   name: (result) => ({ title: 'Need a name', description: result.message }),
@@ -313,9 +319,17 @@ async function handleBuy(ctx, client) {
   const slashName = ctx.isSlash ? ctx.getString('name') ?? null : null;
   const slashColor = ctx.isSlash ? ctx.getString('color') ?? null : null;
   const slashImage = ctx.isSlash ? ctx.getAttachment('image') ?? null : null;
-  const rest = ctx.isSlash ? [] : ctx.args.slice(2);
+  let quantity = ctx.isSlash ? Math.trunc(Number(ctx.getInteger('quantity')) || 1) : 1;
+  let rest = ctx.isSlash ? [] : ctx.args.slice(2);
   let name = slashName;
   let color = slashColor;
+
+  // Prefix shorthand: a trailing whole number is the quantity for stackable
+  // items, e.g. `:-store buy behavior-1 5`.
+  if (!ctx.isSlash && item.stackable && rest.length > 0 && /^\d+$/.test(rest.at(-1))) {
+    quantity = Number(rest.at(-1));
+    rest = rest.slice(0, -1);
+  }
 
   if (!ctx.isSlash) {
     if (item.type === 'role') {
@@ -347,6 +361,7 @@ async function handleBuy(ctx, client) {
       name,
       color,
       attachment,
+      quantity,
     });
   } catch (error) {
     await ctx.fail({
@@ -398,6 +413,14 @@ export default {
             .setRequired(true)
             .setAutocomplete(true),
         )
+        .addIntegerOption((option) =>
+          option
+            .setName('quantity')
+            .setDescription('Stackable items only, like good behaviour points (default 1)')
+            .setRequired(false)
+            .setMinValue(1)
+            .setMaxValue(100),
+        )
         .addStringOption((option) =>
           option
             .setName('name')
@@ -435,7 +458,7 @@ export default {
   aliases: ['shop'],
   description: 'Spend coins on profile and server upgrades',
   category: 'Profile',
-  usage: 'store [browse | buy <key> [name] [colour] | owned [@member]]',
+  usage: 'store [browse | buy <key> [name] [colour] [quantity] | owned [@member]]',
   cooldown: 3,
   guildOnly: true,
 

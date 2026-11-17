@@ -29,6 +29,9 @@ const ANIMATED_EMOJI_SLOTS = [0, 0, 50, 100];
 
 const EMOJI_TYPES = new Set(['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/gif']);
 
+/** Upper bound for one stackable purchase, so a typo cannot drain a wallet. */
+export const MAX_STACK = 100;
+
 function db() {
   return getDb();
 }
@@ -261,21 +264,21 @@ function hasFreeEmojiSlot(guild, animated) {
 
 /* ── Delivery ────────────────────────────────────────────────────────────── */
 
-async function deliver({ item, guild, guildId, userId, member, name, color, attachment }) {
+async function deliver({ item, guild, guildId, userId, member, name, color, attachment, quantity = 1 }) {
   switch (item.type) {
     case 'xp': {
-      const xp = Math.max(1, Math.trunc(Number(item.amount) || 1));
+      const xp = Math.max(1, Math.trunc(Number(item.amount) || 1)) * quantity;
       const points = xp * POINTS_PER_XP;
 
       addProfilePoints(guildId, userId, { nightmare: points });
-      return { xp, points };
+      return { xp, points, quantity };
     }
 
     case 'behavior': {
-      const points = Math.max(1, Math.trunc(Number(item.amount) || 1));
+      const points = Math.max(1, Math.trunc(Number(item.amount) || 1)) * quantity;
 
       addProfilePoints(guildId, userId, { goodBehavior: points });
-      return { points };
+      return { points, quantity };
     }
 
     case 'title': {
@@ -374,6 +377,7 @@ export async function buyStoreItem({
   name = null,
   color = null,
   attachment = null,
+  quantity = 1,
 }) {
   const item = findStoreItem(guildId, key);
   const id = guildId;
@@ -381,6 +385,12 @@ export async function buyStoreItem({
   if (!item) return { ok: false, reason: 'unknown', query: key };
   if (!item.enabled) return { ok: false, reason: 'disabled', item };
   if (item.price < 0) return { ok: false, reason: 'unpriced', item };
+
+  // Only stackable items honour a quantity; everything else is one per buy.
+  const qty = item.stackable
+    ? Math.min(MAX_STACK, Math.max(1, Math.trunc(Number(quantity) || 1)))
+    : 1;
+  const totalPrice = item.price * qty;
 
   if (item.limit > 0 && fulfilledCount(id, userId, item.key) >= item.limit) {
     return { ok: false, reason: 'limit', item, limit: item.limit };
@@ -518,14 +528,14 @@ export async function buyStoreItem({
 
     balance = Number(row?.coins) || 0;
 
-    if (balance < item.price) {
+    if (balance < totalPrice) {
       db().exec('ROLLBACK');
-      return { ok: false, reason: 'funds', item, balance };
+      return { ok: false, reason: 'funds', item, balance, quantity: qty, totalPrice };
     }
 
     db()
       .prepare('UPDATE profiles SET coins = coins - ?, updated_at = ? WHERE guild_id = ? AND user_id = ?')
-      .run(item.price, now, id, userId);
+      .run(totalPrice, now, id, userId);
 
     const info = db()
       .prepare(
@@ -533,10 +543,10 @@ export async function buyStoreItem({
            (guild_id, user_id, item_key, price, status, detail, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, NULL, ?, ?)`,
       )
-      .run(id, userId, item.key, item.price, PENDING, now, now);
+      .run(id, userId, item.key, totalPrice, PENDING, now, now);
 
     purchaseId = Number(info.lastInsertRowid);
-    balance -= item.price;
+    balance -= totalPrice;
     db().exec('COMMIT');
   } catch (error) {
     db().exec('ROLLBACK');
@@ -556,12 +566,13 @@ export async function buyStoreItem({
       name: item.type === 'role' ? roleName : item.type === 'emoji' ? emojiName : title,
       color,
       attachment,
+      quantity: qty,
     });
   } catch (error) {
     logger.warn(`Delivery failed for ${item.key} to ${userId}: ${error?.message ?? error}`);
 
     try {
-      refundPurchase(id, userId, purchaseId, item.price);
+      refundPurchase(id, userId, purchaseId, totalPrice);
     } catch (refundError) {
       logger.error(`Could not refund purchase ${purchaseId}`, refundError);
     }
@@ -583,9 +594,18 @@ export async function buyStoreItem({
     logger.error(`Could not finish purchase ${purchaseId}`, error);
   }
 
-  logger.info(`Store: ${userId} bought ${item.key} for ${item.price} coins in ${id}`);
+  logger.info(`Store: ${userId} bought ${item.key} x${qty} for ${totalPrice} coins in ${id}`);
 
-  return { ok: true, item, purchaseId, price: item.price, balance, detail: detail ?? {} };
+  return {
+    ok: true,
+    item,
+    purchaseId,
+    price: totalPrice,
+    unitPrice: item.price,
+    quantity: qty,
+    balance,
+    detail: detail ?? {},
+  };
 }
 
 /** Marks a member's fulfilled purchases as void so they can buy again. */
