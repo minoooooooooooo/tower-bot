@@ -51,6 +51,8 @@ const activityPort = Number.parseInt(process.env.ACTIVITY_PORT ?? '', 10);
 
 const activityEnabled = /^(1|true|yes|on)$/i.test(process.env.ACTIVITY_ENABLED?.trim() ?? '');
 
+const tunnelEnabled = /^(1|true|yes|on)$/i.test(process.env.TUNNEL_ENABLED?.trim() ?? '');
+
 export const config = {
   token,
   clientId: process.env.CLIENT_ID?.trim() || null,
@@ -71,6 +73,11 @@ export const config = {
     port: Number.isFinite(activityPort) && activityPort > 0 ? activityPort : 3000,
     publicUrl: process.env.ACTIVITY_PUBLIC_URL?.trim() || null,
     clientSecret: process.env.DISCORD_CLIENT_SECRET?.trim() || '',
+  },
+  // A free public HTTPS address for the activity, run as part of the bot. Off
+  // unless TUNNEL_ENABLED=1. See docs/activity-store.md.
+  tunnel: {
+    enabled: tunnelEnabled,
   },
   // Any OpenAI-compatible endpoint works: Google's compatibility layer, OpenAI,
   // OpenRouter, Groq, DeepSeek, or a local server. Only the key is mandatory;

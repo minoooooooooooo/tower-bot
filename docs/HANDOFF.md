@@ -170,6 +170,17 @@ step. `?demo=1` renders mock data without auth for layout work. Setup, the
 reverse-proxy/tunnel options and the API table live in
 [`activity-store.md`](activity-store.md).
 
+**Free public address (added 2026-11-18).** `TUNNEL_ENABLED=1` makes the bot
+run Cloudflare's quick tunnel itself: `src/activity/tunnel.js` downloads the
+cloudflared binary once into `data/tunnel/` (about 35 MB), spawns it against the
+activity port with `--protocol http2` (panels block UDP), parses the public URL
+out of its output, logs `Store activity public URL: …` and writes it to
+`data/tunnel-url.txt`. No account, domain, card or open port is involved, so the
+Wispbyte panel can host the whole Activity. The address changes whenever the bot
+restarts and needs to be re-pasted into the portal mapping; a new name can take
+a minute or two to resolve. Every failure path only logs a warning, and the
+whole module is inert without the flag.
+
 ## What exists
 
 | Command | Aliases | Notes |
@@ -908,6 +919,7 @@ Behavior that must be preserved:
 - Store integration test on a temp DB (126 checks): catalogue and paid-design items, per-guild price/visibility overrides, funds/limit/disabled refusals, atomic charge + purchase row, XP/behaviour/title delivery, design ownership, role creation and assignment, emoji name/type/size/slot checks, refund after a failed delivery, `reset-user` + rebuy, sales totals, `/store` and `/store-config` slash and prefix paths, and selecting a bought design on `/background`.
 - Activity integration test on a temp DB (41 checks): storefront shape (guild/user/balance/level, `behavior-1` price and stacking, rarity banding, the full background collection with locked/unlocked/selected flags), buying through `buyFromActivity` (3 behaviour points for 300 coins with the balance after, custom role created, emoji uploaded from a `data:` URL, an SVG data URL refused), stock checks before charging, `equipFromActivity` refusing a locked paid design and accepting Classic, and the HTTP layer (consent-free `/api/config`, `/healthz`, HTML/CSS/JS and the vendored SDK served, a background image served as `image/jpeg`, `/api/store` refusing an unauthenticated call with 401, and the `/.proxy` prefix stripped).
 - The activity server was also exercised without `ACTIVITY_ENABLED` during the normal fake-token load test, where it correctly does not start.
+- Tunnel integration test on this PC (real network): `TUNNEL_ENABLED=1` downloaded `cloudflared` into the temp `data/tunnel/`, spawned it against a local server, printed `Store activity public URL: https://…trycloudflare.com`, saved `data/tunnel-url.txt`, and a `fetch` through the public address returned the local server's `200 hello from the bot`. A newly created name needed about two minutes before DNS answered (documented).
 - Date math: Feb 29 in leap/non-leap years, timezone date shift (`America/New_York`), year rollover.
 - Scheduler: role added on birthday, removed the next day, removed immediately when the birthday is deleted.
 - Command paths: set (valid/invalid), list, next, today, remove, admin guards, role set/clear, timezone invalid/valid.

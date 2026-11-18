@@ -14,6 +14,7 @@ HTTP server never starts and `/store` behaves exactly as before.
 | OAuth exchange, guild/member auth, storefront shape | `src/activity/store-api.js` |
 | Client shell / theme / logic | `src/activity/public/index.html`, `styles.css`, `app.js` |
 | Bundled Embedded App SDK (no CDN) | `src/activity/public/vendor/discord-sdk.js` |
+| Optional free tunnel (`TUNNEL_ENABLED=1`) | `src/activity/tunnel.js` |
 
 The Activity reuses `src/services/store.js`, so prices, per-guild overrides,
 limits, immediate delivery and refunds are identical to the message commands.
@@ -22,10 +23,11 @@ There is no second source of truth.
 ## Requirements
 
 1. An **HTTPS** URL with a valid certificate that Discord can iframe. Plain HTTP
-   will not work, and neither will a self-signed certificate.
-2. Inbound reachability: the bot must listen on a port that the public URL
-   forwards to. A free panel that only offers outbound connections needs a
-   tunnel (see *Hosting* below).
+   will not work, and neither will a self-signed certificate. `TUNNEL_ENABLED=1`
+   provides one for free (Option A below), so a panel without inbound ports and
+   without a domain is fine.
+2. The bot must listen on a port the public URL forwards to: either directly
+   (Option B) or through the tunnel the bot runs itself (Option A).
 3. `CLIENT_ID` (already required for slash commands) and the **OAuth2 client
    secret** from the Developer Portal.
 
@@ -51,23 +53,60 @@ a one-time `code`, and the bot swaps it for a token server-side.
 ```ini
 ACTIVITY_ENABLED=1
 DISCORD_CLIENT_SECRET=...          # OAuth2 tab, never commit this
-ACTIVITY_PUBLIC_URL=https://store.example.com
+TUNNEL_ENABLED=1                   # free public HTTPS address, no domain needed
+# ACTIVITY_PUBLIC_URL=https://store.example.com   # only with your own host
 # ACTIVITY_PORT=3000               # default
 # ACTIVITY_HOST=0.0.0.0            # default; 127.0.0.1 behind a local proxy
 ```
 
-Restart the bot. The log prints `Store activity listening on https://store.example.com`
-(or the bind address when `ACTIVITY_PUBLIC_URL` is empty). `/store` then gains the
-**Open store** button; the plain-text `/store buy` flow still works.
+Restart the bot. The log prints `Store activity listening on …`, and with the
+tunnel on, a `[tunnel] Store activity public URL: https://…trycloudflare.com`
+line a few seconds later. `/store` then gains the **Open store** button; the
+plain-text `/store buy` flow still works.
 
 If `ACTIVITY_ENABLED=1` but the client id or secret is missing, the bot logs a
 warning and stays up with the Activity turned off. It never crashes over this.
 
 ## 3. Put HTTPS in front of it
 
-Discord requires HTTPS on 443 (behind a proxy) for the iframe. Two common setups:
+Discord requires HTTPS on 443 (behind a proxy) for the iframe. Three setups, in
+order of least effort:
 
-**Caddy on the same host** (automatic certificates):
+### Option A: let the bot run its own tunnel (free, no domain)
+
+Set `TUNNEL_ENABLED=1` next to the other activity values and restart:
+
+```ini
+ACTIVITY_ENABLED=1
+DISCORD_CLIENT_SECRET=...
+TUNNEL_ENABLED=1
+```
+
+The bot downloads Cloudflare's tunnel client once (about 35 MB) into
+`data/tunnel/` and runs it against its own port. No account, no card, no domain,
+no inbound ports — it works from a panel that only allows outbound connections.
+The log then prints:
+
+```
+[tunnel] Store activity public URL: https://calm-river-1234.trycloudflare.com
+```
+
+The same value is written to `data/tunnel-url.txt`, so you can read it from the
+panel's file manager if the console scrolled. Use it as the portal **Target**.
+
+Two things to know:
+
+- The address is tied to the running process. It **changes when the bot
+  restarts** — update the URL mapping afterwards. Nothing else needs touching.
+- A brand-new address can take a minute or two before DNS answers. If the portal
+  rejects it, wait and save again; `curl` the `/healthz` until it returns JSON.
+
+If the download or the process fails (a host that blocks it, an unsupported
+architecture), the bot logs a warning and carries on; no command is affected.
+This machine runs Linux x64 or Windows x64; other platforms report "no build"
+and stay off.
+
+### Option B: Caddy on the same host (automatic certificates)
 
 ```caddyfile
 store.example.com {
@@ -85,16 +124,24 @@ ports:
   - "127.0.0.1:3000:3000"
 ```
 
-**No inbound ports** (Wispbyte-style panels, or a VM behind NAT): run
-`cloudflared tunnel --url http://127.0.0.1:3000` and use the generated
-`https://*.trycloudflare.com` URL in the portal's URL mapping. The tunnel keeps
-a long-lived **outbound** connection, so no ingress rule is needed. A named
-tunnel with your own domain is more stable than the quick tunnel.
-
 **Oracle Cloud**: open 443 (and 80 for certificate validation) in the VCN
 security list *and* in the instance's `iptables`/`ufw` — the image ships with
 host rules that drop those ports even when the VCN allows them. See
 [`deploy-oracle.md`](deploy-oracle.md).
+
+### Option C: a manually run tunnel
+
+Same idea as Option A, but outside the bot — useful when the host blocks the
+download, or when you want a named tunnel with your own domain:
+
+```bash
+cloudflared tunnel --url http://127.0.0.1:3000        # quick, free, random URL
+cloudflared tunnel run --token <named-tunnel-token>   # stable hostname + domain
+```
+
+The quick tunnel keeps a long-lived **outbound** connection, so no ingress rule
+is needed. A named tunnel needs a domain in a Cloudflare account, but gives a
+fixed address that never changes.
 
 ## 4. Verify
 
@@ -172,3 +219,6 @@ npm run build:activity     # rewrites src/activity/public/vendor/discord-sdk.js
 | Bot in the guild but "You are not a member" | The member cache (1 minute) still holds an old state, or the user is not actually in that guild. Reopen after a minute. |
 | `/.proxy` paths 404 | Missing `/` URL mapping in the Developer Portal. |
 | Images missing in the Activity | The design's file is missing from `assets/profile/backgrounds/`. |
+| No `Store activity public URL` line | `TUNNEL_ENABLED` unset, the activity server is off, or the 35 MB download failed — check the warning just above it. |
+| Portal rejects the tunnel address | A fresh `trycloudflare.com` name can take a minute or two to resolve. Wait, then save again. |
+| Activity broke after a restart | The tunnel address changed. Copy the new one from the log or `data/tunnel-url.txt` into the URL mapping. |

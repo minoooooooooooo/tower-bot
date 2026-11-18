@@ -5,6 +5,7 @@ import { loadCommands, loadEvents } from './lib/loaders.js';
 import { createLogger } from './lib/logger.js';
 import { reportDiscordReachability } from './lib/net-check.js';
 import { stopActivityTracking } from './services/activity.js';
+import { stopActivityTunnel } from './activity/tunnel.js';
 import { stopBackfill } from './services/activity-backfill.js';
 import { stopEmojiBackfill } from './services/emoji-backfill.js';
 import { startTowerAgent } from './tcc/adapter.js';
@@ -77,6 +78,12 @@ async function shutdown(signal) {
   shuttingDown = true;
 
   logger.info(`Received ${signal}, shutting down...`);
+
+  try {
+    stopActivityTunnel();
+  } catch {
+    // The tunnel is already gone.
+  }
 
   try {
     activityServer?.close();
@@ -222,4 +229,15 @@ try {
   activityServer = startActivityServer(client);
 } catch (error) {
   logger.error('Store activity failed to start (the bot continues without it)', error);
+}
+
+// Optional free public HTTPS address for that activity, started by the bot
+// itself. Off unless TUNNEL_ENABLED=1; a failure only logs a warning.
+if (activityServer) {
+  try {
+    const { startActivityTunnel } = await import('./activity/tunnel.js');
+    await startActivityTunnel(config.activity.port);
+  } catch (error) {
+    logger.warn(`The store activity tunnel could not start: ${error.message}`);
+  }
 }

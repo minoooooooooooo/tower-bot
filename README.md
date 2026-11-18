@@ -221,15 +221,17 @@ Paid backgrounds are not in the catalogue until you add them: give a design in [
 
 #### Store Activity (optional)
 
-`/store` can also open as a **Discord Activity** — a full-screen storefront with the same catalogue, prices and purchases, opened from an **Open store** button on `/store`. It is off by default and needs an HTTPS host plus the OAuth2 client secret:
+`/store` can also open as a **Discord Activity** — a full-screen storefront with the same catalogue, prices and purchases, opened from an **Open store** button on `/store`. It is off by default and needs an HTTPS address plus the OAuth2 client secret. The bot can provide that address itself, free, with no domain, no VPS and no open ports:
 
 ```ini
 ACTIVITY_ENABLED=1
 DISCORD_CLIENT_SECRET=...
-ACTIVITY_PUBLIC_URL=https://store.example.com
+TUNNEL_ENABLED=1
 ```
 
-Then map `/` to that URL under **Activities → URL Mappings** in the Developer Portal and create the entry-point command. With the flag unset the bot, `/store` and every other command behave exactly as before; the button is simply not shown. Setup, reverse proxy / Cloudflare Tunnel examples and the API are in [`docs/activity-store.md`](docs/activity-store.md), and `?demo=1` renders the storefront with mock data for layout checks.
+The bot downloads Cloudflare's tunnel client once (about 35 MB, into `data/`) and prints `Store activity public URL: https://…trycloudflare.com`. Paste that into **Activities → URL Mappings** in the Developer Portal and create the entry-point command. The address changes when the bot restarts — copy the new one into the portal whenever that happens.
+
+With `ACTIVITY_ENABLED` unset the bot, `/store` and every other command behave exactly as before; the button is simply not shown. Setup, your own domain/proxy alternatives and the API are in [`docs/activity-store.md`](docs/activity-store.md), and `?demo=1` renders the storefront with mock data for layout checks.
 
 ### Backgrounds
 
@@ -905,6 +907,7 @@ src/
   activity/
     server.js           optional storefront HTTP server + static files
     store-api.js        OAuth exchange, member auth, storefront shape
+    tunnel.js           optional free public HTTPS address (cloudflared)
     public/             storefront client (index.html, styles.css, app.js)
       vendor/           bundled Discord Embedded App SDK (no CDN)
   lib/
