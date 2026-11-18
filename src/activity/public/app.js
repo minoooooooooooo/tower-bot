@@ -98,6 +98,8 @@ function showFatal(message) {
 function showApp() {
   $('#boot').hidden = true;
   $('#app').hidden = false;
+  // A retry after a failed load can leave the page scrolled mid-way.
+  window.scrollTo(0, 0);
 }
 
 let toastTimer;
