@@ -18,8 +18,13 @@ services:
       NODE_ENV: production
       LOG_LEVEL: ${LOG_LEVEL:-info}
 
-    # The bot needs no inbound ports - it only opens outbound connections.
-    # Do not add a "ports:" section.
+    # Plain bot operation needs no inbound ports - it only opens outbound
+    # connections. Uncomment the block below only when the Store Activity is
+    # enabled (ACTIVITY_ENABLED=1) and something on the host - a reverse proxy or
+    # tunneler - forwards HTTPS to it. See docs/activity-store.md.
+    #
+    # ports:
+    #   - "127.0.0.1:3000:3000"
 
     # Persists bot.db across container rebuilds.
     volumes:

@@ -1,4 +1,7 @@
 import {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
   InteractionContextType,
   MessageFlags,
   PermissionFlagsBits,
@@ -109,8 +112,23 @@ async function handleBrowse(ctx) {
   const items = storeCatalog(ctx.guildId).filter((item) => item.enabled);
   const balance = storeBalance(ctx.guildId, ctx.user.id);
   const owned = ownedBackgroundIds(ctx.guildId, ctx.user.id);
+  // Mirrors activityConfigured(): a button that can only fail is worse than no
+  // button, so it appears only when the server would actually start.
+  const activityReady =
+    config.activity.enabled && Boolean(config.clientId) && Boolean(config.activity.clientSecret);
+  const components = activityReady
+    ? [
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId('store:launch')
+            .setLabel('Open store')
+            .setEmoji('🛍️')
+            .setStyle(ButtonStyle.Primary),
+        ),
+      ]
+    : [];
 
-  await respond(ctx, { embeds: [browseEmbed(ctx, items, balance, owned)] });
+  await respond(ctx, { embeds: [browseEmbed(ctx, items, balance, owned)], components });
 }
 
 function detailLine(item, detail) {

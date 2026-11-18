@@ -47,6 +47,10 @@ const interval = Number.parseInt(process.env.BIRTHDAY_CHECK_INTERVAL_MS ?? '', 1
 
 const aiMaxInput = Number.parseInt(process.env.AI_MAX_INPUT_CHARS ?? '', 10);
 
+const activityPort = Number.parseInt(process.env.ACTIVITY_PORT ?? '', 10);
+
+const activityEnabled = /^(1|true|yes|on)$/i.test(process.env.ACTIVITY_ENABLED?.trim() ?? '');
+
 export const config = {
   token,
   clientId: process.env.CLIENT_ID?.trim() || null,
@@ -59,6 +63,15 @@ export const config = {
   birthdayCheckIntervalMs: Number.isFinite(interval) && interval >= 10_000 ? interval : 60_000,
   commandsDir: path.join(rootDir, 'src', 'commands'),
   eventsDir: path.join(rootDir, 'src', 'events'),
+  // The Discord Activity storefront. Off unless ACTIVITY_ENABLED=1; the bot
+  // works exactly as before when it is off. See docs/activity-store.md.
+  activity: {
+    enabled: activityEnabled,
+    host: process.env.ACTIVITY_HOST?.trim() || '0.0.0.0',
+    port: Number.isFinite(activityPort) && activityPort > 0 ? activityPort : 3000,
+    publicUrl: process.env.ACTIVITY_PUBLIC_URL?.trim() || null,
+    clientSecret: process.env.DISCORD_CLIENT_SECRET?.trim() || '',
+  },
   // Any OpenAI-compatible endpoint works: Google's compatibility layer, OpenAI,
   // OpenRouter, Groq, DeepSeek, or a local server. Only the key is mandatory;
   // an unconfigured key turns the summary command into a setup hint.

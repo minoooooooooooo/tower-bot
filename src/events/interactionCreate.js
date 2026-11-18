@@ -1,3 +1,4 @@
+import { MessageFlags } from 'discord.js';
 import { CommandContext } from '../lib/context.js';
 import { createLogger } from '../lib/logger.js';
 import { runCommand } from '../lib/run-command.js';
@@ -14,6 +15,26 @@ export default {
   name: 'interactionCreate',
   async execute(interaction, client) {
     if (interaction.isButton()) {
+      if (String(interaction.customId) === 'store:launch') {
+        try {
+          await interaction.launchActivity();
+        } catch (error) {
+          logger.error('Store activity launch failed', error);
+
+          if (!interaction.replied && !interaction.deferred) {
+            await interaction
+              .reply({
+                content:
+                  'The store app is not available yet. Ask an admin to finish enabling the activity.',
+                flags: MessageFlags.Ephemeral,
+              })
+              .catch(() => null);
+          }
+        }
+
+        return;
+      }
+
       if (String(interaction.customId).startsWith(EXPORT_BUTTON_PREFIX)) {
         try {
           await handleExportInteraction(interaction);

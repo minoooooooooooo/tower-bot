@@ -1,6 +1,6 @@
 # Handoff — Discord bot
 
-Last updated: 2026-11-15. Read this before continuing work. It exists so a fresh
+Last updated: 2026-11-18. Read this before continuing work. It exists so a fresh
 OpenCode session can resume without the original conversation.
 
 ## Status
@@ -147,6 +147,28 @@ instead of charging it, and staff point corrections never lower the high-water
 mark (no double charging when linked bots fail and recover). SQLite columns
 `coins`, `level_coins_paid`, `xp_penalty`, `xp_seen` are added by
 `COLUMN_MIGRATIONS`.
+
+**Store Activity (added 2026-11-18).** The store also has an optional Discord
+Activity: a dark, Fizbo-style card grid opened from an **Open store** button on
+`/store`, with rarity labels, coin pills, quantity steppers, a title/role/emoji
+form and the full background collection. It is a separate HTTP server
+(`src/activity/server.js`) serving `src/activity/public/` plus a small JSON API
+(`src/activity/store-api.js`); purchases go through the same `buyStoreItem`, so
+prices, limits, immediate delivery and refunds are unchanged. Auth is real: the
+client uses the Embedded App SDK to get a one-time `code`, the bot swaps it for
+an OAuth token server-side (the client secret never reaches the browser), and
+every mutating call re-checks the token at `/users/@me` plus guild membership
+through the live client.
+
+It is **off unless `ACTIVITY_ENABLED=1`**: `startActivityServer()` returns `null`
+without touching the bot, and the launch button only renders when the flag is
+on. It also needs `CLIENT_ID` + `DISCORD_CLIENT_SECRET`, and (for real use) an
+HTTPS URL mapped in the Developer Portal. The SDK is bundled offline into
+`src/activity/public/vendor/discord-sdk.js` (`npm run build:activity` regenerates
+it); the bundle is committed so the Docker image and the panel need no build
+step. `?demo=1` renders mock data without auth for layout work. Setup, the
+reverse-proxy/tunnel options and the API table live in
+[`activity-store.md`](activity-store.md).
 
 ## What exists
 
@@ -884,6 +906,8 @@ Behavior that must be preserved:
 - `node --check` across all `src/**/*.js`.
 - Load test with a fake token: 50 commands, 8 events, clean login failure.
 - Store integration test on a temp DB (126 checks): catalogue and paid-design items, per-guild price/visibility overrides, funds/limit/disabled refusals, atomic charge + purchase row, XP/behaviour/title delivery, design ownership, role creation and assignment, emoji name/type/size/slot checks, refund after a failed delivery, `reset-user` + rebuy, sales totals, `/store` and `/store-config` slash and prefix paths, and selecting a bought design on `/background`.
+- Activity integration test on a temp DB (41 checks): storefront shape (guild/user/balance/level, `behavior-1` price and stacking, rarity banding, the full background collection with locked/unlocked/selected flags), buying through `buyFromActivity` (3 behaviour points for 300 coins with the balance after, custom role created, emoji uploaded from a `data:` URL, an SVG data URL refused), stock checks before charging, `equipFromActivity` refusing a locked paid design and accepting Classic, and the HTTP layer (consent-free `/api/config`, `/healthz`, HTML/CSS/JS and the vendored SDK served, a background image served as `image/jpeg`, `/api/store` refusing an unauthenticated call with 401, and the `/.proxy` prefix stripped).
+- The activity server was also exercised without `ACTIVITY_ENABLED` during the normal fake-token load test, where it correctly does not start.
 - Date math: Feb 29 in leap/non-leap years, timezone date shift (`America/New_York`), year rollover.
 - Scheduler: role added on birthday, removed the next day, removed immediately when the birthday is deleted.
 - Command paths: set (valid/invalid), list, next, today, remove, admin guards, role set/clear, timezone invalid/valid.

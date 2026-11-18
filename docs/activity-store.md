@@ -1,0 +1,174 @@
+# Store Activity (optional Discord Activity storefront)
+
+`/store` works entirely inside Discord messages. This adds an **optional**
+embedded Activity — a full-screen dark storefront opened from an **Open store**
+button — on top of the same catalogue, balances and purchase engine. Nothing in
+this document is required for the bot to run: with `ACTIVITY_ENABLED` unset the
+HTTP server never starts and `/store` behaves exactly as before.
+
+## What it is
+
+| Piece | File |
+|---|---|
+| HTTP server, static files, API routing, CSP | `src/activity/server.js` |
+| OAuth exchange, guild/member auth, storefront shape | `src/activity/store-api.js` |
+| Client shell / theme / logic | `src/activity/public/index.html`, `styles.css`, `app.js` |
+| Bundled Embedded App SDK (no CDN) | `src/activity/public/vendor/discord-sdk.js` |
+
+The Activity reuses `src/services/store.js`, so prices, per-guild overrides,
+limits, immediate delivery and refunds are identical to the message commands.
+There is no second source of truth.
+
+## Requirements
+
+1. An **HTTPS** URL with a valid certificate that Discord can iframe. Plain HTTP
+   will not work, and neither will a self-signed certificate.
+2. Inbound reachability: the bot must listen on a port that the public URL
+   forwards to. A free panel that only offers outbound connections needs a
+   tunnel (see *Hosting* below).
+3. `CLIENT_ID` (already required for slash commands) and the **OAuth2 client
+   secret** from the Developer Portal.
+
+## 1. Enable it in the Developer Portal
+
+1. <https://discord.com/developers/applications> → your application.
+2. **Activities** → **Settings** → enable Activities.
+3. **Activities → URL Mappings**: add the prefix `/` and point it at your public
+   URL, e.g. `https://store.example.com`. The client requests everything through
+   `/.proxy/...`, and `src/activity/server.js` strips that prefix, so one mapping
+   for `/` is enough.
+4. **Activities → Settings → Entry Point Command**: create the entry-point
+   command (it appears as `/launch` by default). This is the command Discord uses
+   to start the Activity from the app's profile; keep it enabled.
+5. **OAuth2** → copy the **Client Secret** (`Reset Secret` if you never saved it)
+   into `DISCORD_CLIENT_SECRET`.
+
+The bot never asks for a redirect URI: the Activity's `authorize()` call returns
+a one-time `code`, and the bot swaps it for a token server-side.
+
+## 2. Configure the bot
+
+```ini
+ACTIVITY_ENABLED=1
+DISCORD_CLIENT_SECRET=...          # OAuth2 tab, never commit this
+ACTIVITY_PUBLIC_URL=https://store.example.com
+# ACTIVITY_PORT=3000               # default
+# ACTIVITY_HOST=0.0.0.0            # default; 127.0.0.1 behind a local proxy
+```
+
+Restart the bot. The log prints `Store activity listening on https://store.example.com`
+(or the bind address when `ACTIVITY_PUBLIC_URL` is empty). `/store` then gains the
+**Open store** button; the plain-text `/store buy` flow still works.
+
+If `ACTIVITY_ENABLED=1` but the client id or secret is missing, the bot logs a
+warning and stays up with the Activity turned off. It never crashes over this.
+
+## 3. Put HTTPS in front of it
+
+Discord requires HTTPS on 443 (behind a proxy) for the iframe. Two common setups:
+
+**Caddy on the same host** (automatic certificates):
+
+```caddyfile
+store.example.com {
+    reverse_proxy 127.0.0.1:3000
+}
+```
+
+Then run the bot with `ACTIVITY_HOST=127.0.0.1` so the port is not public.
+
+**Docker Compose**: uncomment the published port and keep the container on the
+host network bridge:
+
+```yaml
+ports:
+  - "127.0.0.1:3000:3000"
+```
+
+**No inbound ports** (Wispbyte-style panels, or a VM behind NAT): run
+`cloudflared tunnel --url http://127.0.0.1:3000` and use the generated
+`https://*.trycloudflare.com` URL in the portal's URL mapping. The tunnel keeps
+a long-lived **outbound** connection, so no ingress rule is needed. A named
+tunnel with your own domain is more stable than the quick tunnel.
+
+**Oracle Cloud**: open 443 (and 80 for certificate validation) in the VCN
+security list *and* in the instance's `iptables`/`ufw` — the image ships with
+host rules that drop those ports even when the VCN allows them. See
+[`deploy-oracle.md`](deploy-oracle.md).
+
+## 4. Verify
+
+```bash
+curl https://store.example.com/healthz      # {"ok":true,"activity":true}
+curl -I https://store.example.com/           # text/html, CSP with frame-ancestors
+```
+
+Then in Discord: `/store` → **Open store**. First open shows the boot screen,
+then the card grid. `/store` in a DM has no guild, so the Activity replies
+"Open the store from a server".
+
+### Demo mode without Discord
+
+`https://store.example.com/?demo=1` renders the storefront with mock data and no
+OAuth. It is for checking layout and theme changes; purchases are disabled and
+say so. You can also open the static files from a local HTTP server — the client
+only needs the API for the non-demo path.
+
+## API
+
+All routes are served from the same origin (Discord proxies them under
+`/.proxy`). JSON in, JSON out.
+
+| Route | Auth | Purpose |
+|---|---|---|
+| `GET /api/config` | none | `{ enabled, client_id, activity_url }` |
+| `POST /api/token` | none | Exchanges the SDK `code`; returns `{ access_token, expires_in }` |
+| `GET /api/store?guildId=` | Bearer | Balance, items, full background collection |
+| `POST /api/buy` | Bearer | Charges and delivers one item |
+| `POST /api/equip` | Bearer | Equips an owned/unlocked background |
+| `GET /healthz` | none | Liveness probe |
+
+The Bearer token is the member's OAuth access token; `store-api.js` validates it
+against `GET https://discord.com/api/users/@me` (cached 5 minutes) and then
+checks that the bot is in the guild and the caller is still a member (cached 1
+minute). Guilt by guild id alone is never trusted.
+
+`POST /api/buy` accepts `{ guildId, key, quantity, name, color, image, imageName }`.
+`image` is a `data:` URL (PNG/JPEG/WebP/GIF, 256 KB max) that the server turns
+into a `Buffer` before handing it to the purchase engine; uploads are checked
+before any coins are taken, and a delivery failure still refunds.
+
+## Security notes
+
+- The client secret never leaves the bot process; the browser only sees a
+  short-lived access token.
+- `Content-Security-Policy` allows framing only by Discord domains
+  (`frame-ancestors`), and scripts/images only from this origin plus Discord's
+  CDN. There are no CDN script tags: the Embedded App SDK is bundled at
+  `src/activity/public/vendor/discord-sdk.js`.
+- Bodies are capped at 2 MB, static paths are normalised and confined to
+  `src/activity/public` and `assets/profile/backgrounds`, and no route writes
+  files outside `data/`.
+- The API mutates coins only through `buyStoreItem`, so all the existing checks
+  (limits, enabled, price overrides, atomic charge) apply unchanged.
+
+## Updating the bundled SDK
+
+The bundle is committed, so production needs no build step and no dev
+dependencies. After bumping `@discord/embedded-app-sdk`:
+
+```bash
+npm install
+npm run build:activity     # rewrites src/activity/public/vendor/discord-sdk.js
+```
+
+## Troubleshooting
+
+| Symptom | Cause |
+|---|---|
+| "The store activity is not enabled for this bot yet." | `ACTIVITY_ENABLED` unset, or `CLIENT_ID`/`DISCORD_CLIENT_SECRET` missing. Check the startup log. |
+| Blank iframe / "refused to connect" | The URL is HTTP, the certificate is invalid, or the portal mapping points somewhere else. Check the browser console in the Activity (right-click → Inspect). |
+| `invalid_origin` from `/api/token` | The request reached the server through a host the portal does not map (open the store from Discord, not a bare browser tab). |
+| Bot in the guild but "You are not a member" | The member cache (1 minute) still holds an old state, or the user is not actually in that guild. Reopen after a minute. |
+| `/.proxy` paths 404 | Missing `/` URL mapping in the Developer Portal. |
+| Images missing in the Activity | The design's file is missing from `assets/profile/backgrounds/`. |

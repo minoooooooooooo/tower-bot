@@ -21,5 +21,10 @@ RUN mkdir -p /app/data && chown node:node /app/data
 # The official image ships an unprivileged "node" user.
 USER node
 
-# The bot only makes outbound connections, so no port is exposed.
+# The bot only makes outbound connections and exposes no port by default.
+# With ACTIVITY_ENABLED=1 it also listens on ACTIVITY_PORT (default 3000);
+# publish that port through docker-compose or a reverse proxy. See
+# docs/activity-store.md.
+EXPOSE 3000
+
 CMD ["node", "src/boot.js"]

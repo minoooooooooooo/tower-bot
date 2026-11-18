@@ -219,6 +219,18 @@ A purchase is charged and recorded in one database transaction. If the delivery 
 
 Paid backgrounds are not in the catalogue until you add them: give a design in [`assets/profile/backgrounds/backgrounds.json`](assets/profile/backgrounds/backgrounds.json) a `"price"` and the store lists it as `design:<id>` on the next restart. No code change is needed.
 
+#### Store Activity (optional)
+
+`/store` can also open as a **Discord Activity** — a full-screen storefront with the same catalogue, prices and purchases, opened from an **Open store** button on `/store`. It is off by default and needs an HTTPS host plus the OAuth2 client secret:
+
+```ini
+ACTIVITY_ENABLED=1
+DISCORD_CLIENT_SECRET=...
+ACTIVITY_PUBLIC_URL=https://store.example.com
+```
+
+Then map `/` to that URL under **Activities → URL Mappings** in the Developer Portal and create the entry-point command. With the flag unset the bot, `/store` and every other command behave exactly as before; the button is simply not shown. Setup, reverse proxy / Cloudflare Tunnel examples and the API are in [`docs/activity-store.md`](docs/activity-store.md), and `?demo=1` renders the storefront with mock data for layout checks.
+
 ### Backgrounds
 
 A new free design unlocks every five levels and **equips itself automatically** when the member reaches its level. The member can still switch to any unlocked design with `/background set`; the next free unlock replaces a lower automatic pick. The classic artwork is always available.
@@ -888,6 +900,13 @@ src/
     alias-store.js      per-server word -> command rows
     alias-runner.js     turns a bare word message into a command run
     watch.js            matching, Arabic normalization, channel delivery
+    store-catalog.js    the store catalogue (code items + paid designs)
+    store.js            purchases, overrides, immediate delivery, refunds
+  activity/
+    server.js           optional storefront HTTP server + static files
+    store-api.js        OAuth exchange, member auth, storefront shape
+    public/             storefront client (index.html, styles.css, app.js)
+      vendor/           bundled Discord Embedded App SDK (no CDN)
   lib/
     ai.js               OpenAI-compatible client + error hints
     context.js          unified slash/prefix context
@@ -931,6 +950,8 @@ See [`docs/adding-commands.md`](docs/adding-commands.md).
 ## Hosting
 
 The bot only makes outbound connections, so it needs no open ports and no domain. Any always-on machine works.
+
+The one exception is the optional **Store Activity**: it listens on a port and needs a public HTTPS URL. Everything else keeps working without it; see [`docs/activity-store.md`](docs/activity-store.md) for a reverse proxy or a Cloudflare Tunnel (outbound only) so a panel without inbound ports can still host it.
 
 **Current choice: a free panel host, Wispbyte.** See [`docs/deploy-panel.md`](docs/deploy-panel.md) — no card required, 512 MB RAM / 1 GB disk, 24/7, with the exact startup command and the two requirements a panel must meet (Node 22.5+, persistent disk).
 

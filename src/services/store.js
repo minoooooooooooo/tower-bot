@@ -314,7 +314,7 @@ async function deliver({ item, guild, guildId, userId, member, name, color, atta
 
     case 'emoji': {
       const emoji = await guild.emojis.create({
-        attachment: attachment.url,
+        attachment: attachment.buffer ?? attachment.url,
         name,
         reason: `Store purchase by ${userId}`,
       });

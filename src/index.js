@@ -70,12 +70,19 @@ process.on('uncaughtException', (error) => {
 });
 
 let shuttingDown = false;
+let activityServer = null;
 
 async function shutdown(signal) {
   if (shuttingDown) return;
   shuttingDown = true;
 
   logger.info(`Received ${signal}, shutting down...`);
+
+  try {
+    activityServer?.close();
+  } catch {
+    // The activity server is already closed.
+  }
 
   try {
     await client.destroy();
@@ -207,3 +214,12 @@ async function connect() {
 }
 
 await connect();
+
+// Optional storefront Activity. Nothing happens unless ACTIVITY_ENABLED=1 and
+// the OAuth secret is present; failures never stop the bot.
+try {
+  const { startActivityServer } = await import('./activity/server.js');
+  activityServer = startActivityServer(client);
+} catch (error) {
+  logger.error('Store activity failed to start (the bot continues without it)', error);
+}
