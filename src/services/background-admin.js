@@ -43,13 +43,16 @@ function slugify(value) {
 }
 
 function uniqueId(name) {
-  const base = `bg-${slugify(name) || Date.now().toString(36)}`.slice(0, 36);
+  // A short random suffix keeps a deleted design's id from being reused, so a
+  // new design never inherits old purchase rows by accident.
+  const suffix = Math.random().toString(36).slice(2, 6);
+  const base = `bg-${slugify(name) || 'design'}-${suffix}`.slice(0, 36);
   let id = base;
-  let suffix = 2;
+  let counter = 2;
 
   while (backgroundById(id) || isBuiltInBackground(id) || !isValidBackgroundId(id)) {
-    id = `${base.slice(0, 34)}-${suffix}`;
-    suffix += 1;
+    id = `${base.slice(0, 34)}-${counter}`;
+    counter += 1;
   }
 
   return id;
