@@ -188,8 +188,14 @@ const PANELS = {
 };
 
 const NUMBER_FONT_SIZE = 58;
-const COIN_ICON_SIZE = 62;
+// The coin faces are low contrast at card scale, and an animated card is
+// downscaled to 800 px before GIF quantisation. A 62 px mark shrank to ~27 px
+// and its pale facets were mapped to white or to the panel, so the coin looked
+// chewed. Drawing it a little larger and slightly richer keeps the silhouette
+// and tower readable in both the still PNG and the GIF.
+const COIN_ICON_SIZE = 76;
 const COIN_ICON_GAP = 14;
+const COIN_ICON_FILTER = 'saturate(1.35) contrast(1.08)';
 const ARABIC = /[\u0600-\u06ff\u0750-\u077f\u08a0-\u08ff]/;
 
 // A custom wallpaper replaces the whole artwork, so its glass panels are drawn
@@ -634,6 +640,11 @@ function drawPanelValue(ctx, panel, value, { icon = null } = {}) {
   if (!icon) return;
 
   const centerY = baseline - NUMBER_FONT_SIZE * 0.34;
+
+  // The official mark has very light facets; without a small saturation lift
+  // the GIF palette merges them with the white digits, which reads as a hole.
+  ctx.save();
+  ctx.filter = COIN_ICON_FILTER;
   ctx.drawImage(
     icon,
     right - COIN_ICON_SIZE,
@@ -641,6 +652,7 @@ function drawPanelValue(ctx, panel, value, { icon = null } = {}) {
     COIN_ICON_SIZE,
     COIN_ICON_SIZE,
   );
+  ctx.restore();
 }
 
 function drawXpBar(ctx, progress, accent = FILL_COLOR) {
