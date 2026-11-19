@@ -17,6 +17,8 @@ import {
   settleProfile,
 } from './profile-store.js';
 
+export { backgroundIdFromKey, designItemKey } from './store-catalog.js';
+
 const logger = createLogger('store');
 
 const FULFILLED = 'fulfilled';

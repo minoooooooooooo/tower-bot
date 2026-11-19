@@ -77,37 +77,64 @@ function itemOf(ctx) {
 function listEmbed(ctx) {
   const items = storeCatalog(ctx.guildId);
   const sales = storeSales(ctx.guildId);
+  const plain = items.filter((item) => item.type !== 'background');
+  const designs = items.filter((item) => item.type === 'background');
 
-  const fields = items.map((item) => {
-    const sold = sales.get(item.key);
-    const price = item.price === item.defaultPrice
+  const priceText = (item) =>
+    item.price === item.defaultPrice
       ? `**${formatNumber(item.price)}** coins`
       : `**${formatNumber(item.price)}** coins (default ${formatNumber(item.defaultPrice)})`;
+
+  const fields = plain.map((item) => {
+    const sold = sales.get(item.key);
 
     return {
       name: `\`${item.key}\` · ${item.name}`,
       value:
-        `${STORE_TYPE_LABELS[item.type] ?? item.type} · ${price} · ${item.enabled ? 'on' : '**off**'}` +
+        `${STORE_TYPE_LABELS[item.type] ?? item.type} · ${priceText(item)} · ${item.enabled ? 'on' : '**off**'}` +
         ` · ${sold ? `${sold.count} sold (${formatNumber(sold.coins)} coins)` : 'never sold'}`,
       inline: false,
     };
   });
 
-  if (items.every((item) => item.type !== 'background')) {
+  if (designs.length === 0) {
     fields.push({
-      name: 'Paid backgrounds',
+      name: 'Store designs',
       value:
-        'None. A design becomes a store item when its entry in ' +
-        '`assets/profile/backgrounds/backgrounds.json` gets a `price`.',
+        'None. A design becomes a store item when its entry in the background manifest gets a `price`.',
       inline: false,
     });
+  } else {
+    // Fifty designs do not fit in one field, or in one field each.
+    const size = 12;
+
+    for (let index = 0; index < designs.length; index += size) {
+      const chunk = designs.slice(index, index + size);
+      const part = Math.floor(index / size) + 1;
+      const parts = Math.ceil(designs.length / size);
+
+      fields.push({
+        name: parts > 1 ? `Store designs (${part}/${parts})` : 'Store designs',
+        value: chunk
+          .map((item) => {
+            const sold = sales.get(item.key);
+            return (
+              `\`${item.key}\` · ${formatNumber(item.price)}` +
+              `${item.enabled ? '' : ' · **off**'}` +
+              `${sold ? ` · ${sold.count} sold` : ''}`
+            );
+          })
+          .join('\n'),
+        inline: false,
+      });
+    }
   }
 
   return embed({
     title: 'Store settings',
     description:
-      'The catalogue lives in `src/services/store-catalog.js`. Only price and visibility are ' +
-      'stored per server.',
+      'Prices and visibility are stored per server. Backgrounds can also be added, edited and ' +
+      'deleted by a **Manage Server** member in the Activity store → Backgrounds.',
     color: COLORS.primary,
     fields,
     footer: `Change with ${ctx.isSlash ? '/store-config' : `${config.prefix}store-config`} price|enable|disable|reset`,

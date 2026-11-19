@@ -71,29 +71,59 @@ function itemLine(item, owned) {
   );
 }
 
+function backgroundLine(item, owned) {
+  const bought = owned?.has(item.backgroundId);
+  const name = item.name.replace(/\s+background$/i, '');
+
+  return `${bought ? '✅' : '•'} ${name} · ${formatNumber(item.price)}`;
+}
+
 function browseEmbed(ctx, items, balance, owned) {
-  const fields = TYPE_ORDER.map((type) => {
+  const fields = TYPE_ORDER.flatMap((type) => {
     const group = items.filter((item) => item.type === type);
     const label = STORE_TYPE_LABELS[type] ?? type;
 
     if (group.length === 0) {
-      if (type !== 'background') return null;
+      if (type !== 'background') return [];
 
-      return {
-        name: label,
-        value:
-          'No paid designs yet. A design appears here once its entry in ' +
-          '`assets/profile/backgrounds/backgrounds.json` has a `price`.',
-        inline: false,
-      };
+      return [
+        {
+          name: label,
+          value:
+            'No paid designs yet. A design appears here once its entry in ' +
+            '`assets/profile/backgrounds/backgrounds.json` has a `price`.',
+          inline: false,
+        },
+      ];
     }
 
-    return {
-      name: label,
-      value: group.map((item) => itemLine(item, owned)).join('\n'),
-      inline: false,
-    };
-  }).filter(Boolean);
+    // Fifty designs do not fit in one embed field. Split the compact list in
+    // half; the Activity shows the same catalogue with pictures.
+    if (type === 'background' && group.length > 10) {
+      const middle = Math.ceil(group.length / 2);
+
+      return [
+        {
+          name: `${label} (1/2)`,
+          value: group.slice(0, middle).map((item) => backgroundLine(item, owned)).join('\n'),
+          inline: false,
+        },
+        {
+          name: `${label} (2/2)`,
+          value: group.slice(middle).map((item) => backgroundLine(item, owned)).join('\n'),
+          inline: false,
+        },
+      ];
+    }
+
+    return [
+      {
+        name: label,
+        value: group.map((item) => itemLine(item, owned)).join('\n'),
+        inline: false,
+      },
+    ];
+  });
 
   fields.unshift({ name: 'Your balance', value: `**${formatNumber(balance)}** coins`, inline: true });
 
@@ -104,7 +134,7 @@ function browseEmbed(ctx, items, balance, owned) {
       'sent to you by other members.',
     color: COLORS.primary,
     fields,
-    footer: `Buy with ${ctx.isSlash ? '/store buy item:' : `${config.prefix}store buy `}<key>`,
+    footer: `Buy with ${ctx.isSlash ? '/store buy item:' : `${config.prefix}store buy `}<key or name>`,
   });
 }
 

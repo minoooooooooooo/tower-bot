@@ -13,7 +13,11 @@
       "level": 5,
       "price": 0,
       "artMode": "wallpaper",
-      "theme": { "from": "#ff7a1a", "to": "#ffd166", "accent": "#ffb347" }
+      "theme": {
+        "from": "#ff7a1a",
+        "to": "#ffd166",
+        "accent": "#ffb347"
+      }
     },
     {
       "id": "tier-10",
@@ -21,7 +25,11 @@
       "level": 10,
       "price": 0,
       "artMode": "wallpaper",
-      "theme": { "from": "#1f9d55", "to": "#a8e063", "accent": "#7ee787" }
+      "theme": {
+        "from": "#1f9d55",
+        "to": "#a8e063",
+        "accent": "#7ee787"
+      }
     },
     {
       "id": "tier-15",
@@ -29,7 +37,11 @@
       "level": 15,
       "price": 0,
       "artMode": "wallpaper",
-      "theme": { "from": "#1e6fff", "to": "#38e8d0", "accent": "#62d9ff" }
+      "theme": {
+        "from": "#1e6fff",
+        "to": "#38e8d0",
+        "accent": "#62d9ff"
+      }
     },
     {
       "id": "tier-20",
@@ -37,7 +49,11 @@
       "level": 20,
       "price": 0,
       "artMode": "wallpaper",
-      "theme": { "from": "#8a3ffc", "to": "#e879f9", "accent": "#c084fc" }
+      "theme": {
+        "from": "#8a3ffc",
+        "to": "#e879f9",
+        "accent": "#c084fc"
+      }
     },
     {
       "id": "tier-25",
@@ -45,7 +61,11 @@
       "level": 25,
       "price": 0,
       "artMode": "wallpaper",
-      "theme": { "from": "#e11d48", "to": "#ff8fab", "accent": "#ff7aa8" }
+      "theme": {
+        "from": "#e11d48",
+        "to": "#ff8fab",
+        "accent": "#ff7aa8"
+      }
     },
     {
       "id": "tier-30",
@@ -53,7 +73,11 @@
       "level": 30,
       "price": 0,
       "artMode": "wallpaper",
-      "theme": { "from": "#f59e0b", "to": "#fff176", "accent": "#ffd166" }
+      "theme": {
+        "from": "#f59e0b",
+        "to": "#fff176",
+        "accent": "#ffd166"
+      }
     },
     {
       "id": "tier-35",
@@ -61,7 +85,11 @@
       "level": 35,
       "price": 0,
       "artMode": "wallpaper",
-      "theme": { "from": "#38bdf8", "to": "#e0f2fe", "accent": "#9fe8ff" }
+      "theme": {
+        "from": "#38bdf8",
+        "to": "#e0f2fe",
+        "accent": "#9fe8ff"
+      }
     },
     {
       "id": "tier-40",
@@ -69,7 +97,11 @@
       "level": 40,
       "price": 0,
       "artMode": "wallpaper",
-      "theme": { "from": "#4c1d95", "to": "#a78bfa", "accent": "#a78bfa" }
+      "theme": {
+        "from": "#4c1d95",
+        "to": "#a78bfa",
+        "accent": "#a78bfa"
+      }
     },
     {
       "id": "tier-45",
@@ -77,7 +109,11 @@
       "level": 45,
       "price": 0,
       "artMode": "wallpaper",
-      "theme": { "from": "#ff0080", "to": "#00e5ff", "accent": "#f0abfc" }
+      "theme": {
+        "from": "#ff0080",
+        "to": "#00e5ff",
+        "accent": "#f0abfc"
+      }
     },
     {
       "id": "tier-50",
@@ -85,7 +121,611 @@
       "level": 50,
       "price": 0,
       "artMode": "wallpaper",
-      "theme": { "from": "#ffcc33", "to": "#ffe9a8", "accent": "#ffe066" }
+      "theme": {
+        "from": "#ffcc33",
+        "to": "#ffe9a8",
+        "accent": "#ffe066"
+      }
+    },
+    {
+      "id": "bg-01-sakura-dusk",
+      "name": "Sakura Dusk",
+      "level": 1,
+      "price": 130,
+      "artMode": "wallpaper",
+      "theme": {
+        "from": "#5b3e4f",
+        "to": "#f0d1da",
+        "accent": "#33b9a5"
+      }
+    },
+    {
+      "id": "bg-02-golden-hour",
+      "name": "Golden Hour",
+      "level": 1,
+      "price": 140,
+      "artMode": "wallpaper",
+      "theme": {
+        "from": "#603f39",
+        "to": "#faea98",
+        "accent": "#4c32c7"
+      }
+    },
+    {
+      "id": "bg-03-arctic-aurora",
+      "name": "Arctic Aurora",
+      "level": 1,
+      "price": 150,
+      "artMode": "wallpaper",
+      "theme": {
+        "from": "#395360",
+        "to": "#acf7fb",
+        "accent": "#e3be03"
+      }
+    },
+    {
+      "id": "bg-04-emerald-night",
+      "name": "Emerald Night",
+      "level": 1,
+      "price": 140,
+      "artMode": "wallpaper",
+      "theme": {
+        "from": "#444b55",
+        "to": "#9dfaed",
+        "accent": "#d4236b"
+      }
+    },
+    {
+      "id": "bg-05-violet-storm",
+      "name": "Violet Storm",
+      "level": 1,
+      "price": 200,
+      "artMode": "wallpaper",
+      "theme": {
+        "from": "#633663",
+        "to": "#e5ccf0",
+        "accent": "#f78100"
+      }
+    },
+    {
+      "id": "bg-06-crimson-eclipse",
+      "name": "Crimson Eclipse",
+      "level": 1,
+      "price": 210,
+      "artMode": "wallpaper",
+      "theme": {
+        "from": "#602f4c",
+        "to": "#ebafaf",
+        "accent": "#006cde"
+      }
+    },
+    {
+      "id": "bg-07-ocean-depths",
+      "name": "Ocean Depths",
+      "level": 1,
+      "price": 130,
+      "artMode": "wallpaper",
+      "theme": {
+        "from": "#43564d",
+        "to": "#a2e7ef",
+        "accent": "#ff6406"
+      }
+    },
+    {
+      "id": "bg-08-cotton-candy",
+      "name": "Cotton Candy",
+      "level": 1,
+      "price": 70,
+      "artMode": "wallpaper",
+      "theme": {
+        "from": "#6d2c63",
+        "to": "#ecd4ea",
+        "accent": "#5be1d2"
+      }
+    },
+    {
+      "id": "bg-09-desert-mirage",
+      "name": "Desert Mirage",
+      "level": 1,
+      "price": 120,
+      "artMode": "wallpaper",
+      "theme": {
+        "from": "#625137",
+        "to": "#f8e49d",
+        "accent": "#3097a6"
+      }
+    },
+    {
+      "id": "bg-10-neon-tokyo",
+      "name": "Neon Tokyo",
+      "level": 1,
+      "price": 220,
+      "artMode": "wallpaper",
+      "theme": {
+        "from": "#6a2f57",
+        "to": "#acf5f9",
+        "accent": "#fb5300"
+      }
+    },
+    {
+      "id": "bg-11-autumn-maple",
+      "name": "Autumn Maple",
+      "level": 1,
+      "price": 135,
+      "artMode": "wallpaper",
+      "theme": {
+        "from": "#5c413d",
+        "to": "#f3dd9e",
+        "accent": "#4c3cc9"
+      }
+    },
+    {
+      "id": "bg-12-winter-silence",
+      "name": "Winter Silence",
+      "level": 1,
+      "price": 65,
+      "artMode": "wallpaper",
+      "theme": {
+        "from": "#454d54",
+        "to": "#cee9f3",
+        "accent": "#b18843"
+      }
+    },
+    {
+      "id": "bg-13-mint-sorbet",
+      "name": "Mint Sorbet",
+      "level": 1,
+      "price": 60,
+      "artMode": "wallpaper",
+      "theme": {
+        "from": "#484356",
+        "to": "#ccf4f5",
+        "accent": "#e8488c"
+      }
+    },
+    {
+      "id": "bg-14-lava-core",
+      "name": "Lava Core",
+      "level": 1,
+      "price": 230,
+      "artMode": "wallpaper",
+      "theme": {
+        "from": "#613a38",
+        "to": "#fecd50",
+        "accent": "#0e4fc8"
+      }
+    },
+    {
+      "id": "bg-15-lavender-field",
+      "name": "Lavender Field",
+      "level": 1,
+      "price": 65,
+      "artMode": "wallpaper",
+      "theme": {
+        "from": "#594050",
+        "to": "#e5d3ee",
+        "accent": "#de9b19"
+      }
+    },
+    {
+      "id": "bg-16-midnight-gold",
+      "name": "Midnight Gold",
+      "level": 1,
+      "price": 150,
+      "artMode": "wallpaper",
+      "theme": {
+        "from": "#623745",
+        "to": "#f0dd9b",
+        "accent": "#c31432"
+      }
+    },
+    {
+      "id": "bg-17-peach-fizz",
+      "name": "Peach Fizz",
+      "level": 1,
+      "price": 60,
+      "artMode": "wallpaper",
+      "theme": {
+        "from": "#5b503e",
+        "to": "#f9e8c7",
+        "accent": "#32b393"
+      }
+    },
+    {
+      "id": "bg-18-toxic-slime",
+      "name": "Toxic Slime",
+      "level": 1,
+      "price": 210,
+      "artMode": "wallpaper",
+      "theme": {
+        "from": "#5c593d",
+        "to": "#dbfe83",
+        "accent": "#9225b2"
+      }
+    },
+    {
+      "id": "bg-19-royal-indigo",
+      "name": "Royal Indigo",
+      "level": 1,
+      "price": 200,
+      "artMode": "wallpaper",
+      "theme": {
+        "from": "#3c3960",
+        "to": "#bbceee",
+        "accent": "#db9001"
+      }
+    },
+    {
+      "id": "bg-20-rose-gold",
+      "name": "Rose Gold",
+      "level": 1,
+      "price": 80,
+      "artMode": "wallpaper",
+      "theme": {
+        "from": "#534455",
+        "to": "#eed3de",
+        "accent": "#3f85ab"
+      }
+    },
+    {
+      "id": "bg-21-cyber-sunset",
+      "name": "Cyber Sunset",
+      "level": 1,
+      "price": 220,
+      "artMode": "wallpaper",
+      "theme": {
+        "from": "#363564",
+        "to": "#f9dcb5",
+        "accent": "#0092d6"
+      }
+    },
+    {
+      "id": "bg-22-moonlit-teal",
+      "name": "Moonlit Teal",
+      "level": 1,
+      "price": 140,
+      "artMode": "wallpaper",
+      "theme": {
+        "from": "#435644",
+        "to": "#bdeef1",
+        "accent": "#da6516"
+      }
+    },
+    {
+      "id": "bg-23-blood-orange",
+      "name": "Blood Orange",
+      "level": 1,
+      "price": 210,
+      "artMode": "wallpaper",
+      "theme": {
+        "from": "#5f3a41",
+        "to": "#f6d3a5",
+        "accent": "#293ec1"
+      }
+    },
+    {
+      "id": "bg-24-lilac-dream",
+      "name": "Lilac Dream",
+      "level": 1,
+      "price": 70,
+      "artMode": "wallpaper",
+      "theme": {
+        "from": "#3f3e5b",
+        "to": "#eed2ee",
+        "accent": "#34c86e"
+      }
+    },
+    {
+      "id": "bg-25-glacier",
+      "name": "Glacier",
+      "level": 1,
+      "price": 75,
+      "artMode": "wallpaper",
+      "theme": {
+        "from": "#415852",
+        "to": "#ccf5f5",
+        "accent": "#ba981d"
+      }
+    },
+    {
+      "id": "bg-26-honey-amber",
+      "name": "Honey Amber",
+      "level": 1,
+      "price": 125,
+      "artMode": "wallpaper",
+      "theme": {
+        "from": "#603f39",
+        "to": "#f9ef98",
+        "accent": "#6223b9"
+      }
+    },
+    {
+      "id": "bg-27-coral-reef",
+      "name": "Coral Reef",
+      "level": 1,
+      "price": 135,
+      "artMode": "wallpaper",
+      "theme": {
+        "from": "#533c5d",
+        "to": "#f8f0c2",
+        "accent": "#b728de"
+      }
+    },
+    {
+      "id": "bg-28-plum-smoke",
+      "name": "Plum Smoke",
+      "level": 1,
+      "price": 190,
+      "artMode": "wallpaper",
+      "theme": {
+        "from": "#583d5c",
+        "to": "#dab3cf",
+        "accent": "#25b1b1"
+      }
+    },
+    {
+      "id": "bg-29-spring-meadow",
+      "name": "Spring Meadow",
+      "level": 1,
+      "price": 70,
+      "artMode": "wallpaper",
+      "theme": {
+        "from": "#644d35",
+        "to": "#f0f9c4",
+        "accent": "#ff3d81"
+      }
+    },
+    {
+      "id": "bg-30-steel-dawn",
+      "name": "Steel Dawn",
+      "level": 1,
+      "price": 120,
+      "artMode": "wallpaper",
+      "theme": {
+        "from": "#613a38",
+        "to": "#efdbbf",
+        "accent": "#d22c26"
+      }
+    },
+    {
+      "id": "bg-31-candy-rainbow",
+      "name": "Candy Rainbow",
+      "level": 1,
+      "price": 320,
+      "artMode": "wallpaper",
+      "theme": {
+        "from": "#3e515b",
+        "to": "#b5e9e7",
+        "accent": "#00c8d6"
+      }
+    },
+    {
+      "id": "bg-32-sapphire-rain",
+      "name": "Sapphire Rain",
+      "level": 1,
+      "price": 145,
+      "artMode": "wallpaper",
+      "theme": {
+        "from": "#444257",
+        "to": "#c1dcf1",
+        "accent": "#ee7207"
+      }
+    },
+    {
+      "id": "bg-33-sunflower",
+      "name": "Sunflower",
+      "level": 1,
+      "price": 220,
+      "artMode": "wallpaper",
+      "theme": {
+        "from": "#5a553f",
+        "to": "#fffda3",
+        "accent": "#3050ba"
+      }
+    },
+    {
+      "id": "bg-34-black-ink",
+      "name": "Black Ink",
+      "level": 1,
+      "price": 340,
+      "artMode": "wallpaper",
+      "theme": {
+        "from": "#475250",
+        "to": "#d5e0de",
+        "accent": "#30a670"
+      }
+    },
+    {
+      "id": "bg-35-sepia-memory",
+      "name": "Sepia Memory",
+      "level": 1,
+      "price": 65,
+      "artMode": "wallpaper",
+      "theme": {
+        "from": "#625037",
+        "to": "#ede4c5",
+        "accent": "#a67b30"
+      }
+    },
+    {
+      "id": "bg-36-pink-lemonade",
+      "name": "Pink Lemonade",
+      "level": 1,
+      "price": 75,
+      "artMode": "wallpaper",
+      "theme": {
+        "from": "#564344",
+        "to": "#f9e4b3",
+        "accent": "#29b6c2"
+      }
+    },
+    {
+      "id": "bg-37-deep-space",
+      "name": "Deep Space",
+      "level": 1,
+      "price": 350,
+      "artMode": "wallpaper",
+      "theme": {
+        "from": "#66335d",
+        "to": "#b9a3eb",
+        "accent": "#eb4b00"
+      }
+    },
+    {
+      "id": "bg-38-fire-opal",
+      "name": "Fire Opal",
+      "level": 1,
+      "price": 220,
+      "artMode": "wallpaper",
+      "theme": {
+        "from": "#535246",
+        "to": "#ecdda9",
+        "accent": "#22c0a5"
+      }
+    },
+    {
+      "id": "bg-39-jade-temple",
+      "name": "Jade Temple",
+      "level": 1,
+      "price": 130,
+      "artMode": "wallpaper",
+      "theme": {
+        "from": "#5c4f3d",
+        "to": "#dcf4c9",
+        "accent": "#df261b"
+      }
+    },
+    {
+      "id": "bg-40-twilight-peach",
+      "name": "Twilight Peach",
+      "level": 1,
+      "price": 80,
+      "artMode": "wallpaper",
+      "theme": {
+        "from": "#544549",
+        "to": "#f9e4b9",
+        "accent": "#32a6a8"
+      }
+    },
+    {
+      "id": "bg-41-electric-lime",
+      "name": "Electric Lime",
+      "level": 1,
+      "price": 300,
+      "artMode": "wallpaper",
+      "theme": {
+        "from": "#424e57",
+        "to": "#e4ff9c",
+        "accent": "#8d26f6"
+      }
+    },
+    {
+      "id": "bg-42-ruby-snow",
+      "name": "Ruby Snow",
+      "level": 1,
+      "price": 200,
+      "artMode": "wallpaper",
+      "theme": {
+        "from": "#583f5a",
+        "to": "#edd3e1",
+        "accent": "#238cb5"
+      }
+    },
+    {
+      "id": "bg-43-copper-storm",
+      "name": "Copper Storm",
+      "level": 1,
+      "price": 125,
+      "artMode": "wallpaper",
+      "theme": {
+        "from": "#535445",
+        "to": "#ebcbac",
+        "accent": "#1f99b7"
+      }
+    },
+    {
+      "id": "bg-44-ultraviolet",
+      "name": "Ultraviolet",
+      "level": 1,
+      "price": 230,
+      "artMode": "wallpaper",
+      "theme": {
+        "from": "#363564",
+        "to": "#ebbcf1",
+        "accent": "#00d68b"
+      }
+    },
+    {
+      "id": "bg-45-daybreak-mist",
+      "name": "Daybreak Mist",
+      "level": 1,
+      "price": 60,
+      "artMode": "wallpaper",
+      "theme": {
+        "from": "#5a3f44",
+        "to": "#ebd9d6",
+        "accent": "#c96d57"
+      }
+    },
+    {
+      "id": "bg-46-tropical-punch",
+      "name": "Tropical Punch",
+      "level": 1,
+      "price": 140,
+      "artMode": "wallpaper",
+      "theme": {
+        "from": "#453c5d",
+        "to": "#f6e9b6",
+        "accent": "#5728d5"
+      }
+    },
+    {
+      "id": "bg-47-silver-moon",
+      "name": "Silver Moon",
+      "level": 1,
+      "price": 75,
+      "artMode": "wallpaper",
+      "theme": {
+        "from": "#414758",
+        "to": "#dce2e5",
+        "accent": "#cb4aca"
+      }
+    },
+    {
+      "id": "bg-48-volcano-ash",
+      "name": "Volcano Ash",
+      "level": 1,
+      "price": 310,
+      "artMode": "wallpaper",
+      "theme": {
+        "from": "#4d363f",
+        "to": "#eeb486",
+        "accent": "#1f57b7"
+      }
+    },
+    {
+      "id": "bg-49-spectrum-wave",
+      "name": "Spectrum Wave",
+      "level": 1,
+      "price": 360,
+      "artMode": "wallpaper",
+      "theme": {
+        "from": "#6d2c66",
+        "to": "#dad1e0",
+        "accent": "#d602cd"
+      }
+    },
+    {
+      "id": "bg-50-pearl-sea",
+      "name": "Pearl Sea",
+      "level": 1,
+      "price": 60,
+      "artMode": "wallpaper",
+      "theme": {
+        "from": "#4d5247",
+        "to": "#d3e8ed",
+        "accent": "#cba16e"
+      }
     }
   ]
 }

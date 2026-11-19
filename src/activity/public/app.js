@@ -11,10 +11,14 @@ const state = {
   filter: 'all',
   image: null,
   imageName: null,
+  backgroundImage: null,
+  backgroundImageName: null,
   sheet: null,
   demo: false,
   busy: false,
 };
+
+const CUSTOM_ID = 'custom';
 
 const TABS = [
   { id: 'all', label: 'All' },
@@ -32,6 +36,9 @@ const REASONS = {
   unpriced: 'This item has no price yet.',
   limit: 'You already own the maximum of that item.',
   funds: 'Not enough coins.',
+  level: 'You are not high enough level for that yet.',
+  custom: 'Upload a custom wallpaper first.',
+  action: 'Unknown action.',
   name: 'Check the name you entered.',
   color: 'That colour is not valid.',
   image: 'Choose a PNG, JPEG, WebP or GIF image.',
@@ -324,7 +331,7 @@ function renderBackgrounds() {
   const grid = $('#grid');
   const empty = $('#empty');
 
-  if (list.length === 0) {
+  if (list.length === 0 && !state.data.canManage) {
     grid.innerHTML = '';
     empty.hidden = false;
     empty.textContent = 'No backgrounds yet.';
@@ -332,26 +339,65 @@ function renderBackgrounds() {
   }
 
   empty.hidden = true;
-  grid.innerHTML = list.map(backgroundCard).join('');
+  const addCard = state.data.canManage
+    ? `<button class="card add-card" id="add-background">
+        <div class="art">${glyph('background')}</div>
+        <div class="card-body">
+          <h3>Add background</h3>
+          <span class="card-meta">Manage Server</span>
+          <span class="price free">Upload & set a price</span>
+        </div>
+      </button>`
+    : '';
+
+  grid.innerHTML = addCard + list.map(backgroundCard).join('');
   wireBackgroundCards();
+  $('#add-background')?.addEventListener('click', openBackgroundCreator);
 }
 
 function backgroundCard(background) {
-  const badge = background.selected
-    ? '<span class="badge equipped">Equipped</span>'
-    : background.unlocked
-      ? '<span class="badge owned">Owned</span>'
-      : background.price > 0
-        ? ''
-        : `<span class="badge">Level ${format(background.level)}</span>`;
+  let badge;
+  let price;
+  let meta;
 
-  const price = background.selected
-    ? '<span class="price free">Equipped</span>'
-    : background.unlocked
-      ? '<span class="price free">Tap to equip</span>'
-      : background.price > 0
-        ? `<span class="price">${coinSvg()}<span>${format(background.price)}</span></span>`
+  if (background.custom) {
+    badge = background.selected
+      ? '<span class="badge equipped">Equipped</span>'
+      : background.hasImage
+        ? '<span class="badge owned">Owned</span>'
+        : background.unlocked
+          ? '<span class="badge">Ready</span>'
+          : `<span class="badge">Level ${format(background.level)}</span>`;
+    price = background.selected
+      ? '<span class="price free">Equipped</span>'
+      : background.hasImage || background.unlocked
+        ? '<span class="price free">Tap to manage</span>'
         : `<span class="price">Level ${format(background.level)}</span>`;
+    meta = background.hasImage ? 'your wallpaper' : 'upload your own';
+  } else {
+    badge = background.selected
+      ? '<span class="badge equipped">Equipped</span>'
+      : background.unlocked
+        ? '<span class="badge owned">Owned</span>'
+        : background.price > 0
+          ? ''
+          : `<span class="badge">Level ${format(background.level)}</span>`;
+
+    price = background.selected
+      ? '<span class="price free">Equipped</span>'
+      : background.unlocked
+        ? '<span class="price free">Tap to equip</span>'
+        : background.price > 0
+          ? `<span class="price">${coinSvg()}<span>${format(background.price)}</span></span>`
+          : `<span class="price">Level ${format(background.level)}</span>`;
+
+    meta =
+      background.id === 'default'
+        ? 'always available'
+        : background.price > 0
+          ? 'store design'
+          : `level ${format(background.level)}`;
+  }
 
   return `<button class="card rarity-${background.rarity}" data-bg="${escapeHtml(background.id)}">
     <div class="art">
@@ -361,7 +407,7 @@ function backgroundCard(background) {
     </div>
     <div class="card-body">
       <h3>${escapeHtml(background.name)}</h3>
-      <span class="card-meta">${background.id === 'default' ? 'always available' : `level ${format(background.level)}`}</span>
+      <span class="card-meta">${escapeHtml(meta)}</span>
       ${price}
     </div>
   </button>`;
@@ -394,6 +440,7 @@ const sheetEls = {
   title: $('#sheet-title'),
   summary: $('#sheet-summary'),
   controls: $('#sheet-controls'),
+  admin: $('#sheet-admin'),
   action: $('#sheet-action'),
   note: $('#sheet-note'),
 };
@@ -402,6 +449,8 @@ function openSheet(item, kind) {
   state.sheet = { item, kind };
   state.image = null;
   state.imageName = null;
+  state.backgroundImage = null;
+  state.backgroundImageName = null;
   sheetEls.note.textContent = '';
   sheetEls.note.className = 'sheet-note';
   sheetEls.art.style.setProperty('--rarity', `var(--${item.rarity ?? 'common'})`);
@@ -411,6 +460,7 @@ function openSheet(item, kind) {
   sheetEls.title.textContent = item.name;
   sheetEls.summary.textContent = item.summary ?? '';
   sheetEls.controls.innerHTML = '';
+  sheetEls.admin.innerHTML = '';
   sheetEls.root.hidden = false;
 }
 
@@ -419,6 +469,8 @@ function closeSheet() {
   state.sheet = null;
   state.image = null;
   state.imageName = null;
+  state.backgroundImage = null;
+  state.backgroundImageName = null;
   state.busy = false;
 }
 
@@ -632,6 +684,11 @@ async function buyItem(item, values) {
 /* ── Background sheet ─────────────────────────────────────────────────────── */
 
 function openBackgroundSheet(background) {
+  if (background.custom) {
+    openCustomBackgroundSheet(background);
+    return;
+  }
+
   openSheet(
     {
       ...background,
@@ -648,25 +705,405 @@ function openBackgroundSheet(background) {
 
   if (background.selected) {
     setAction('Currently equipped', { disabled: true, secondary: true });
-    return;
-  }
-
-  if (background.unlocked) {
+  } else if (background.unlocked) {
     setAction('Equip', { onClick: () => equipBackground(background) });
-    return;
-  }
-
-  if (background.price > 0) {
+  } else if (background.price > 0) {
     const short = balanceNote(background.price);
 
     setAction(`Buy · ${format(background.price)} coins`, {
       disabled: short,
       onClick: () => buyBackground(background),
     });
+  } else {
+    setAction(`Unlocks at level ${format(background.level)}`, { disabled: true, secondary: true });
+  }
+
+  if (state.data.canManage && background.id !== 'default') {
+    addBackgroundAdminControls(background);
+  }
+}
+
+function openCustomBackgroundSheet(background) {
+  const level = format(background.level);
+
+  openSheet(
+    {
+      ...background,
+      type: 'background',
+      summary: background.hasImage
+        ? `Your uploaded wallpaper${background.selected ? ' is on your card.' : ' is ready to equip.'} You can replace it here.`
+        : background.canUpload
+          ? `Upload a PNG, JPEG, WebP or GIF (10 MB max). Custom wallpapers unlock at level ${level}.`
+          : `Custom wallpapers unlock at level ${level}. You can upload one when you reach it.`,
+    },
+    'background',
+  );
+
+  if (background.canUpload || background.hasImage) {
+    sheetEls.controls.innerHTML = `<div class="field">
+      <label for="custom-image">${background.hasImage ? 'Replace image' : 'Wallpaper image'}</label>
+      <input id="custom-image" type="file" accept="image/png,image/jpeg,image/webp,image/gif">
+      <span id="custom-image-note" class="card-meta">PNG, JPEG, WebP or GIF · 10 MB max${background.hasImage ? ' · GIFs stay animated' : ''}</span>
+    </div>`;
+
+    $('#custom-image').addEventListener('change', (event) => {
+      readBackgroundImageFile(event.target.files?.[0], '#custom-image-note').then(refresh);
+    });
+  }
+
+  function refresh() {
+    if (state.backgroundImage) {
+      setAction(background.hasImage ? 'Replace wallpaper' : 'Upload wallpaper', {
+        disabled: state.busy,
+        onClick: uploadCustomBackground,
+      });
+      return;
+    }
+
+    if (background.selected) {
+      setAction('Currently equipped', { disabled: true, secondary: true });
+      return;
+    }
+
+    if (background.hasImage) {
+      setAction('Equip', { onClick: () => equipBackground(background) });
+      return;
+    }
+
+    if (background.canUpload) {
+      setAction('Choose an image first', { disabled: true, secondary: true });
+      return;
+    }
+
+    setAction(`Unlocks at level ${level}`, { disabled: true, secondary: true });
+  }
+
+  refresh();
+}
+
+async function readBackgroundImageFile(file, noteSelector) {
+  const note = $(noteSelector);
+
+  if (!file) return null;
+
+  if (!/^image\/(png|jpe?g|webp|gif)$/i.test(file.type)) {
+    if (note) note.textContent = 'That file type is not supported.';
+    state.backgroundImage = null;
+    return null;
+  }
+
+  if (file.size > 10 * 1024 * 1024) {
+    if (note) note.textContent = `This file is ${Math.ceil(file.size / 1024 / 1024)} MB; the limit is 10 MB.`;
+    state.backgroundImage = null;
+    return null;
+  }
+
+  const dataUrl = await new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => resolve(null);
+    reader.readAsDataURL(file);
+  });
+
+  if (!dataUrl) {
+    if (note) note.textContent = 'Could not read the image.';
+    return null;
+  }
+
+  state.backgroundImage = dataUrl;
+  state.backgroundImageName = file.name;
+  if (note) note.textContent = `${file.name} · ${Math.ceil(file.size / 1024)} KB`;
+  sheetEls.art.innerHTML = `<img src="${escapeHtml(dataUrl)}" alt="">`;
+  setNote('Image ready.');
+
+  return dataUrl;
+}
+
+async function uploadCustomBackground() {
+  if (state.demo) {
+    toast('Demo mode — open the store in Discord to change this.', 'error');
     return;
   }
 
-  setAction(`Unlocks at level ${format(background.level)}`, { disabled: true, secondary: true });
+  if (!state.backgroundImage) {
+    setNote('Choose an image first.', 'error');
+    return;
+  }
+
+  if (state.busy) return;
+
+  state.busy = true;
+  setAction('Uploading…', { disabled: true });
+
+  try {
+    const result = await api('/api/background/custom', {
+      method: 'POST',
+      body: {
+        guildId: state.guildId,
+        image: state.backgroundImage,
+        imageName: state.backgroundImageName,
+      },
+    });
+
+    if (!result.ok) {
+      setNote(result.message || REASONS[result.reason] || 'The wallpaper was not saved.', 'error');
+      state.busy = false;
+      return;
+    }
+
+    closeSheet();
+    toast(
+      result.animated
+        ? `Custom wallpaper saved (${format(result.frames)} frames).`
+        : 'Custom wallpaper saved.',
+      'good',
+    );
+    await loadStore();
+  } catch (error) {
+    setNote(error.message, 'error');
+    state.busy = false;
+  }
+}
+
+function addBackgroundAdminControls(background) {
+  sheetEls.admin.innerHTML = `<button type="button" data-edit>Edit</button>
+    <button type="button" class="danger" data-delete>Delete</button>`;
+
+  sheetEls.admin.querySelector('[data-edit]').addEventListener('click', () => {
+    openBackgroundEditor(background);
+  });
+
+  wireDeleteBackground(background, sheetEls.admin.querySelector('[data-delete]'));
+}
+
+function wireDeleteBackground(background, button) {
+  if (!button) return;
+
+  let armed = false;
+
+  button.addEventListener('click', () => {
+    if (!armed) {
+      armed = true;
+      button.textContent = 'Click again to delete';
+      setNote('This removes the design for everyone. Click again to confirm.', 'error');
+      return;
+    }
+
+    deleteBackgroundAdmin(background, button);
+  });
+}
+
+function openBackgroundCreator() {
+  openSheet(
+    {
+      id: 'new',
+      type: 'background',
+      name: 'Add background',
+      rarity: 'rare',
+      art: null,
+      summary: 'Upload a picture and set a price. It appears in the Backgrounds tab immediately.',
+    },
+    'background',
+  );
+
+  sheetEls.rarity.textContent = 'Manage Server';
+  sheetEls.rarity.style.color = 'var(--gold)';
+
+  sheetEls.controls.innerHTML = `<div class="field">
+      <label for="bg-name">Name</label>
+      <input id="bg-name" type="text" maxlength="40" placeholder="Neon Garden" autocomplete="off">
+    </div>
+    <div class="field">
+      <label for="bg-price">Price (coins)</label>
+      <input id="bg-price" type="number" min="0" max="100000" value="100">
+    </div>
+    <div class="field">
+      <label for="bg-level">Level (for a free design)</label>
+      <input id="bg-level" type="number" min="1" max="999" value="1">
+    </div>
+    <div class="field">
+      <label for="bg-image">Image</label>
+      <input id="bg-image" type="file" accept="image/png,image/jpeg,image/webp,image/gif">
+      <span id="bg-image-note" class="card-meta">PNG, JPEG, WebP or GIF · 10 MB max</span>
+    </div>`;
+
+  const nameInput = $('#bg-name');
+  const priceInput = $('#bg-price');
+
+  const refresh = () => {
+    const ready = nameInput.value.trim().length > 0 && Boolean(state.backgroundImage);
+
+    setAction('Add background', {
+      disabled: state.busy || !ready,
+      onClick: () => saveBackgroundAdmin({ action: 'create' }),
+    });
+
+    if (state.backgroundImage) {
+      setNote(`Price: ${format(Number(priceInput.value) || 0)} coins`);
+    }
+  };
+
+  nameInput.addEventListener('input', refresh);
+  priceInput.addEventListener('input', refresh);
+  $('#bg-image').addEventListener('change', (event) => {
+    readBackgroundImageFile(event.target.files?.[0], '#bg-image-note').then(refresh);
+  });
+
+  refresh();
+}
+
+function openBackgroundEditor(background) {
+  openSheet(
+    {
+      ...background,
+      type: 'background',
+      summary:
+        'Rename, reprice or replace this design. Name and artwork are shared; the price is saved for this server.',
+    },
+    'background',
+  );
+
+  sheetEls.rarity.textContent = 'Manage Server';
+  sheetEls.rarity.style.color = 'var(--gold)';
+
+  sheetEls.controls.innerHTML = `<div class="field">
+      <label for="bg-name">Name</label>
+      <input id="bg-name" type="text" maxlength="40" value="${escapeHtml(background.name)}" autocomplete="off">
+    </div>
+    <div class="field">
+      <label for="bg-price">Price (coins)</label>
+      <input id="bg-price" type="number" min="0" max="100000" value="${Number(background.price) || 0}">
+    </div>
+    <div class="field">
+      <label for="bg-level">Level (for a free design)</label>
+      <input id="bg-level" type="number" min="1" max="999" value="${Number(background.level) || 1}">
+    </div>
+    <div class="field">
+      <label for="bg-image">Replace image (optional)</label>
+      <input id="bg-image" type="file" accept="image/png,image/jpeg,image/webp,image/gif">
+      <span id="bg-image-note" class="card-meta">PNG, JPEG, WebP or GIF · 10 MB max</span>
+    </div>`;
+
+  const nameInput = $('#bg-name');
+  const refresh = () => {
+    setAction('Save changes', {
+      disabled: state.busy || nameInput.value.trim().length === 0,
+      onClick: () => saveBackgroundAdmin({ action: 'update', id: background.id }),
+    });
+  };
+
+  nameInput.addEventListener('input', refresh);
+  $('#bg-image').addEventListener('change', (event) => {
+    readBackgroundImageFile(event.target.files?.[0], '#bg-image-note').then(refresh);
+  });
+
+  sheetEls.admin.innerHTML = '<button type="button" class="danger" data-delete>Delete background</button>';
+  wireDeleteBackground(background, sheetEls.admin.querySelector('[data-delete]'));
+
+  refresh();
+}
+
+async function saveBackgroundAdmin({ action, id = null }) {
+  if (state.demo) {
+    toast('Demo mode — open the store in Discord to change the shop.', 'error');
+    return;
+  }
+
+  if (state.busy) return;
+
+  const name = $('#bg-name')?.value?.trim() || '';
+  const price = Number($('#bg-price')?.value);
+  const level = Number($('#bg-level')?.value);
+
+  if (!name) {
+    setNote('Give the background a name.', 'error');
+    return;
+  }
+
+  if (!Number.isInteger(price) || price < 0) {
+    setNote('The price must be a whole number of coins.', 'error');
+    return;
+  }
+
+  if (!Number.isInteger(level) || level < 1) {
+    setNote('The level must be a whole number from 1 to 999.', 'error');
+    return;
+  }
+
+  if (action === 'create' && !state.backgroundImage) {
+    setNote('Choose an image for the background.', 'error');
+    return;
+  }
+
+  state.busy = true;
+  setAction(action === 'create' ? 'Adding…' : 'Saving…', { disabled: true });
+
+  try {
+    const body = {
+      guildId: state.guildId,
+      action,
+      id,
+      name,
+      price,
+      level,
+    };
+
+    if (state.backgroundImage) {
+      body.image = state.backgroundImage;
+      body.imageName = state.backgroundImageName;
+    }
+
+    const result = await api('/api/admin/background', { method: 'POST', body });
+
+    if (!result.ok) {
+      setNote(result.message || REASONS[result.reason] || 'The background was not saved.', 'error');
+      state.busy = false;
+      return;
+    }
+
+    closeSheet();
+    toast(action === 'create' ? 'Background added.' : 'Background updated.', 'good');
+    await loadStore();
+  } catch (error) {
+    setNote(error.message, 'error');
+    state.busy = false;
+  }
+}
+
+async function deleteBackgroundAdmin(background, button) {
+  if (state.demo) {
+    toast('Demo mode — open the store in Discord to change the shop.', 'error');
+    return;
+  }
+
+  if (state.busy) return;
+
+  state.busy = true;
+  button.disabled = true;
+  button.textContent = 'Deleting…';
+
+  try {
+    const result = await api('/api/admin/background', {
+      method: 'POST',
+      body: { guildId: state.guildId, action: 'delete', id: background.id },
+    });
+
+    if (!result.ok) {
+      setNote(result.message || 'The background was not deleted.', 'error');
+      state.busy = false;
+      button.disabled = false;
+      button.textContent = 'Click again to delete';
+      return;
+    }
+
+    closeSheet();
+    toast('Background deleted.', 'good');
+    await loadStore();
+  } catch (error) {
+    setNote(error.message, 'error');
+    state.busy = false;
+    button.disabled = false;
+  }
 }
 
 async function equipBackground(background) {
@@ -801,12 +1238,86 @@ function demoData() {
     },
   ];
 
+  items.push(
+    {
+      key: 'design:bg-01-sakura-dusk',
+      type: 'background',
+      name: 'Sakura Dusk background',
+      summary: 'Unlocks the Sakura Dusk design for your profile card.',
+      price: 130,
+      defaultPrice: 130,
+      amount: 1,
+      limit: 1,
+      stackable: false,
+      needs: [],
+      backgroundId: 'bg-01-sakura-dusk',
+      level: 1,
+      ownedCount: 0,
+      atLimit: false,
+      rarity: 'rare',
+      art: '/assets/backgrounds/bg-01-sakura-dusk.jpg',
+    },
+    {
+      key: 'design:bg-05-violet-storm',
+      type: 'background',
+      name: 'Violet Storm background',
+      summary: 'Unlocks the Violet Storm design for your profile card.',
+      price: 200,
+      defaultPrice: 200,
+      amount: 1,
+      limit: 1,
+      stackable: false,
+      needs: [],
+      backgroundId: 'bg-05-violet-storm',
+      level: 1,
+      ownedCount: 1,
+      atLimit: true,
+      rarity: 'epic',
+      art: '/assets/backgrounds/bg-05-violet-storm.jpg',
+    },
+    {
+      key: 'design:bg-31-candy-rainbow',
+      type: 'background',
+      name: 'Candy Rainbow background',
+      summary: 'Unlocks the Candy Rainbow design for your profile card.',
+      price: 320,
+      defaultPrice: 320,
+      amount: 1,
+      limit: 1,
+      stackable: false,
+      needs: [],
+      backgroundId: 'bg-31-candy-rainbow',
+      level: 1,
+      ownedCount: 0,
+      atLimit: false,
+      rarity: 'legendary',
+      art: '/assets/backgrounds/bg-31-candy-rainbow.jpg',
+    },
+  );
+
   const backgrounds = [
+    {
+      id: 'custom',
+      name: 'Custom background',
+      level: 50,
+      price: 0,
+      rarity: 'epic',
+      art: '/assets/backgrounds/bg-08-cotton-candy.jpg',
+      theme: null,
+      custom: true,
+      hasImage: true,
+      canUpload: true,
+      unlocked: true,
+      owned: true,
+      selected: false,
+    },
     { id: 'default', name: 'Classic', level: 1, price: 0, rarity: 'common', art: null, unlocked: true, owned: true, selected: true },
+    { id: 'bg-01-sakura-dusk', name: 'Sakura Dusk', level: 1, price: 130, rarity: 'rare', art: '/assets/backgrounds/bg-01-sakura-dusk.jpg', unlocked: false, owned: false, selected: false },
+    { id: 'bg-05-violet-storm', name: 'Violet Storm', level: 1, price: 200, rarity: 'epic', art: '/assets/backgrounds/bg-05-violet-storm.jpg', unlocked: true, owned: true, selected: false },
+    { id: 'bg-31-candy-rainbow', name: 'Candy Rainbow', level: 1, price: 320, rarity: 'legendary', art: '/assets/backgrounds/bg-31-candy-rainbow.jpg', unlocked: false, owned: false, selected: false },
     { id: 'tier-15', name: 'Tide', level: 15, price: 0, rarity: 'common', art: '/assets/backgrounds/tier-15.jpg', unlocked: true, owned: true, selected: false },
     { id: 'tier-20', name: 'Amethyst', level: 20, price: 0, rarity: 'common', art: '/assets/backgrounds/tier-20.jpg', unlocked: false, owned: true, selected: false },
     { id: 'tier-30', name: 'Solaris', level: 30, price: 0, rarity: 'common', art: '/assets/backgrounds/tier-30.jpg', unlocked: false, owned: true, selected: false },
-    { id: 'champion', name: "Champion's Crown", level: 40, price: 250, rarity: 'legendary', art: '/assets/backgrounds/tier-40.png', unlocked: false, owned: false, selected: false },
   ];
 
   return {
@@ -816,6 +1327,8 @@ function demoData() {
     level: 12,
     maxStack: 100,
     currency: 'coins',
+    canManage: true,
+    customLevel: 50,
     items,
     backgrounds,
   };

@@ -1,11 +1,12 @@
 import { createHash } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { statSync } from 'node:fs';
 import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { createCanvas, GifEncoder, GlobalFonts, loadImage } from '@napi-rs/canvas';
 import { config, rootDir } from '../config.js';
 import { effectiveDay, formatListDate, zonedDate } from '../lib/dates.js';
 import { createLogger } from '../lib/logger.js';
+import { backgroundArtFile } from './profile-backgrounds.js';
 import {
   ANIMATED_HEIGHT,
   ANIMATED_MAX_BYTES,
@@ -352,33 +353,34 @@ function loadCoinIcon() {
 }
 
 /**
- * Real tier artwork is optional. A deployment can drop
- * `assets/profile/backgrounds/<id>.png` (or .jpg/.jpeg/.webp) next to the
- * template and it wins over the generated colour treatment; missing files are
- * cached as null so the common path only checks the filesystem once.
+ * Real tier artwork is optional. The shared lookup checks `data/backgrounds`
+ * first (admin uploads) and then the bundled `assets/profile/backgrounds`.
+ * The cache is keyed by the file's mtime/size, so replacing a design's art is
+ * picked up on the next render without a restart.
  */
-const TIER_ART_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp'];
 const tierArtPromises = new Map();
 
 function tierArtFile(id) {
-  for (const extension of TIER_ART_EXTENSIONS) {
-    const file = path.join(ASSET_DIR, 'backgrounds', `${id}.${extension}`);
-
-    if (existsSync(file)) return file;
-  }
-
-  return null;
+  return backgroundArtFile(id)?.file ?? null;
 }
 
 async function loadTierArt(id) {
-  if (tierArtPromises.has(id)) return tierArtPromises.get(id);
-
   const file = tierArtFile(id);
 
-  if (!file) {
-    tierArtPromises.set(id, Promise.resolve(null));
+  if (!file) return null;
+
+  let stamp;
+
+  try {
+    const info = statSync(file);
+    stamp = `${file}:${info.mtimeMs}:${info.size}`;
+  } catch {
     return null;
   }
+
+  const cached = tierArtPromises.get(id);
+
+  if (cached?.stamp === stamp) return cached.promise;
 
   const promise = readFile(file)
     .then((buffer) => loadImage(buffer))
@@ -389,7 +391,7 @@ async function loadTierArt(id) {
       return null;
     });
 
-  tierArtPromises.set(id, promise);
+  tierArtPromises.set(id, { stamp, promise });
   return promise;
 }
 

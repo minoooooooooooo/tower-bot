@@ -7,11 +7,13 @@ import { config } from '../config.js';
 import { createLogger } from '../lib/logger.js';
 import {
   activityConfigured,
+  adminBackground,
   authUser,
   buyFromActivity,
   equipFromActivity,
   exchangeCode,
   guildContext,
+  saveCustomFromActivity,
   storefront,
 } from './store-api.js';
 
@@ -20,6 +22,7 @@ const logger = createLogger('activity');
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(HERE, 'public');
 const ART_DIR = path.join(HERE, '..', '..', 'assets', 'profile', 'backgrounds');
+const DATA_ART_DIR = path.join(config.dataDir, 'backgrounds');
 const COIN_FILE = path.join(HERE, '..', '..', 'assets', 'profile', 'coin.png');
 
 const MIME = {
@@ -38,7 +41,7 @@ const MIME = {
   '.woff2': 'font/woff2',
 };
 
-const MAX_BODY_BYTES = 2 * 1024 * 1024;
+const MAX_BODY_BYTES = 16 * 1024 * 1024;
 
 function securityHeaders(res) {
   res.setHeader(
@@ -215,6 +218,49 @@ async function handleApi(req, res, client, route, url) {
     return true;
   }
 
+  if (route === '/api/background/custom' && req.method === 'POST') {
+    const user = await requireUser(req, res);
+    if (!user) return true;
+
+    const body = await readJson(req);
+    sendJson(
+      res,
+      200,
+      await saveCustomFromActivity({
+        client,
+        guildId: body.guildId,
+        user,
+        image: body.image,
+        imageName: body.imageName,
+      }),
+    );
+    return true;
+  }
+
+  if (route === '/api/admin/background' && req.method === 'POST') {
+    const user = await requireUser(req, res);
+    if (!user) return true;
+
+    const body = await readJson(req);
+    sendJson(
+      res,
+      200,
+      await adminBackground({
+        client,
+        guildId: body.guildId,
+        user,
+        action: body.action,
+        id: body.id,
+        name: body.name,
+        price: body.price,
+        level: body.level,
+        image: body.image,
+        imageName: body.imageName,
+      }),
+    );
+    return true;
+  }
+
   return false;
 }
 
@@ -270,6 +316,10 @@ async function handleStatic(req, res, route) {
 
   if (route.startsWith('/assets/backgrounds/')) {
     const name = path.basename(route);
+    const dataFile = safeJoin(DATA_ART_DIR, name);
+
+    if (dataFile && existsSync(dataFile)) return serveFile(req, res, dataFile);
+
     const file = safeJoin(ART_DIR, name);
 
     if (file && existsSync(file)) return serveFile(req, res, file);

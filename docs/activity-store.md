@@ -188,7 +188,9 @@ All routes are served from the same origin (Discord proxies them under
 | `POST /api/token` | none | Exchanges the SDK `code`; returns `{ access_token, expires_in }` |
 | `GET /api/store?guildId=` | Bearer | Balance, items, full background collection |
 | `POST /api/buy` | Bearer | Charges and delivers one item |
-| `POST /api/equip` | Bearer | Equips an owned/unlocked background |
+| `POST /api/equip` | Bearer | Equips an owned/unlocked background, or the custom one |
+| `POST /api/background/custom` | Bearer | Uploads/replaces the caller's custom wallpaper |
+| `POST /api/admin/background` | Bearer + Manage Server | Adds, edits or deletes a shop background |
 | `GET /healthz` | none | Liveness probe |
 
 The Bearer token is the member's OAuth access token; `store-api.js` validates it
@@ -201,6 +203,20 @@ minute). Guilt by guild id alone is never trusted.
 into a `Buffer` before handing it to the purchase engine; uploads are checked
 before any coins are taken, and a delivery failure still refunds.
 
+`POST /api/background/custom` accepts `{ guildId, image, imageName }` (up to
+10 MB). It enforces the custom level (or Manage Server) and an existing custom
+wallpaper, normalises the image exactly like `/background custom`, equips it and
+returns the frame count. The store response includes a synthetic
+`id: "custom"` background with a small JPEG preview data URL, so the member can
+equip or replace the image from the Backgrounds tab.
+
+`POST /api/admin/background` accepts `{ guildId, action, id, name, price, level,
+image, imageName }` and checks **Manage Server** server-side. `create` and
+`update` write the `data/backgrounds.json` overlay and
+`data/backgrounds/<id>.jpg`; `delete` writes a `deleted` override for a bundled
+design or removes an uploaded one. The running bot reloads the merged ladder in
+place, so no restart is needed.
+
 ## Security notes
 
 - The client secret never leaves the bot process; the browser only sees a
@@ -209,11 +225,14 @@ before any coins are taken, and a delivery failure still refunds.
   (`frame-ancestors`), and scripts/images only from this origin plus Discord's
   CDN. There are no CDN script tags: the Embedded App SDK is bundled at
   `src/activity/public/vendor/discord-sdk.js`.
-- Bodies are capped at 2 MB, static paths are normalised and confined to
-  `src/activity/public`, `assets/profile/backgrounds` and the single
+- Bodies are capped at 16 MB (a 10 MB image becomes ~13.4 MB as a `data:` URL),
+  static paths are normalised and confined to `src/activity/public`,
+  `assets/profile/backgrounds`, `data/backgrounds` and the single
   `assets/profile/coin.png` mark, and no route writes files outside `data/`.
 - The API mutates coins only through `buyStoreItem`, so all the existing checks
-  (limits, enabled, price overrides, atomic charge) apply unchanged.
+  (limits, enabled, price overrides, atomic charge) apply unchanged. The admin
+  background routes re-check **Manage Server** from the fetched guild member;
+  the browser's `canManage` flag is only a UI hint.
 
 ## Updating the bundled SDK
 

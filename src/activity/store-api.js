@@ -1,13 +1,23 @@
-import { existsSync } from 'node:fs';
-import path from 'node:path';
-import { config, rootDir } from '../config.js';
+import { readFile, stat } from 'node:fs/promises';
+import { PermissionFlagsBits } from 'discord.js';
+import { createCanvas, loadImage } from '@napi-rs/canvas';
+import { config } from '../config.js';
 import { createLogger } from '../lib/logger.js';
 import { linkedPoints } from '../services/ebot-vex.js';
 import {
   BACKGROUNDS,
+  CUSTOM_ID,
+  CUSTOM_LEVEL,
+  MAX_WALLPAPER_BYTES,
+  WallpaperError,
+  backgroundArtUrl,
   backgroundById,
+  customWallpaperPath,
+  hasCustomWallpaper,
   isBackgroundUnlocked,
+  saveCustomWallpaper,
 } from '../services/profile-backgrounds.js';
+import { createBackground, deleteBackground, updateBackground } from '../services/background-admin.js';
 import {
   getProfile,
   profileLevel,
@@ -16,6 +26,8 @@ import {
 import {
   MAX_STACK,
   buyStoreItem,
+  clearStoreOverride,
+  designItemKey,
   memberPurchases,
   ownedBackgroundIds,
   storeBalance,
@@ -25,15 +37,14 @@ import { MAX_EMOJI_BYTES } from '../services/store-catalog.js';
 
 const logger = createLogger('activity-store');
 
-const ART_DIR = path.join(rootDir, 'assets', 'profile', 'backgrounds');
-const ART_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp'];
-const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
+const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/gif']);
 
 const TOKEN_TTL_MS = 5 * 60_000;
 const MEMBER_TTL_MS = 60_000;
 
 const userCache = new Map();
 const memberCache = new Map();
+const previewCache = new Map();
 
 /* ── Discord auth ─────────────────────────────────────────────────────────── */
 
@@ -141,20 +152,8 @@ export async function guildContext(client, guildId, userId) {
 
 /* ── Artwork ──────────────────────────────────────────────────────────────── */
 
-export function backgroundArtFile(id) {
-  for (const extension of ART_EXTENSIONS) {
-    const file = path.join(ART_DIR, `${id}.${extension}`);
-
-    if (existsSync(file)) return { file, extension };
-  }
-
-  return null;
-}
-
 function artUrl(id) {
-  const art = backgroundArtFile(id);
-
-  return art ? `/assets/backgrounds/${id}.${art.extension}` : null;
+  return backgroundArtUrl(id);
 }
 
 function avatarUrl(user) {
@@ -168,12 +167,58 @@ function avatarUrl(user) {
   return `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.${extension}?size=128`;
 }
 
+const PREVIEW_WIDTH = 480;
+const PREVIEW_HEIGHT = Math.round((PREVIEW_WIDTH * 1200) / 1868);
+
+/**
+ * A small data-URL preview of a member's uploaded wallpaper. The Activity cannot
+ * put an Authorization header on an `<img>`, and the card renderer needs the
+ * full file, so the storefront ships a thumbnail instead of a public URL.
+ */
+async function customPreview(guildId, userId) {
+  const file = customWallpaperPath(guildId, userId);
+  let info;
+
+  try {
+    info = await stat(file);
+  } catch {
+    return null;
+  }
+
+  const key = `${guildId}:${userId}`;
+  const cached = previewCache.get(key);
+
+  if (cached && cached.mtimeMs === info.mtimeMs) return cached.dataUrl;
+
+  try {
+    const image = await loadImage(await readFile(file));
+    const canvas = createCanvas(PREVIEW_WIDTH, PREVIEW_HEIGHT);
+    const ctx = canvas.getContext('2d');
+    const scale = Math.max(PREVIEW_WIDTH / image.width, PREVIEW_HEIGHT / image.height);
+    const width = image.width * scale;
+    const height = image.height * scale;
+
+    ctx.drawImage(image, (PREVIEW_WIDTH - width) / 2, (PREVIEW_HEIGHT - height) / 2, width, height);
+
+    const dataUrl = `data:image/jpeg;base64,${canvas
+      .toBuffer('image/jpeg', 80)
+      .toString('base64')}`;
+
+    previewCache.set(key, { mtimeMs: info.mtimeMs, dataUrl });
+    if (previewCache.size > 200) previewCache.delete(previewCache.keys().next().value);
+
+    return dataUrl;
+  } catch {
+    return null;
+  }
+}
+
 /* ── Catalogue ────────────────────────────────────────────────────────────── */
 
 function rarityFor(price) {
-  if (price >= 200) return 'legendary';
-  if (price >= 120) return 'epic';
-  if (price >= 60) return 'rare';
+  if (price >= 300) return 'legendary';
+  if (price >= 180) return 'epic';
+  if (price >= 100) return 'rare';
 
   return 'common';
 }
@@ -212,8 +257,8 @@ function shapeItem(item, counts) {
   };
 }
 
-function shapeBackground(background, level, owned, selected) {
-  const price = Math.max(0, Math.trunc(Number(background.price) || 0));
+function shapeBackground(background, level, owned, selected, priceOverride = background.price) {
+  const price = Math.max(0, Math.trunc(Number(priceOverride) || 0));
 
   return {
     id: background.id,
@@ -224,7 +269,7 @@ function shapeBackground(background, level, owned, selected) {
     art: artUrl(background.id),
     theme: background.theme ?? null,
     unlocked: isBackgroundUnlocked(background, level, owned),
-    owned: owned.has(background.id) || price === 0,
+    owned: owned.has(background.id) || Number(background.price) === 0,
     selected: selected === background.id,
   };
 }
@@ -246,6 +291,60 @@ export async function storefront(client, guild, member, user) {
   const level = profileLevel(guildId, userId, linked);
   const profile = getProfile(guildId, userId);
   const selected = profile.background ?? 'default';
+  const catalog = storeCatalog(guildId);
+  const designPrices = new Map(
+    catalog
+      .filter((item) => item.type === 'background' && item.backgroundId)
+      .map((item) => [item.backgroundId, item.price]),
+  );
+  const manager = Boolean(member?.permissions?.has?.(PermissionFlagsBits.ManageGuild));
+  const hasCustom = hasCustomWallpaper(guildId, userId);
+  const customArt = hasCustom ? await customPreview(guildId, userId) : null;
+  const canUploadCustom = manager || hasCustom || level >= CUSTOM_LEVEL;
+
+  const custom = {
+    id: CUSTOM_ID,
+    name: 'Custom background',
+    level: CUSTOM_LEVEL,
+    price: 0,
+    rarity: 'epic',
+    art: customArt,
+    theme: null,
+    custom: true,
+    hasImage: hasCustom,
+    canUpload: canUploadCustom,
+    unlocked: canUploadCustom,
+    owned: hasCustom,
+    selected: hasCustom && selected === CUSTOM_ID,
+  };
+
+  // The shop reads best with the personal item first, then paid designs by
+  // price, then the free level ladder.
+  const ordered = [...BACKGROUNDS].sort((a, b) => {
+    if (a.id === 'default') return -1;
+    if (b.id === 'default') return 1;
+
+    const paidA = a.price > 0 ? 1 : 0;
+    const paidB = b.price > 0 ? 1 : 0;
+
+    if (paidA !== paidB) return paidB - paidA;
+    if (paidA) return a.price - b.price || a.name.localeCompare(b.name);
+
+    return a.level - b.level || a.name.localeCompare(b.name);
+  });
+
+  const backgrounds = [
+    custom,
+    ...ordered.map((background) =>
+      shapeBackground(
+        background,
+        level,
+        owned,
+        selected,
+        designPrices.get(background.id) ?? background.price,
+      ),
+    ),
+  ];
 
   return {
     guild: {
@@ -263,18 +362,20 @@ export async function storefront(client, guild, member, user) {
     level,
     maxStack: MAX_STACK,
     currency: 'coins',
-    items: storeCatalog(guildId)
-      .filter((item) => item.enabled)
-      .map((item) => shapeItem(item, counts)),
-    backgrounds: BACKGROUNDS.map((background) =>
-      shapeBackground(background, level, owned, selected),
-    ),
+    canManage: manager,
+    customLevel: CUSTOM_LEVEL,
+    items: catalog.filter((item) => item.enabled).map((item) => shapeItem(item, counts)),
+    backgrounds,
   };
 }
 
 /* ── Buying ───────────────────────────────────────────────────────────────── */
 
-function parseImage(raw, name) {
+function parseImage(
+  raw,
+  name,
+  { maxBytes = MAX_EMOJI_BYTES, limitLabel = '256 KB', defaultName = 'emoji.png' } = {},
+) {
   const text = String(raw ?? '').trim();
 
   if (!text) return { error: null, attachment: null };
@@ -303,11 +404,11 @@ function parseImage(raw, name) {
     return { error: { reason: 'image', message: 'The image is empty.' } };
   }
 
-  if (buffer.length > MAX_EMOJI_BYTES) {
+  if (buffer.length > maxBytes) {
     return {
       error: {
         reason: 'size',
-        message: `The image is ${Math.ceil(buffer.length / 1024)} KB; the limit is 256 KB.`,
+        message: `The image is ${Math.ceil(buffer.length / 1024)} KB; the limit is ${limitLabel}.`,
       },
     };
   }
@@ -319,7 +420,7 @@ function parseImage(raw, name) {
       buffer,
       size: buffer.length,
       contentType,
-      name: String(name ?? 'emoji.png').slice(0, 100),
+      name: String(name ?? defaultName).slice(0, 100),
     },
   };
 }
@@ -372,8 +473,21 @@ export async function buyFromActivity({
 /* ── Backgrounds ──────────────────────────────────────────────────────────── */
 
 export async function equipFromActivity(client, guildId, userId, backgroundId) {
-  const context = client.guilds.cache.get(String(guildId ?? ''));
-  if (!context) return { ok: false, reason: 'guild', message: 'The bot is not in this server.' };
+  const guild = client.guilds.cache.get(String(guildId ?? ''));
+  if (!guild) return { ok: false, reason: 'guild', message: 'The bot is not in this server.' };
+
+  if (String(backgroundId ?? '') === CUSTOM_ID) {
+    if (!hasCustomWallpaper(guildId, userId)) {
+      return {
+        ok: false,
+        reason: 'custom',
+        message: `Upload a custom wallpaper first (level ${CUSTOM_LEVEL}+, or Manage Server).`,
+      };
+    }
+
+    setProfileBackground(guildId, userId, CUSTOM_ID);
+    return { ok: true, backgroundId: CUSTOM_ID, name: 'Custom background' };
+  }
 
   const background = backgroundById(String(backgroundId ?? ''));
 
@@ -402,4 +516,171 @@ export async function equipFromActivity(client, guildId, userId, backgroundId) {
   setProfileBackground(guildId, userId, background.id);
 
   return { ok: true, backgroundId: background.id, name: background.name };
+}
+
+/** Uploads/replaces a member's custom wallpaper from the Activity. */
+export async function saveCustomFromActivity({ client, guildId, user, image, imageName }) {
+  const context = await guildContext(client, guildId, user.id);
+
+  if (context.error === 'guild') {
+    return { ok: false, reason: 'guild', message: 'The bot is not in this server.' };
+  }
+
+  if (context.error === 'member') {
+    return { ok: false, reason: 'member', message: 'You are not a member of this server.' };
+  }
+
+  const manager = Boolean(context.member.permissions?.has?.(PermissionFlagsBits.ManageGuild));
+  const hasCustom = hasCustomWallpaper(guildId, user.id);
+  const linked = await linkedPoints(client, guildId);
+  const level = profileLevel(guildId, user.id, linked);
+
+  if (!manager && !hasCustom && level < CUSTOM_LEVEL) {
+    return {
+      ok: false,
+      reason: 'level',
+      message: `Custom wallpapers unlock at level ${CUSTOM_LEVEL}. You are level ${level}.`,
+      level: CUSTOM_LEVEL,
+    };
+  }
+
+  const parsed = parseImage(image, imageName, {
+    maxBytes: MAX_WALLPAPER_BYTES,
+    limitLabel: '10 MB',
+    defaultName: 'wallpaper.jpg',
+  });
+
+  if (parsed.error) return { ok: false, ...parsed.error };
+
+  if (!parsed.attachment) {
+    return { ok: false, reason: 'image', message: 'Choose a PNG, JPEG, WebP or GIF image.' };
+  }
+
+  try {
+    const saved = await saveCustomWallpaper(guildId, user.id, parsed.attachment, {
+      fetchImpl: async () => ({ ok: true, arrayBuffer: async () => parsed.attachment.buffer }),
+    });
+
+    setProfileBackground(guildId, user.id, CUSTOM_ID);
+
+    return {
+      ok: true,
+      animated: saved.animated,
+      frames: saved.frames,
+      wasGif: saved.wasGif,
+      width: saved.sourceWidth,
+      height: saved.sourceHeight,
+    };
+  } catch (error) {
+    if (error instanceof WallpaperError) {
+      return { ok: false, reason: error.code, message: error.message };
+    }
+
+    logger.warn(`Could not save a custom wallpaper for ${user.id}: ${error?.message ?? error}`);
+    return {
+      ok: false,
+      reason: 'server',
+      message: 'The image could not be stored. Try again in a moment.',
+    };
+  }
+}
+
+/** Manage Server only: add, edit or delete a design from the shop. */
+export async function adminBackground({
+  client,
+  guildId,
+  user,
+  action,
+  id = null,
+  name = null,
+  price = null,
+  level = null,
+  image = null,
+  imageName = null,
+}) {
+  const context = await guildContext(client, guildId, user.id);
+
+  if (context.error === 'guild') {
+    return { ok: false, reason: 'guild', message: 'The bot is not in this server.' };
+  }
+
+  if (context.error === 'member') {
+    return { ok: false, reason: 'member', message: 'You are not a member of this server.' };
+  }
+
+  if (!context.member.permissions?.has?.(PermissionFlagsBits.ManageGuild)) {
+    return {
+      ok: false,
+      reason: 'permission',
+      message: 'You need **Manage Server** to change the shop.',
+    };
+  }
+
+  const parsed = image
+    ? parseImage(image, imageName, {
+        maxBytes: MAX_WALLPAPER_BYTES,
+        limitLabel: '10 MB',
+        defaultName: 'background.jpg',
+      })
+    : { error: null, attachment: null };
+
+  if (parsed.error) return { ok: false, ...parsed.error };
+
+  const priceValue = price === null || price === undefined ? undefined : Number(price);
+  const levelValue = level === null || level === undefined ? undefined : Number(level);
+
+  try {
+    if (action === 'create') {
+      const created = await createBackground({
+        name,
+        price: priceValue,
+        level: levelValue,
+        image: parsed.attachment?.buffer ?? null,
+      });
+
+      return {
+        ok: true,
+        background: created
+          ? { id: created.id, name: created.name, price: created.price, level: created.level }
+          : null,
+      };
+    }
+
+    if (action === 'update') {
+      const updated = await updateBackground(String(id ?? ''), {
+        name: name === null ? undefined : name,
+        price: priceValue,
+        level: levelValue,
+        image: parsed.attachment?.buffer ?? null,
+      });
+
+      if (priceValue !== undefined) {
+        clearStoreOverride(guildId, designItemKey(updated.id));
+      }
+
+      return {
+        ok: true,
+        background: { id: updated.id, name: updated.name, price: updated.price, level: updated.level },
+      };
+    }
+
+    if (action === 'delete') {
+      const deleted = await deleteBackground(String(id ?? ''));
+      clearStoreOverride(guildId, designItemKey(String(id ?? '')));
+      return { ok: true, ...deleted };
+    }
+
+    return { ok: false, reason: 'action', message: 'Unknown background action.' };
+  } catch (error) {
+    if (error instanceof WallpaperError) {
+      return { ok: false, reason: error.code, message: error.message };
+    }
+
+    logger.warn(`Background admin action ${action} failed: ${error?.message ?? error}`);
+    return {
+      ok: false,
+      reason: 'server',
+      message: 'The background could not be saved. Try again.',
+    };
+  }
 }

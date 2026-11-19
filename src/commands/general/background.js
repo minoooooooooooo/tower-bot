@@ -32,7 +32,7 @@ import {
   profileLevel,
   setProfileBackground,
 } from '../../services/profile-store.js';
-import { ownedBackgroundIds } from '../../services/store.js';
+import { designItemKey, ownedBackgroundIds, storeItem } from '../../services/store.js';
 
 const logger = createLogger('background');
 
@@ -68,6 +68,13 @@ function respond(ctx, payload) {
 
 function formatPoints(points) {
   return Number(points).toLocaleString('en-US');
+}
+
+/** Paid designs use the shop's effective price (per-server override first). */
+function effectivePrice(guildId, background) {
+  if (Number(background?.price) <= 0) return 0;
+
+  return storeItem(guildId, designItemKey(background.id))?.price ?? background.price;
 }
 
 /** Prefix commands may name the subcommand, or start straight with a design. */
@@ -126,29 +133,29 @@ function selectionState(ctx, stored, level, hasCustom, owned) {
 function listEmbed(ctx, level, stored, hasCustom, owned, manager = false) {
   const { selected, lockedTier, customMissing } = selectionState(ctx, stored, level, hasCustom, owned);
   const unlocked = new Set(unlockedBackgrounds(level, owned).map((background) => background.id));
-  const storeHint = ctx.isSlash ? '/store buy item:' : `${config.prefix}store buy `;
+  const free = BACKGROUNDS.filter((background) => Number(background.price) <= 0);
+  const paid = BACKGROUNDS.filter((background) => Number(background.price) > 0);
+  const paidOwned = paid.filter((background) => unlocked.has(background.id));
 
-  const lines = BACKGROUNDS.map((background) => {
+  const lines = free.map((background) => {
     const current =
       stored.background === background.id || (!stored.background && background.id === 'default');
     const mark = current ? '➡️' : unlocked.has(background.id) ? '✅' : '🔒';
     const levelText =
-      background.id === 'default'
-        ? 'always'
-        : background.price > 0
-          ? 'store design'
-          : `level ${background.level}`;
+      background.id === 'default' ? 'always' : `level ${background.level}`;
     const lock =
-      background.price > 0 || unlocked.has(background.id)
+      unlocked.has(background.id) || background.id === 'default'
         ? ''
         : ` · ${formatPoints(pointsForLevel(background.level))} points`;
-    const price =
-      background.price > 0 && !unlocked.has(background.id)
-        ? ` · ${formatPoints(background.price)} coins · buy with \`${storeHint}design:${background.id}\``
-        : '';
 
-    return `${mark} **${background.name}** — ${levelText}${lock}${price}`;
+    return `${mark} **${background.name}** — ${levelText}${lock}`;
   });
+
+  const ownedNames = paidOwned.slice(0, 6).map((background) => background.name).join(', ');
+  const paidLine =
+    `${paidOwned.length} of ${paid.length} owned` +
+    (ownedNames ? ` · ${ownedNames}${paidOwned.length > 6 ? '…' : ''}` : '') +
+    `\nBrowse and buy them in \`${ctx.isSlash ? '/store' : `${config.prefix}store`}\` → **Backgrounds**.`;
 
   const customMark =
     stored.background === CUSTOM_ID ? '➡️' : hasCustom || level >= CUSTOM_LEVEL || manager ? '✅' : '🔒';
@@ -194,6 +201,7 @@ function listEmbed(ctx, level, stored, hasCustom, owned, manager = false) {
             : `**Custom wallpaper** at level ${CUSTOM_LEVEL} · ${formatPoints(pointsForLevel(CUSTOM_LEVEL))} points`,
         inline: false,
       },
+      { name: 'Store designs', value: paidLine, inline: false },
       { name: 'Ladder', value: lines.join('\n'), inline: false },
     ],
     footer: `Choose with ${ctx.isSlash ? '/background set design:' : ':-background set '}<name or level>`,
@@ -279,11 +287,12 @@ async function handleSet(ctx, client, query) {
 
   if (!isBackgroundUnlocked(background, level, owned)) {
     if (background.price > 0) {
+      const cost = effectivePrice(ctx.guildId, background);
       await respond(ctx, {
         embeds: [
           errorEmbed(
             'Not unlocked yet',
-            `**${background.name}** is a store design and costs **${formatPoints(background.price)}** coins. ` +
+            `**${background.name}** is a store design and costs **${formatPoints(cost)}** coins. ` +
               `Buy it with \`${ctx.isSlash ? '/store buy item:' : `${config.prefix}store buy `}design:${background.id}\`.`,
           ),
         ],

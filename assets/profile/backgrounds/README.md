@@ -2,9 +2,15 @@
 
 The ladder lives in [`backgrounds.json`](backgrounds.json). Each design is drawn
 from `../card.png` (1868 × 1200) and tinted with its `theme`; real artwork is
-optional and replaces the treatment for that id. The ten tier pictures currently
-ship in this folder as `tier-05.jpg` … and `tier-50.png`, and every tier is set
-to `"artMode": "wallpaper"`.
+optional and replaces the treatment for that id. The ten tier pictures ship in
+this folder as `tier-05.jpg` … and `tier-50.png`, and every tier is set to
+`"artMode": "wallpaper"`.
+
+The bundled manifest now holds **11 free designs** (Classic plus the ten tiers)
+and **50 shop designs** (`bg-01-sakura-dusk` … `bg-50-pearl-sea`). All 50 use
+`artMode: "wallpaper"`, a generated `theme` from their palette, and a price from
+60 to 360 coins. Paid designs are sold as `design:<id>`; they never auto-equip
+and require a purchase even at level 99.
 
 ## The two art modes
 
@@ -52,8 +58,26 @@ An entry with `"price": 250` is not part of the free ladder: it never
 auto-equips, `/background set` refuses it until it is bought, and the store
 lists it as `design:<id>` for that many coins. `"auto": false` is implied by a
 price. Buying it writes a purchase row, so the unlock survives restarts and
-point corrections. Remove the `price` (and restart) to take a design off sale
-again; members who already bought it keep it.
+point corrections. Remove the `price` to take a design off sale again; members
+who already bought it keep it.
+
+## Editing from the Activity
+
+A **Manage Server** member can use the Activity store → **Backgrounds**:
+
+- **Add background** uploads a picture, sets a name and price, and writes a new
+  entry to `data/backgrounds.json` plus `data/backgrounds/<id>.jpg`.
+- **Edit** changes the name, price, level or artwork of an existing design.
+- **Delete** hides a bundled design with `{ "id": "...", "deleted": true }` in
+  `data/backgrounds.json`, or removes an uploaded design and its art. Members
+  still using it fall back to Classic.
+
+`data/backgrounds.json` is an **overlay**, not a replacement: entries merge over
+the bundled manifest by id, new ids are appended, and `deleted: true` hides a
+bundled entry. `data/backgrounds/<id>.<ext>` wins over a file in this folder, so
+a replaced design is picked up without a restart. Uploads are cover-cropped to
+1868 × 1200 and stored as JPEG. `data/` is the persistent folder; the bundled
+files stay untouched for a restore.
 
 ## Default designs
 
