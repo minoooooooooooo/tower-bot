@@ -196,6 +196,10 @@ const NUMBER_FONT_SIZE = 58;
 const COIN_ICON_SIZE = 76;
 const COIN_ICON_GAP = 14;
 const COIN_ICON_FILTER = 'saturate(1.35) contrast(1.08)';
+// A GIF frame is quantised separately, and a dark wallpaper leaves the palette
+// little room for gold. The animated overlay therefore pushes the mark further
+// from both the whites and the panel before the encoder sees it.
+const ANIMATED_COIN_FILTER = 'saturate(2.2) contrast(1.3) hue-rotate(6deg)';
 const ARABIC = /[\u0600-\u06ff\u0750-\u077f\u08a0-\u08ff]/;
 
 // A custom wallpaper replaces the whole artwork, so its glass panels are drawn
@@ -620,7 +624,7 @@ function drawTitle(ctx, title) {
   ctx.fillText(fitted.text, TITLE_BOX.right, TITLE_BOX.baseline);
 }
 
-function drawPanelValue(ctx, panel, value, { icon = null } = {}) {
+function drawPanelValue(ctx, panel, value, { icon = null, iconFilter = COIN_ICON_FILTER } = {}) {
   if (value === null || value === undefined || value === '') return;
 
   const text = String(value);
@@ -644,7 +648,7 @@ function drawPanelValue(ctx, panel, value, { icon = null } = {}) {
   // The official mark has very light facets; without a small saturation lift
   // the GIF palette merges them with the white digits, which reads as a hole.
   ctx.save();
-  ctx.filter = COIN_ICON_FILTER;
+  ctx.filter = iconFilter;
   ctx.drawImage(
     icon,
     right - COIN_ICON_SIZE,
@@ -1093,12 +1097,12 @@ function drawStatusPanel(ctx, status) {
  * Everything that sits on top of the background: avatar, name and values. The
  * same routine paints the still card and the static layer of an animated one.
  */
-function drawCardContent(ctx, { member, avatar, stats, status, background, coin = null }) {
+function drawCardContent(ctx, { member, avatar, stats, status, background, coin = null, coinFilter = COIN_ICON_FILTER }) {
   drawAvatar(ctx, avatar, member);
   drawName(ctx, member);
 
   drawTitle(ctx, stats.title);
-  drawPanelValue(ctx, PANELS.coins, formatNumber(stats.coins), { icon: coin });
+  drawPanelValue(ctx, PANELS.coins, formatNumber(stats.coins), { icon: coin, iconFilter: coinFilter });
   drawPanelValue(ctx, PANELS.level, stats.level);
   drawPanelValue(ctx, PANELS.rank, stats.rank ? `#${stats.rank}` : '');
   drawPanelValue(ctx, PANELS.vex, formatNumber(stats.vex));
@@ -1131,7 +1135,15 @@ async function renderAnimatedCard({ gifPath, avatar, member, stats, status, back
   const full = createCanvas(CARD_WIDTH, CARD_HEIGHT);
   const fullCtx = full.getContext('2d');
   drawCustomChrome(fullCtx);
-  drawCardContent(fullCtx, { member, avatar, stats, status, background, coin });
+  drawCardContent(fullCtx, {
+    member,
+    avatar,
+    stats,
+    status,
+    background,
+    coin,
+    coinFilter: ANIMATED_COIN_FILTER,
+  });
 
   const overlay = createCanvas(ANIMATED_WIDTH, ANIMATED_HEIGHT);
   overlay.getContext('2d').drawImage(full, 0, 0, ANIMATED_WIDTH, ANIMATED_HEIGHT);
