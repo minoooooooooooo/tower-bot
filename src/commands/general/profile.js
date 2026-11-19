@@ -12,7 +12,9 @@ import { memberStats } from '../../services/activity-store.js';
 import { getBirthday, getGuildSettings } from '../../services/birthday-store.js';
 import { linkedPoints } from '../../services/ebot-vex.js';
 import {
+  customWallpaperGifPath,
   customWallpaperPath,
+  hasAnimatedWallpaper,
   hasCustomWallpaper,
   resolveBackground,
   syncAutoBackground,
@@ -214,15 +216,18 @@ export default {
         level: stats.level,
         hasCustom,
         customPath: hasCustom ? customWallpaperPath(ctx.guildId, user.id) : null,
+        customGifPath: hasCustom && hasAnimatedWallpaper(ctx.guildId, user.id)
+          ? customWallpaperGifPath(ctx.guildId, user.id)
+          : null,
         owned: ownedBackgroundIds(ctx.guildId, user.id),
       });
-      const buffer = await renderProfileCard({
+      const { buffer, extension } = await renderProfileCard({
         member: cardMember,
         stats,
         status,
         background,
       });
-      file = new AttachmentBuilder(buffer, { name: `profile-${user.id}.png` });
+      file = new AttachmentBuilder(buffer, { name: `profile-${user.id}.${extension}` });
     } catch (error) {
       logger.error(`Could not render the card for ${user.id}`, error);
       await ctx.fail(

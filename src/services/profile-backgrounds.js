@@ -5,6 +5,7 @@ import { createCanvas, loadImage } from '@napi-rs/canvas';
 import { config, rootDir } from '../config.js';
 import { createLogger } from '../lib/logger.js';
 import { normalizeForMatch } from '../lib/text.js';
+import { isGifBytes, normaliseAnimatedGif } from './wallpaper-gif.js';
 import {
   POINTS_PER_XP,
   XP_PER_LEVEL,
@@ -410,6 +411,7 @@ export function resolveBackground({
   level = 1,
   hasCustom = false,
   customPath = null,
+  customGifPath = null,
   owned = null,
 } = {}) {
   if (selected === CUSTOM_ID && hasCustom && customPath) {
@@ -420,6 +422,7 @@ export function resolveBackground({
       level: CUSTOM_LEVEL,
       theme: null,
       path: customPath,
+      gifPath: customGifPath || null,
     };
   }
 
@@ -451,6 +454,10 @@ function safeSegment(value) {
  * One file per member per guild, inside `data/` so a zip deployment keeps it.
  * The path is deterministic, which means the database only stores the `custom`
  * marker and a missing file can be detected without a second table.
+ *
+ * A GIF upload also writes a sibling `.gif` (see `customWallpaperGifPath`); the
+ * JPEG is always the first frame and stays the fallback if the animation cannot
+ * be read at render time.
  */
 export function customWallpaperPath(guildId, userId) {
   return path.join(
@@ -458,6 +465,16 @@ export function customWallpaperPath(guildId, userId) {
     'profile-backgrounds',
     safeSegment(guildId),
     `${safeSegment(userId)}.jpg`,
+  );
+}
+
+/** The normalised animated copy of a GIF wallpaper, or a path that may not exist. */
+export function customWallpaperGifPath(guildId, userId) {
+  return path.join(
+    config.dataDir,
+    'profile-backgrounds',
+    safeSegment(guildId),
+    `${safeSegment(userId)}.gif`,
   );
 }
 
@@ -469,8 +486,19 @@ export function hasCustomWallpaper(guildId, userId) {
   }
 }
 
+export function hasAnimatedWallpaper(guildId, userId) {
+  try {
+    return existsSync(customWallpaperGifPath(guildId, userId));
+  } catch {
+    return false;
+  }
+}
+
 export async function deleteCustomWallpaper(guildId, userId) {
-  await rm(customWallpaperPath(guildId, userId), { force: true });
+  await Promise.all([
+    rm(customWallpaperPath(guildId, userId), { force: true }),
+    rm(customWallpaperGifPath(guildId, userId), { force: true }),
+  ]);
 }
 
 export class WallpaperError extends Error {
@@ -495,6 +523,10 @@ function looksLikeImage(attachment, type) {
  * Downloads an uploaded image, checks it, and stores a normalised 1868x1200
  * JPEG. Re-encoding is deliberate: it strips metadata, bounds the file size and
  * guarantees the renderer always receives the exact dimensions it expects.
+ *
+ * A GIF is also decoded and re-encoded as a normalised animated wallpaper, so
+ * the card can loop it. That file is a sibling `.gif`; the JPEG stays as the
+ * first frame and as the fallback when animation is off or unreadable.
  */
 export async function saveCustomWallpaper(
   guildId,
@@ -585,14 +617,36 @@ export async function saveCustomWallpaper(
 
   const encoded = canvas.toBuffer('image/jpeg', WALLPAPER_QUALITY);
   const file = customWallpaperPath(guildId, userId);
+  const gifFile = customWallpaperGifPath(guildId, userId);
+
+  // GIFs arrive with their own timing and frame count. Normalising once, at
+  // upload, keeps the render path cheap and stops a huge upload from being
+  // decoded on every /profile.
+  const wasGif = isGifBytes(bytes);
+  let animation = null;
+
+  if (wasGif) {
+    try {
+      animation = normaliseAnimatedGif(bytes);
+    } catch (error) {
+      logger.warn(`Could not prepare the animated wallpaper for ${userId}: ${error.message}`);
+    }
+  }
 
   await mkdir(path.dirname(file), { recursive: true });
   await writeFile(file, encoded);
+
+  if (animation) await writeFile(gifFile, animation.buffer);
+  else await rm(gifFile, { force: true });
 
   return {
     path: file,
     bytes: encoded.length,
     sourceWidth: image.width,
     sourceHeight: image.height,
+    animated: Boolean(animation),
+    wasGif,
+    frames: animation?.frames ?? 1,
+    animationBytes: animation?.buffer.length ?? 0,
   };
 }

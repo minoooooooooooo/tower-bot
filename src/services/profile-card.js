@@ -1,9 +1,21 @@
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { createCanvas, GlobalFonts, loadImage } from '@napi-rs/canvas';
+import { createCanvas, GifEncoder, GlobalFonts, loadImage } from '@napi-rs/canvas';
 import { config, rootDir } from '../config.js';
 import { effectiveDay, formatListDate, zonedDate } from '../lib/dates.js';
+import { createLogger } from '../lib/logger.js';
+import {
+  ANIMATED_HEIGHT,
+  ANIMATED_MAX_BYTES,
+  ANIMATED_MAX_FRAMES,
+  ANIMATED_QUALITY,
+  ANIMATED_WIDTH,
+  drawCover,
+  eachGifFrame,
+} from './wallpaper-gif.js';
+
+const logger = createLogger('profile-card');
 
 const ASSET_DIR = path.join(rootDir, 'assets', 'profile');
 const FONT_DIR = path.join(ASSET_DIR, 'fonts');
@@ -267,25 +279,11 @@ function drawPanelLabel(ctx, panel, label) {
 }
 
 /**
- * The custom-wallpaper base: cover-crop the uploaded image, lay a soft scrim
- * over it and rebuild the glass panels so the card stays readable over any
- * picture.
+ * The scrim, vignette and glass panels that make panel text readable over any
+ * picture. Drawn without the wallpaper so the animated renderer can reuse it as
+ * a static layer over each frame.
  */
-function drawCustomBase(ctx, image) {
-  const scale = Math.max(CARD_WIDTH / image.width, CARD_HEIGHT / image.height);
-  const width = image.width * scale;
-  const height = image.height * scale;
-
-  ctx.fillStyle = '#101218';
-  ctx.fillRect(0, 0, CARD_WIDTH, CARD_HEIGHT);
-  ctx.drawImage(
-    image,
-    (CARD_WIDTH - width) / 2,
-    (CARD_HEIGHT - height) / 2,
-    width,
-    height,
-  );
-
+function drawCustomChrome(ctx) {
   // Flatten bright wallpapers just enough for white panel text and the status
   // block to keep their contrast.
   ctx.fillStyle = 'rgba(8, 10, 16, 0.3)';
@@ -317,11 +315,38 @@ function drawCustomBase(ctx, image) {
   drawPanelLabel(ctx, CUSTOM_LAYOUT.xp, 'XP');
 }
 
+/**
+ * The custom-wallpaper base: cover-crop the uploaded image, lay a soft scrim
+ * over it and rebuild the glass panels so the card stays readable over any
+ * picture.
+ */
+function drawCustomBase(ctx, image) {
+  const scale = Math.max(CARD_WIDTH / image.width, CARD_HEIGHT / image.height);
+  const width = image.width * scale;
+  const height = image.height * scale;
+
+  ctx.fillStyle = '#101218';
+  ctx.fillRect(0, 0, CARD_WIDTH, CARD_HEIGHT);
+  ctx.drawImage(
+    image,
+    (CARD_WIDTH - width) / 2,
+    (CARD_HEIGHT - height) / 2,
+    width,
+    height,
+  );
+
+  drawCustomChrome(ctx);
+}
+
 /** Picks the authored art, the uploaded wallpaper or the generated template. */
 async function backgroundImageFor(background) {
   if (background?.kind === 'custom' && background.path) {
     try {
-      return { image: await loadImage(await readFile(background.path)), custom: true };
+      return {
+        image: await loadImage(await readFile(background.path)),
+        custom: true,
+        gifPath: background.gifPath || null,
+      };
     } catch {
       // A deleted or unreadable upload falls back to the classic card.
     }
@@ -874,34 +899,10 @@ function drawStatusPanel(ctx, status) {
 }
 
 /**
- * Renders the profile card and returns a PNG buffer.
- *
- * `stats` comes from profile-store.profileStats and already contains the
- * derived rank, level, XP and punishment values. `status` is optional so older
- * callers keep working; when present it fills the lower-left member panel.
- * `background` is the descriptor from profile-backgrounds.resolveBackground:
- * a tier treatment, a custom wallpaper, or the classic template.
+ * Everything that sits on top of the background: avatar, name and values. The
+ * same routine paints the still card and the static layer of an animated one.
  */
-export async function renderProfileCard({ member, stats, status = null, background = null }) {
-  ensureFonts();
-
-  const [{ image, custom, authored }, avatar] = await Promise.all([
-    backgroundImageFor(background),
-    loadAvatar(member.avatarUrl),
-  ]);
-
-  const canvas = createCanvas(CARD_WIDTH, CARD_HEIGHT);
-  const ctx = canvas.getContext('2d');
-
-  if (custom) {
-    drawCustomBase(ctx, image);
-  } else {
-    ctx.drawImage(image, 0, 0, CARD_WIDTH, CARD_HEIGHT);
-
-    // Authored tier art already carries its own palette.
-    if (!authored) applyTheme(ctx, background?.theme);
-  }
-
+function drawCardContent(ctx, { member, avatar, stats, status, background }) {
   drawAvatar(ctx, avatar, member);
   drawName(ctx, member);
 
@@ -916,6 +917,129 @@ export async function renderProfileCard({ member, stats, status = null, backgrou
   drawXpBar(ctx, stats.progress, background?.theme?.accent ?? FILL_COLOR);
 
   if (status) drawStatusPanel(ctx, status);
+}
 
-  return canvas.toBuffer('image/png');
+/**
+ * Rebuilds the card on top of every frame of an animated wallpaper.
+ *
+ * The chrome and text never change between frames, so they are drawn once at
+ * full size and downscaled to the GIF resolution. Each decoded wallpaper frame
+ * is then composited underneath that static layer and encoded natively.
+ * Returns null when the animation cannot be read or the result stays too large,
+ * so the caller falls back to the still card.
+ */
+async function renderAnimatedCard({ gifPath, avatar, member, stats, status, background }) {
+  let bytes;
+
+  try {
+    bytes = await readFile(gifPath);
+  } catch {
+    return null;
+  }
+
+  const full = createCanvas(CARD_WIDTH, CARD_HEIGHT);
+  const fullCtx = full.getContext('2d');
+  drawCustomChrome(fullCtx);
+  drawCardContent(fullCtx, { member, avatar, stats, status, background });
+
+  const overlay = createCanvas(ANIMATED_WIDTH, ANIMATED_HEIGHT);
+  overlay.getContext('2d').drawImage(full, 0, 0, ANIMATED_WIDTH, ANIMATED_HEIGHT);
+
+  const frame = createCanvas(ANIMATED_WIDTH, ANIMATED_HEIGHT);
+  const frameCtx = frame.getContext('2d');
+
+  const attempt = (maxFrames) => {
+    const encoder = new GifEncoder(ANIMATED_WIDTH, ANIMATED_HEIGHT, {
+      repeat: 0,
+      quality: ANIMATED_QUALITY,
+    });
+
+    const info = eachGifFrame(
+      bytes,
+      (source, delay) => {
+        frameCtx.fillStyle = '#101218';
+        frameCtx.fillRect(0, 0, ANIMATED_WIDTH, ANIMATED_HEIGHT);
+        drawCover(frameCtx, source, ANIMATED_WIDTH, ANIMATED_HEIGHT);
+        frameCtx.drawImage(overlay, 0, 0);
+
+        const raw = frameCtx.getImageData(0, 0, ANIMATED_WIDTH, ANIMATED_HEIGHT).data;
+        encoder.addFrame(
+          new Uint8Array(raw.buffer, raw.byteOffset, raw.byteLength),
+          ANIMATED_WIDTH,
+          ANIMATED_HEIGHT,
+          { delay },
+        );
+      },
+      { maxFrames },
+    );
+
+    if (!info || info.frames < 2) return null;
+
+    return encoder.finish();
+  };
+
+  try {
+    let buffer = attempt(ANIMATED_MAX_FRAMES);
+
+    if (buffer && buffer.length > ANIMATED_MAX_BYTES) {
+      buffer = attempt(Math.max(6, Math.floor(ANIMATED_MAX_FRAMES / 2)));
+    }
+
+    if (!buffer || buffer.length > ANIMATED_MAX_BYTES) return null;
+
+    return buffer;
+  } catch (error) {
+    logger.warn(`Could not animate the wallpaper at ${gifPath}: ${error.message}`);
+    return null;
+  }
+}
+
+/**
+ * Renders the profile card and returns `{ buffer, extension }`.
+ *
+ * `extension` is `gif` for an animated wallpaper and `png` otherwise, so the
+ * caller can name the Discord attachment correctly.
+ *
+ * `stats` comes from profile-store.profileStats and already contains the
+ * derived rank, level, XP and punishment values. `status` is optional so older
+ * callers keep working; when present it fills the lower-left member panel.
+ * `background` is the descriptor from profile-backgrounds.resolveBackground:
+ * a tier treatment, a custom wallpaper, or the classic template.
+ */
+export async function renderProfileCard({ member, stats, status = null, background = null }) {
+  ensureFonts();
+
+  const [{ image, custom, authored, gifPath }, avatar] = await Promise.all([
+    backgroundImageFor(background),
+    loadAvatar(member.avatarUrl),
+  ]);
+
+  if (gifPath) {
+    const animated = await renderAnimatedCard({
+      gifPath,
+      avatar,
+      member,
+      stats,
+      status,
+      background,
+    });
+
+    if (animated) return { buffer: animated, extension: 'gif' };
+  }
+
+  const canvas = createCanvas(CARD_WIDTH, CARD_HEIGHT);
+  const ctx = canvas.getContext('2d');
+
+  if (custom) {
+    drawCustomBase(ctx, image);
+  } else {
+    ctx.drawImage(image, 0, 0, CARD_WIDTH, CARD_HEIGHT);
+
+    // Authored tier art already carries its own palette.
+    if (!authored) applyTheme(ctx, background?.theme);
+  }
+
+  drawCardContent(ctx, { member, avatar, stats, status, background });
+
+  return { buffer: canvas.toBuffer('image/png'), extension: 'png' };
 }

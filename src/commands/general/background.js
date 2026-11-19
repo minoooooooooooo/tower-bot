@@ -370,8 +370,8 @@ async function handleCustom(ctx, client, attachment) {
 
   if (!attachment) {
     const hint = hasCustom
-      ? `Attach a new image to replace ${self ? 'your' : 'their'} wallpaper. It is cropped to the card size automatically.`
-      : `Attach a PNG, JPEG, WebP or GIF image${self ? '' : ` for <@${target.id}>`}. It is cropped to the card size automatically.`;
+      ? `Attach a new image to replace ${self ? 'your' : 'their'} wallpaper. It is cropped to the card size automatically, and a GIF stays animated.`
+      : `Attach a PNG, JPEG, WebP or GIF image${self ? '' : ` for <@${target.id}>`}. It is cropped to the card size automatically, and a GIF stays animated.`;
 
     await respond(ctx, {
       embeds: [
@@ -404,6 +404,11 @@ async function handleCustom(ctx, client, attachment) {
         successEmbed(
           'Custom wallpaper set',
           `Stored at ${saved.sourceWidth}x${saved.sourceHeight}, cropped to the card. ` +
+            (saved.animated
+              ? `It is animated (${saved.frames} frames). `
+              : saved.wasGif
+                ? 'The GIF could not be animated (too large or too long), so the first frame was saved. '
+                : '') +
             (self
               ? `Run \`${ctx.isSlash ? '/profile' : ':-profile'}\` to see it.`
               : `It is now on <@${target.id}>’s profile.`),
@@ -490,7 +495,7 @@ export default {
         .addAttachmentOption((option) =>
           option
             .setName('image')
-            .setDescription('PNG, JPEG, WebP or GIF. Cropped to the card automatically.')
+            .setDescription('PNG, JPEG, WebP or GIF. Cropped to the card; GIFs animate.')
             .setRequired(false),
         )
         .addUserOption((option) =>
