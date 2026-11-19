@@ -18,7 +18,7 @@ import { GifReader } from 'omggif';
 
 export const ANIMATED_WIDTH = 800;
 export const ANIMATED_HEIGHT = 514;
-export const ANIMATED_MAX_FRAMES = 24;
+export const ANIMATED_MAX_FRAMES = 16;
 export const ANIMATED_MAX_DURATION_MS = 6000;
 export const ANIMATED_MAX_BYTES = 6 * 1024 * 1024;
 

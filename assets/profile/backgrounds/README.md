@@ -72,6 +72,6 @@ again; members who already bought it keep it.
 
 A custom wallpaper uploaded by a member is always treated as a raw picture and
 gets the runtime glass panels. Any size from 64 x 64 up to 6000 px per side is
-accepted. An animated GIF is normalised to 800 x 514 (up to 24 frames / 6
+accepted. An animated GIF is normalised to 800 x 514 (up to 16 frames / 6
 seconds) and rebuilt under those panels, so it keeps moving on the card;
 anything the renderer cannot animate falls back to the first frame.

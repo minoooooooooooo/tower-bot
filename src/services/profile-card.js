@@ -1,5 +1,6 @@
+import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { createCanvas, GifEncoder, GlobalFonts, loadImage } from '@napi-rs/canvas';
 import { config, rootDir } from '../config.js';
@@ -17,7 +18,7 @@ import {
 
 const logger = createLogger('profile-card');
 
-// Card rendering is CPU-bound, and an animated wallpaper can encode two dozen
+// Card rendering is CPU-bound, and an animated wallpaper can encode a dozen
 // frames. Running one render at a time keeps the Discord gateway responsive
 // when two members open GIF profiles together; slash replies are already
 // deferred, so the wait is invisible beyond a slightly slower image.
@@ -41,6 +42,121 @@ function releaseRenderSlot() {
   // racing another caller into it.
   if (next) next();
   else activeRenders -= 1;
+}
+
+// A finished card is the cheapest possible render. Animated wallpapers are a
+// full GIF encode (tens of milliseconds per frame), so repeating `/profile`
+// must not redo it. The key covers everything that changes pixels: points,
+// title, avatar, the status snapshot, the design and the wallpaper file's
+// size/mtime. The activity counters in the status block (messages, voice, last
+// active) are deliberately left out — the command message itself bumps them,
+// and rebuilding a whole GIF to increment a number defeats the cache. The TTL
+// (measured from the original render) keeps that staleness short.
+const CACHE_TTL_MS = 60_000;
+const CACHE_MAX_BYTES = 32 * 1024 * 1024;
+const CACHE_MAX_ENTRIES = 32;
+const renderCache = new Map();
+const inflightRenders = new Map();
+let renderCacheBytes = 0;
+
+function stableSerialize(value) {
+  if (value === null || typeof value !== 'object') {
+    return JSON.stringify(value) ?? 'null';
+  }
+
+  if (Array.isArray(value)) {
+    return `[${value.map(stableSerialize).join(',')}]`;
+  }
+
+  return `{${Object.keys(value)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${stableSerialize(value[key])}`)
+    .join(',')}}`;
+}
+
+async function fileStamp(file) {
+  if (!file) return '';
+
+  try {
+    const info = await stat(file);
+    return `${info.mtimeMs}:${info.size}`;
+  } catch {
+    return 'missing';
+  }
+}
+
+async function renderCacheKey({ member, stats, status, background }) {
+  const [wallpaper, animation] = await Promise.all([
+    fileStamp(background?.path),
+    fileStamp(background?.gifPath),
+  ]);
+
+  const material = stableSerialize({
+    v: 1,
+    member: [member?.id ?? '', member?.name ?? '', member?.username ?? '', member?.avatarUrl ?? ''],
+    stats: [
+      stats?.title ?? null,
+      stats?.coins,
+      stats?.level,
+      stats?.rank,
+      stats?.vex,
+      stats?.nightmare,
+      stats?.punishments,
+      stats?.goodBehavior,
+      stats?.progress,
+    ],
+    status: status
+      ? [
+          status.presence,
+          status.joinedAt,
+          status.createdAt,
+          status.roles,
+          status.birthday,
+          status.birthdayHidden,
+        ]
+      : null,
+    background,
+    wallpaper,
+    animation,
+  });
+
+  return createHash('sha1').update(material).digest('base64');
+}
+
+function cachedRender(key) {
+  const entry = renderCache.get(key);
+
+  if (!entry) return null;
+
+  if (Date.now() - entry.at > CACHE_TTL_MS) {
+    renderCache.delete(key);
+    renderCacheBytes -= entry.size;
+    return null;
+  }
+
+  // Refresh recency so hot members survive eviction.
+  renderCache.delete(key);
+  renderCache.set(key, entry);
+  return entry.result;
+}
+
+function storeRender(key, result) {
+  const size = result.buffer.length;
+
+  if (size > CACHE_MAX_BYTES) return;
+
+  const existing = renderCache.get(key);
+
+  if (existing) renderCacheBytes -= existing.size;
+
+  renderCache.set(key, { result, size, at: Date.now() });
+  renderCacheBytes += size;
+
+  while (renderCache.size > CACHE_MAX_ENTRIES || renderCacheBytes > CACHE_MAX_BYTES) {
+    const [oldKey, oldEntry] = renderCache.entries().next().value;
+    renderCache.delete(oldKey);
+    renderCacheBytes -= oldEntry.size;
+  }
 }
 
 const ASSET_DIR = path.join(rootDir, 'assets', 'profile');
@@ -1070,13 +1186,31 @@ async function renderAnimatedCard({ gifPath, avatar, member, stats, status, back
  * a tier treatment, a custom wallpaper, or the classic template.
  */
 export async function renderProfileCard(args) {
-  await acquireRenderSlot();
+  const key = await renderCacheKey(args);
+  const cached = cachedRender(key);
 
-  try {
-    return await renderProfileCardNow(args);
-  } finally {
-    releaseRenderSlot();
-  }
+  if (cached) return cached;
+
+  // Two members opening the same profile at once should share one render
+  // instead of queueing for a second identical GIF encode.
+  const inflight = inflightRenders.get(key);
+
+  if (inflight) return inflight;
+
+  const task = (async () => {
+    await acquireRenderSlot();
+
+    try {
+      const result = await renderProfileCardNow(args);
+      storeRender(key, result);
+      return result;
+    } finally {
+      releaseRenderSlot();
+    }
+  })().finally(() => inflightRenders.delete(key));
+
+  inflightRenders.set(key, task);
+  return task;
 }
 
 async function renderProfileCardNow({ member, stats, status = null, background = null }) {

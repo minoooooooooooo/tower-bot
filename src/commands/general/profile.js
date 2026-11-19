@@ -162,6 +162,7 @@ export default {
     // The card is generated from the member when they are still here, and from
     // the user alone when they left (stored points still render, rank is empty).
     const cardMember = {
+      id: user.id,
       name: displayNameOf(user, member),
       username: user.username ?? 'unknown',
       avatarUrl:
