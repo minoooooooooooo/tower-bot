@@ -229,7 +229,7 @@ DISCORD_CLIENT_SECRET=...
 TUNNEL_ENABLED=1
 ```
 
-The bot downloads Cloudflare's tunnel client once (about 35 MB, into `data/`) and prints `Store activity public URL: https://…trycloudflare.com`. Paste that into **Activities → URL Mappings** in the Developer Portal and create the entry-point command. The address changes when the bot restarts — copy the new one into the portal whenever that happens.
+The bot downloads Cloudflare's tunnel client once (about 35 MB, into `data/`) and prints `Store activity public URL: https://…trycloudflare.com`. Paste that into **Activities → URL Mappings** in the Developer Portal and create the entry-point command. The address changes when the bot restarts — copy the new one into the portal whenever that happens, or set `ACTIVITY_URL_CHANNEL_ID` and let the bot post the new address in a channel each time it starts.
 
 With `ACTIVITY_ENABLED` unset the bot, `/store` and every other command behave exactly as before; the button is simply not shown. Setup, your own domain/proxy alternatives and the API are in [`docs/activity-store.md`](docs/activity-store.md), and `?demo=1` renders the storefront with mock data for layout checks.
 
@@ -270,10 +270,11 @@ At **level 50** the Celestial design still equips automatically like every other
 :-background set 15          choose Tide
 :-background set Tide        the name works too
 :-background custom          attach an image to upload or replace it
+:-background custom @member  Manage Server: upload it for someone else
 :-background reset           back to Classic and delete the upload
 ```
 
-`/background reset user:@member` (Manage Server) clears someone else's wallpaper. Wallpapers live under `data/`, so include that folder when moving servers or redeploying.
+**Manage Server** can use custom wallpapers at any level, without waiting for level 50: `/background custom image:<file> [user:@member]` uploads for yourself or someone else. Level designs still follow the ladder — giving one to a low-level member would only fall back to Classic on their card. `/background reset user:@member` (Manage Server) clears someone else's wallpaper. Wallpapers live under `data/`, so include that folder when moving servers or redeploying.
 
 ### Linked points from other bots
 

@@ -232,11 +232,18 @@ try {
 }
 
 // Optional free public HTTPS address for that activity, started by the bot
-// itself. Off unless TUNNEL_ENABLED=1; a failure only logs a warning.
+// itself. Off unless TUNNEL_ENABLED=1; a failure only logs a warning. With
+// ACTIVITY_URL_CHANNEL_ID set, the fresh address is also posted to that channel.
 if (activityServer) {
   try {
-    const { startActivityTunnel } = await import('./activity/tunnel.js');
-    await startActivityTunnel(config.activity.port);
+    const [{ startActivityTunnel }, { announceActivityUrl }] = await Promise.all([
+      import('./activity/tunnel.js'),
+      import('./activity/announce.js'),
+    ]);
+
+    await startActivityTunnel(config.activity.port, {
+      onUrl: (url) => announceActivityUrl(client, url),
+    });
   } catch (error) {
     logger.warn(`The store activity tunnel could not start: ${error.message}`);
   }

@@ -101,6 +101,11 @@ function attachmentOf(ctx) {
   );
 }
 
+/** Server managers can upload custom wallpapers at any level, for any member. */
+function canManageGuild(ctx) {
+  return Boolean(ctx.member?.permissions?.has(PermissionFlagsBits.ManageGuild));
+}
+
 function selectionState(ctx, stored, level, hasCustom, owned) {
   const selected = resolveBackground({
     selected: stored.background,
@@ -118,7 +123,7 @@ function selectionState(ctx, stored, level, hasCustom, owned) {
   return { selected, lockedTier, customMissing };
 }
 
-function listEmbed(ctx, level, stored, hasCustom, owned) {
+function listEmbed(ctx, level, stored, hasCustom, owned, manager = false) {
   const { selected, lockedTier, customMissing } = selectionState(ctx, stored, level, hasCustom, owned);
   const unlocked = new Set(unlockedBackgrounds(level, owned).map((background) => background.id));
   const storeHint = ctx.isSlash ? '/store buy item:' : `${config.prefix}store buy `;
@@ -145,10 +150,11 @@ function listEmbed(ctx, level, stored, hasCustom, owned) {
     return `${mark} **${background.name}** — ${levelText}${lock}${price}`;
   });
 
-  const customMark = stored.background === CUSTOM_ID ? '➡️' : hasCustom || level >= CUSTOM_LEVEL ? '✅' : '🔒';
+  const customMark =
+    stored.background === CUSTOM_ID ? '➡️' : hasCustom || level >= CUSTOM_LEVEL || manager ? '✅' : '🔒';
   const customText = hasCustom
     ? 'set — attach a new image to replace it'
-    : level >= CUSTOM_LEVEL
+    : level >= CUSTOM_LEVEL || manager
       ? `unlocked — upload one with \`${ctx.isSlash ? '/background custom' : ':-background custom'}\``
       : `level ${CUSTOM_LEVEL} · ${formatPoints(pointsForLevel(CUSTOM_LEVEL))} points`;
 
@@ -167,6 +173,9 @@ function listEmbed(ctx, level, stored, hasCustom, owned) {
     title: 'Profile backgrounds',
     description:
       `You are **level ${level}**. The newest free design equips automatically, and you can switch to any unlocked design. The classic card is always available.` +
+      (manager
+        ? '\nYou have **Manage Server**, so custom wallpapers are open at any level, for you or another member.'
+        : '') +
       selectedNote,
     color: COLORS.primary,
     fields: [
@@ -201,7 +210,7 @@ async function handleList(ctx, client) {
   // just crossed a level sees the same pick their card will use.
   stored.background = syncAutoBackground(ctx.guildId, ctx.user.id, level, { hasCustom });
 
-  const payload = { embeds: [listEmbed(ctx, level, stored, hasCustom, owned)] };
+  const payload = { embeds: [listEmbed(ctx, level, stored, hasCustom, owned, canManageGuild(ctx))] };
   await respond(ctx, payload);
 }
 
@@ -240,7 +249,7 @@ async function handleSet(ctx, client, query) {
         embeds: [
           errorEmbed(
             'No custom wallpaper yet',
-            `Upload one first with \`${ctx.isSlash ? '/background custom image:<file>' : ':-background custom'}\` (level ${CUSTOM_LEVEL}+).`,
+            `Upload one first with \`${ctx.isSlash ? '/background custom image:<file>' : ':-background custom'}\` (level ${CUSTOM_LEVEL}+, or Manage Server).`,
           ),
         ],
       });
@@ -305,26 +314,70 @@ async function handleSet(ctx, client, query) {
   });
 }
 
+/**
+ * The member a subcommand acts on: the `user` option on slash, the first
+ * argument on prefix, otherwise the author.
+ */
+async function targetOf(ctx, client) {
+  if (ctx.isSlash) return { target: ctx.getUser('user') ?? ctx.user, unknown: false };
+
+  const token = prefixRest(ctx)[0];
+  if (!token) return { target: ctx.user, unknown: false };
+
+  const target = await resolveUser(client, token, ctx.message);
+  return { target: target ?? null, unknown: !target };
+}
+
+function lockedCustomMessage(level, self) {
+  return (
+    `Custom wallpapers unlock at level **${CUSTOM_LEVEL}** ` +
+    `(${formatPoints(pointsForLevel(CUSTOM_LEVEL))} points). ` +
+    (self ? `You are level ${level}.` : `That member is level ${level}.`) +
+    ' Members with **Manage Server** can set one at any level.'
+  );
+}
+
 async function handleCustom(ctx, client, attachment) {
-  const level = await levelOf(ctx, client, ctx.user.id);
-  const hasCustom = hasCustomWallpaper(ctx.guildId, ctx.user.id);
-  const unlocked = level >= CUSTOM_LEVEL || hasCustom;
+  const { target, unknown } = await targetOf(ctx, client);
+
+  if (unknown) {
+    await respond(ctx, {
+      embeds: [errorEmbed('Unknown member', 'Mention the member or paste their id.')],
+    });
+    return;
+  }
+
+  const self = target.id === ctx.user.id;
+  const manager = canManageGuild(ctx);
+
+  if (!self && !manager) {
+    await respond(ctx, {
+      embeds: [
+        errorEmbed(
+          'Not allowed',
+          'Only members with **Manage Server** can set someone else’s background.',
+        ),
+      ],
+    });
+    return;
+  }
+
+  const level = await levelOf(ctx, client, target.id);
+  const hasCustom = hasCustomWallpaper(ctx.guildId, target.id);
+  // Manage Server bypasses the level gate, for the author and for the member
+  // they are setting it for.
+  const unlocked = manager || level >= CUSTOM_LEVEL || hasCustom;
 
   if (!attachment) {
+    const hint = hasCustom
+      ? `Attach a new image to replace ${self ? 'your' : 'their'} wallpaper. It is cropped to the card size automatically.`
+      : `Attach a PNG, JPEG, WebP or GIF image${self ? '' : ` for <@${target.id}>`}. It is cropped to the card size automatically.`;
+
     await respond(ctx, {
       embeds: [
         unlocked
-          ? infoEmbed(
-              'Custom wallpaper',
-              hasCustom
-                ? 'Attach a new image to replace your wallpaper. It is cropped to the card size automatically.'
-                : 'Attach a PNG, JPEG, WebP or GIF image. It is cropped to the card size automatically.',
-            )
-          : errorEmbed(
-              'Still locked',
-              `Custom wallpapers unlock at level **${CUSTOM_LEVEL}** ` +
-                `(${formatPoints(pointsForLevel(CUSTOM_LEVEL))} points). You are level ${level}.`,
-            ),
+          ? infoEmbed('Custom wallpaper', hint)
+          : errorEmbed('Still locked', lockedCustomMessage(level, self)),
       ],
     });
     return;
@@ -332,13 +385,7 @@ async function handleCustom(ctx, client, attachment) {
 
   if (!unlocked) {
     await respond(ctx, {
-      embeds: [
-        errorEmbed(
-          'Still locked',
-          `Custom wallpapers unlock at level **${CUSTOM_LEVEL}** ` +
-            `(${formatPoints(pointsForLevel(CUSTOM_LEVEL))} points). You are level ${level}.`,
-        ),
-      ],
+      embeds: [errorEmbed('Still locked', lockedCustomMessage(level, self))],
     });
     return;
   }
@@ -349,15 +396,17 @@ async function handleCustom(ctx, client, attachment) {
   if (ctx.isSlash) await ctx.defer({ ephemeral: true });
 
   try {
-    const saved = await saveCustomWallpaper(ctx.guildId, ctx.user.id, attachment);
-    setProfileBackground(ctx.guildId, ctx.user.id, CUSTOM_ID);
+    const saved = await saveCustomWallpaper(ctx.guildId, target.id, attachment);
+    setProfileBackground(ctx.guildId, target.id, CUSTOM_ID);
 
     const payload = {
       embeds: [
         successEmbed(
           'Custom wallpaper set',
           `Stored at ${saved.sourceWidth}x${saved.sourceHeight}, cropped to the card. ` +
-            `Run \`${ctx.isSlash ? '/profile' : ':-profile'}\` to see it.`,
+            (self
+              ? `Run \`${ctx.isSlash ? '/profile' : ':-profile'}\` to see it.`
+              : `It is now on <@${target.id}>’s profile.`),
         ),
       ],
     };
@@ -370,7 +419,7 @@ async function handleCustom(ctx, client, attachment) {
       return;
     }
 
-    logger.error(`Could not save the wallpaper for ${ctx.user.id}`, error);
+    logger.error(`Could not save the wallpaper for ${target.id}`, error);
     await ctx.fail({
       embeds: [
         errorEmbed('Could not save the wallpaper', 'The image could not be stored. Try again in a moment.'),
@@ -379,17 +428,8 @@ async function handleCustom(ctx, client, attachment) {
   }
 }
 
-async function resetTarget(ctx, client) {
-  if (ctx.isSlash) return ctx.getUser('user') ?? ctx.user;
-
-  const token = prefixRest(ctx)[0];
-  if (!token) return ctx.user;
-
-  return resolveUser(client, token, ctx.message);
-}
-
 async function handleReset(ctx, client) {
-  const target = await resetTarget(ctx, client);
+  const { target } = await targetOf(ctx, client);
 
   if (!target) {
     await respond(ctx, {
@@ -398,17 +438,13 @@ async function handleReset(ctx, client) {
     return;
   }
 
-  if (target.id !== ctx.user.id) {
-    const allowed = ctx.member?.permissions?.has(PermissionFlagsBits.ManageGuild);
-
-    if (!allowed) {
-      await respond(ctx, {
-        embeds: [
-          errorEmbed('Not allowed', 'Only members with **Manage Server** can reset someone else’s background.'),
-        ],
-      });
-      return;
-    }
+  if (target.id !== ctx.user.id && !canManageGuild(ctx)) {
+    await respond(ctx, {
+      embeds: [
+        errorEmbed('Not allowed', 'Only members with **Manage Server** can reset someone else’s background.'),
+      ],
+    });
+    return;
   }
 
   // `default` is explicit, not null: auto-equip must not undo a reset.
@@ -450,11 +486,17 @@ export default {
     .addSubcommand((sub) =>
       sub
         .setName('custom')
-        .setDescription(`Upload your own wallpaper (level ${CUSTOM_LEVEL}+)`)
+        .setDescription(`Upload a wallpaper (level ${CUSTOM_LEVEL}+, or Manage Server for anyone)`)
         .addAttachmentOption((option) =>
           option
             .setName('image')
             .setDescription('PNG, JPEG, WebP or GIF. Cropped to the card automatically.')
+            .setRequired(false),
+        )
+        .addUserOption((option) =>
+          option
+            .setName('user')
+            .setDescription('Manage Server: set it for this member instead')
             .setRequired(false),
         ),
     )
@@ -474,7 +516,7 @@ export default {
   aliases: ['bg', 'theme', 'wallpaper'],
   description: 'Choose or upload your profile-card background',
   category: 'General',
-  usage: 'background [list | set <design> | custom | reset]',
+  usage: 'background [list | set <design> | custom [user] | reset [user]]',
   cooldown: 4,
   guildOnly: true,
 

@@ -73,6 +73,9 @@ export const config = {
     port: Number.isFinite(activityPort) && activityPort > 0 ? activityPort : 3000,
     publicUrl: process.env.ACTIVITY_PUBLIC_URL?.trim() || null,
     clientSecret: process.env.DISCORD_CLIENT_SECRET?.trim() || '',
+    // Optional channel that receives the fresh tunnel address on startup, so
+    // the portal mapping can be updated without opening the panel console.
+    urlChannelId: process.env.ACTIVITY_URL_CHANNEL_ID?.trim() || '',
   },
   // A free public HTTPS address for the activity, run as part of the bot. Off
   // unless TUNNEL_ENABLED=1. See docs/activity-store.md.

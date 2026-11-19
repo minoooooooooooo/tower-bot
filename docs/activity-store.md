@@ -15,6 +15,7 @@ HTTP server never starts and `/store` behaves exactly as before.
 | Client shell / theme / logic | `src/activity/public/index.html`, `styles.css`, `app.js` |
 | Bundled Embedded App SDK (no CDN) | `src/activity/public/vendor/discord-sdk.js` |
 | Optional free tunnel (`TUNNEL_ENABLED=1`) | `src/activity/tunnel.js` |
+| Optional channel post of the address (`ACTIVITY_URL_CHANNEL_ID`) | `src/activity/announce.js` |
 
 The Activity reuses `src/services/store.js`, so prices, per-guild overrides,
 limits, immediate delivery and refunds are identical to the message commands.
@@ -54,6 +55,7 @@ a one-time `code`, and the bot swaps it for a token server-side.
 ACTIVITY_ENABLED=1
 DISCORD_CLIENT_SECRET=...          # OAuth2 tab, never commit this
 TUNNEL_ENABLED=1                   # free public HTTPS address, no domain needed
+# ACTIVITY_URL_CHANNEL_ID=123...   # optional: post the new address in a channel
 # ACTIVITY_PUBLIC_URL=https://store.example.com   # only with your own host
 # ACTIVITY_PORT=3000               # default
 # ACTIVITY_HOST=0.0.0.0            # default; 127.0.0.1 behind a local proxy
@@ -93,6 +95,19 @@ The log then prints:
 
 The same value is written to `data/tunnel-url.txt`, so you can read it from the
 panel's file manager if the console scrolled. Use it as the portal **Target**.
+
+**Getting the new address without opening the panel:** set
+`ACTIVITY_URL_CHANNEL_ID` to a channel id and the bot posts the address there on
+every start, with a one-line reminder of where to paste it:
+
+```ini
+ACTIVITY_URL_CHANNEL_ID=123456789012345678
+```
+
+It needs **View Channel** and **Send Messages** in that channel (the bot's
+normal permissions are enough). A wrong id, a missing permission or a deleted
+channel only logs a warning; nothing else is affected. This is off by default,
+and only fires when the bot's own tunnel provides the address.
 
 Two things to know:
 
@@ -221,4 +236,5 @@ npm run build:activity     # rewrites src/activity/public/vendor/discord-sdk.js
 | Images missing in the Activity | The design's file is missing from `assets/profile/backgrounds/`. |
 | No `Store activity public URL` line | `TUNNEL_ENABLED` unset, the activity server is off, or the 35 MB download failed — check the warning just above it. |
 | Portal rejects the tunnel address | A fresh `trycloudflare.com` name can take a minute or two to resolve. Wait, then save again. |
-| Activity broke after a restart | The tunnel address changed. Copy the new one from the log or `data/tunnel-url.txt` into the URL mapping. |
+| Activity broke after a restart | The tunnel address changed. Copy the new one from the channel message, the log or `data/tunnel-url.txt` into the URL mapping. |
+| The address was not posted in the channel | `ACTIVITY_URL_CHANNEL_ID` unset or wrong, the bot lacks View Channel / Send Messages there, or the channel is not text. The warning above the activity log names the reason. |

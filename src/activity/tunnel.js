@@ -25,6 +25,7 @@ const URL_TIMEOUT_MS = 60_000;
 let child = null;
 let publicUrl = null;
 let stopping = false;
+let onUrl = null;
 
 function assetName() {
   const arch = process.arch === 'arm64' ? 'arm64' : 'amd64';
@@ -96,6 +97,14 @@ function rememberUrl(url) {
   } catch (error) {
     logger.warn(`Could not save the tunnel URL to data/tunnel-url.txt: ${error.message}`);
   }
+
+  // Optional listener (see ACTIVITY_URL_CHANNEL_ID). Never let a failure there
+  // affect the tunnel itself.
+  if (onUrl) {
+    Promise.resolve()
+      .then(() => onUrl(url))
+      .catch((error) => logger.warn(`Could not report the new address: ${error.message}`));
+  }
 }
 
 function watch(stream) {
@@ -120,11 +129,15 @@ function watch(stream) {
 /**
  * Starts the tunnel in front of the activity server. Returns the child process,
  * or null when it is off, unsupported or failed - never throws at the caller.
+ *
+ * `onUrl` is called once with the public address as soon as cloudflared prints
+ * it; the bot uses it to post the address to a channel.
  */
-export async function startActivityTunnel(port) {
+export async function startActivityTunnel(port, { onUrl: listener } = {}) {
   if (!config.tunnel.enabled) return null;
 
   stopping = false;
+  onUrl = typeof listener === 'function' ? listener : null;
 
   if (!Number.isFinite(port) || port <= 0) {
     logger.warn('The activity port is not valid; the tunnel stays off.');
