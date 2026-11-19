@@ -1201,7 +1201,7 @@ function demoData() {
       backgroundId: null,
       ownedCount: 0,
       atLimit: false,
-      rarity: 'rare',
+      rarity: 'common',
       art: null,
     },
     {
@@ -1217,7 +1217,7 @@ function demoData() {
       backgroundId: null,
       ownedCount: 1,
       atLimit: false,
-      rarity: 'rare',
+      rarity: 'common',
       art: null,
     },
     {
@@ -1233,7 +1233,7 @@ function demoData() {
       backgroundId: null,
       ownedCount: 0,
       atLimit: false,
-      rarity: 'epic',
+      rarity: 'rare',
       art: null,
     },
   ];

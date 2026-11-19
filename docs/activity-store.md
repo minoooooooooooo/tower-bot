@@ -225,8 +225,9 @@ place, so no restart is needed.
   (`frame-ancestors`), and scripts/images only from this origin plus Discord's
   CDN. There are no CDN script tags: the Embedded App SDK is bundled at
   `src/activity/public/vendor/discord-sdk.js`.
-- Bodies are capped at 16 MB (a 10 MB image becomes ~13.4 MB as a `data:` URL),
-  static paths are normalised and confined to `src/activity/public`,
+- Bodies are capped at 16 MB for background uploads (a 10 MB image becomes
+  ~13.4 MB as a `data:` URL), 2 MB for purchases and 64 KB for the token/equip
+  calls; static paths are normalised and confined to `src/activity/public`,
   `assets/profile/backgrounds`, `data/backgrounds` and the single
   `assets/profile/coin.png` mark, and no route writes files outside `data/`.
 - The API mutates coins only through `buyStoreItem`, so all the existing checks

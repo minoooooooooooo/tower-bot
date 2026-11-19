@@ -69,7 +69,7 @@ function sendJson(res, status, payload) {
   res.end(JSON.stringify(payload));
 }
 
-function readJson(req) {
+function readJson(req, limit = MAX_BODY_BYTES) {
   return new Promise((resolve, reject) => {
     let size = 0;
     const chunks = [];
@@ -77,7 +77,7 @@ function readJson(req) {
     req.on('data', (chunk) => {
       size += chunk.length;
 
-      if (size > MAX_BODY_BYTES) {
+      if (size > limit) {
         reject(Object.assign(new Error('Request body is too large.'), { status: 413 }));
         req.destroy();
         return;
@@ -135,7 +135,7 @@ async function handleApi(req, res, client, route, url) {
 
   if (route === '/api/token' && req.method === 'POST') {
     try {
-      const body = await readJson(req);
+      const body = await readJson(req, 64 * 1024);
       const token = await exchangeCode(body.code);
       sendJson(res, 200, {
         access_token: token.access_token,
@@ -181,7 +181,7 @@ async function handleApi(req, res, client, route, url) {
     const user = await requireUser(req, res);
     if (!user) return true;
 
-    const body = await readJson(req);
+    const body = await readJson(req, 2 * 1024 * 1024);
     const result = await buyFromActivity({
       client,
       guildId: body.guildId,
@@ -202,7 +202,7 @@ async function handleApi(req, res, client, route, url) {
     const user = await requireUser(req, res);
     if (!user) return true;
 
-    const body = await readJson(req);
+    const body = await readJson(req, 64 * 1024);
     const context = await guildContext(client, body.guildId, user.id);
 
     if (context.error) {
