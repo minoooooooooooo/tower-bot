@@ -207,6 +207,14 @@ Activity client builds the URL as `${base}/assets/coin.png`, while `index.html`
 uses the relative `assets/coin.png`, so both the tunnel and the Discord proxy
 resolve it.
 
+**Store background seam (fixed 2026-11-20).** The Activity iframe can give
+`body` a one-viewport box while the card grid overflows. With the default
+`background-attachment: scroll`, the body's radial-gradient layers tiled at that
+boundary, so scrolling crossed a hard blue→brown seam. `styles.css` now pins the
+ambient gradient with `background-attachment: fixed; background-repeat:
+no-repeat`; the colour stays smooth and identical at every scroll position. The
+fix was verified in a one-viewport-body harness at multiple scroll offsets.
+
 ## What exists
 
 | Command | Aliases | Notes |

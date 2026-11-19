@@ -49,6 +49,14 @@ body {
     radial-gradient(900px 600px at 100% 8%, rgba(255, 190, 80, 0.09), transparent 55%),
     radial-gradient(800px 700px at 50% 110%, rgba(120, 60, 255, 0.12), transparent 60%),
     var(--bg);
+  /*
+   * The activity iframe gives the body a one-viewport box while the grid
+   * overflows. A scrolling background was therefore tiled at the viewport edge,
+   * so scrolling crossed a hard colour seam. Pinning the ambient gradient to
+   * the viewport keeps it smooth and identical at every scroll position.
+   */
+  background-attachment: fixed;
+  background-repeat: no-repeat;
   -webkit-font-smoothing: antialiased;
   overflow-x: hidden;
 }
