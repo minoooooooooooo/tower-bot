@@ -80,7 +80,7 @@ Both run `src/boot.js`, which checks the Node version before loading the bot and
 | `/avatar [user]` | `:-av`, `:-pfp` | Show a member's global and per-server avatar |
 | `/profile [user]` | `:-card`, `:-profilecard` | Generated profile card: status, role and point panels |
 | `/coins [user] [amount]` | `:-coin`, `:-balance`, `:-wallet` | Show your balance, show another member's, or send coins to a member |
-| `/coin-log [user] [type] [page]` | `:-coin-log`, `:-coins-log`, `:-coin-history`, `:-ledger` | Show recent coin movement, signed amounts and the balance after each |
+| `/coin-log [user] [type] [page]` | `:-coin-log`, `:-coins-log`, `:-coin-history`, `:-ledger` | Show recent coin movement, signed amounts and the balance after each; `global:true` / `all` shows the whole server |
 | `/coins-config [on\|off\|status]` | `:-coin-config`, `:-coinsconfig` | Turn coin transfers between members on or off (Manage Server, grantable) |
 | `/store [browse\|buy\|owned]` | `:-shop` | Spend coins on designs, XP, good behaviour, a title, a custom role or an emoji |
 | `/store-config <subcommand>` | `:-store-admin`, `:-shop-config` | Set prices, hide items, clear a member's purchases (Manage Server) |
@@ -188,9 +188,13 @@ Coin transfers are on by default. `/coins-config off` (prefix `:-coins-config of
 :-coin-log
 :-coin-log @member
 :-coin-log @member transfer 2
+:-coin-log all
+:-coin-log all purchase 2
 ```
 
-Each line is a signed amount, the kind of movement, a short detail, the balance after it and when it happened. Types are **Level reward**, **Opening balance**, **Transfer in/out**, **Purchase**, **Refund**, **Admin added/removed** and **Adjustment**; the `type` filter narrows the list to one group. There are eight records per page. The embed shows the current balance plus the filtered in/out totals.
+Each line is a signed amount, the kind of movement, a short detail, the balance after it and when it happened. Types are **Level reward**, **Opening balance**, **Transfer in/out**, **Purchase**, **Refund**, **Admin added/removed** and **Adjustment**; the `type` filter narrows the list to one group. There are eight records per page. The personal embed shows the current balance plus the filtered in/out totals.
+
+With **Manage Server**, `global:true` on slash or `all` on prefix switches to the **server-wide** log: one list of every member’s movement, with that member mentioned on each line and the guild’s filtered In / Out totals and member count. `/coin-log user:@member` stays the focused view. The server-wide view does not invent opening balances for members who have never opened their own log; those rows appear when each member first checks their history.
 
 The ledger is written in the same database transaction as the coin update, so a transfer, purchase or refund cannot commit without its history row. A member who already had coins before the ledger is given a one-time **Opening balance** entry at their current balance, rather than inventing backdated income. Staff coin changes from `/profile-edit` record the acting admin.
 

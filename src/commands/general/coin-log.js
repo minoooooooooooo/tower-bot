@@ -17,6 +17,8 @@ import {
   coinHistory,
   coinTotals,
   ensureOpeningBalance,
+  guildCoinHistory,
+  guildCoinTotals,
 } from '../../services/coin-ledger.js';
 import {
   ensureCoinBackfill,
@@ -53,6 +55,8 @@ const FILTER_CHOICES = COIN_FILTERS.map((value) => ({
   name: COIN_FILTER_LABELS[value] ?? value,
   value,
 }));
+
+const GLOBAL_WORDS = new Set(['all', 'global', 'everyone', 'server', 'universal', 'guild', 'whole']);
 
 function normalizeFilter(value) {
   return FILTER_ALIASES[String(value ?? '').trim().toLowerCase()] ?? null;
@@ -113,6 +117,19 @@ function historyLine(row, userId) {
   );
 }
 
+function guildHistoryLine(row) {
+  const amount = `${row.amount > 0 ? '+' : ''}${formatNumber(row.amount)}`;
+  const label = COIN_TYPE_LABELS[row.type] ?? row.type;
+  const detail = describe(row, row.user_id);
+  const when = `<t:${Math.floor(Number(row.created_at) / 1000)}:R>`;
+
+  return (
+    `${amount} · <@${row.user_id}> · ${label}` +
+    (detail ? ` — ${detail}` : '') +
+    ` · bal ${formatNumber(row.balance_after)} · ${when}`
+  );
+}
+
 function logEmbed({ targetId, name, isSelf, filter, page, pages, totals, rows, balance }) {
   const lines = rows.length
     ? rows.map((row) => historyLine(row, targetId)).join('\n')
@@ -134,19 +151,57 @@ function logEmbed({ targetId, name, isSelf, filter, page, pages, totals, rows, b
   });
 }
 
+function guildLogEmbed({ guildName, filter, page, pages, totals, rows }) {
+  const lines = rows.length
+    ? rows.map((row) => guildHistoryLine(row)).join('\n')
+    : '_No coin movement yet._';
+
+  return embed({
+    title: `${guildName} · server coin log`,
+    description:
+      `All members · **${COIN_FILTER_LABELS[filter] ?? filter}**` +
+      (totals.count ? ` · ${formatNumber(totals.count)} records` : ''),
+    color: COLORS.primary,
+    fields: [
+      { name: 'In', value: `+${formatNumber(totals.earned)}`, inline: true },
+      { name: 'Out', value: `-${formatNumber(totals.spent)}`, inline: true },
+      { name: 'Members', value: `**${formatNumber(totals.members)}**`, inline: true },
+      { name: 'History', value: lines, inline: false },
+    ],
+    footer: `Page ${formatNumber(page)} / ${formatNumber(pages)} · ${COIN_PAGE_SIZE} per page`,
+  });
+}
+
 async function runCoinLog(ctx, client) {
   let target = ctx.user;
   let filter = 'all';
   let page = 1;
+  let global = false;
 
   if (ctx.isSlash) {
     target = ctx.getUser('user') ?? ctx.user;
     filter = normalizeFilter(ctx.getString('type')) ?? 'all';
     page = ctx.getInteger('page') ?? 1;
+    global = ctx.getBoolean('global') === true;
+
+    if (global && ctx.getUser('user')) {
+      await ctx.fail({
+        embeds: [
+          errorEmbed(
+            'Choose one view',
+            'Pick a member or `global:true`, not both. `/coin-log global:true` shows every member.',
+          ),
+        ],
+      });
+      return;
+    }
   } else {
     const args = [...ctx.args];
 
-    if (args[0] && looksLikeUser(args[0])) {
+    if (args[0] && GLOBAL_WORDS.has(String(args[0]).toLowerCase())) {
+      global = true;
+      args.shift();
+    } else if (args[0] && looksLikeUser(args[0])) {
       const resolved = await resolveUser(client, args[0], ctx.message);
 
       if (!resolved) {
@@ -175,7 +230,19 @@ async function runCoinLog(ctx, client) {
     page = parsePage(args[0]);
   }
 
-  if (target.id !== ctx.user.id) {
+  if (global) {
+    if (!ctx.member?.permissions?.has?.(PermissionFlagsBits.ManageGuild)) {
+      await ctx.fail({
+        embeds: [
+          errorEmbed(
+            'Missing permissions',
+            'You need **Manage Server** to read the server-wide coin log.',
+          ),
+        ],
+      });
+      return;
+    }
+  } else if (target.id !== ctx.user.id) {
     const allowed = Boolean(ctx.member?.permissions?.has?.(PermissionFlagsBits.ManageGuild));
 
     if (!allowed) {
@@ -191,7 +258,7 @@ async function runCoinLog(ctx, client) {
     }
   }
 
-  if (target.bot) {
+  if (!global && target.bot) {
     await ctx.fail({
       embeds: [errorEmbed('Bots have no coins', 'Pick a member, not a bot.')],
     });
@@ -206,6 +273,38 @@ async function runCoinLog(ctx, client) {
     linked = await linkedPoints(client, ctx.guildId);
   } catch {
     // A linked-bot outage must not block the ledger.
+  }
+
+  if (global) {
+    try {
+      ensureCoinBackfill(ctx.guildId, linked);
+    } catch {
+      // A failed one-time import must not block the log.
+    }
+
+    const totals = guildCoinTotals(ctx.guildId, { filter });
+    const pages = Math.max(1, Math.ceil(totals.count / COIN_PAGE_SIZE));
+    const safePage = Math.min(page, pages);
+    const rows = guildCoinHistory(ctx.guildId, {
+      filter,
+      limit: COIN_PAGE_SIZE,
+      offset: (safePage - 1) * COIN_PAGE_SIZE,
+    });
+
+    await ctx.editReply({
+      embeds: [
+        guildLogEmbed({
+          guildName: ctx.guild?.name ?? 'Server',
+          filter,
+          page: safePage,
+          pages,
+          totals,
+          rows,
+        }),
+      ],
+      allowedMentions: { parse: [] },
+    });
+    return;
   }
 
   // Existing balances predate the ledger. Give them a starting point before
@@ -270,6 +369,12 @@ export default {
         .addChoices(...FILTER_CHOICES)
         .setRequired(false),
     )
+    .addBooleanOption((option) =>
+      option
+        .setName('global')
+        .setDescription('Show every member in this server (Manage Server)')
+        .setRequired(false),
+    )
     .addIntegerOption((option) =>
       option
         .setName('page')
@@ -282,7 +387,7 @@ export default {
   aliases: ['coins-log', 'coin-history', 'coinlog', 'ledger', 'bank-log'],
   description: 'Show recent coin movement and the current balance',
   category: 'Profile',
-  usage: 'coin-log [@member] [earn|transfer|purchase|refund|admin|backfill] [page]',
+  usage: 'coin-log [@member | all] [earn|transfer|purchase|refund|admin|backfill] [page]',
   cooldown: 3,
   guildOnly: true,
 

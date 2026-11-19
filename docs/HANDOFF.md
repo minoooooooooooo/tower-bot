@@ -110,10 +110,14 @@ shared `transferId`), `buyStoreItem()` (purchase), and `refundPurchase()`.
 command query. `/coin-log` (prefix `:-coin-log`, aliases `coins-log`,
 `coin-history`, `coinlog`, `ledger`, `bank-log`) shows the caller's history or,
 with **Manage Server**, another member's; it filters by type and page, and shows
-the current balance plus filtered in/out totals. `ensureOpeningBalance()` gives a
-member whose balance predates the ledger one **Opening balance** row at their
-current balance instead of inventing history; it only runs when the member has
-no ledger rows at all.
+the current balance plus filtered in/out totals. `global:true` on slash (or
+`all` / `global` on prefix) switches to `guildCoinHistory`/`guildCoinTotals`: one
+server-wide list with a `<@member>` on each line, the guild's filtered in/out
+totals and a distinct-member count. It is **Manage Server** only and does not
+create opening rows for every member; those remain a personal view.
+`ensureOpeningBalance()` gives a member whose balance predates the ledger one
+**Opening balance** row at their current balance instead of inventing history; it
+only runs when the member has no ledger rows at all.
 
 **Store (added 2026-11-17).** `/store` (prefix `:-store`, alias `shop`) browses
 the catalogue, `buy` spends coins and delivers, `owned` lists a member's
@@ -259,7 +263,7 @@ fix was verified in a one-viewport-body harness at multiple scroll offsets.
 | `/avatar [user]` | `av`, `pfp` | Global + per-server avatar |
 | `/profile [user]` | `card`, `profilecard` | Generated PNG card: title, coins, rank, level, points, XP |
 | `/coins [user] [amount]` | `coin`, `balance`, `wallet` | Own balance, another member's balance, or a transfer |
-| `/coin-log [user] [type] [page]` | `coins-log`, `coin-history`, `coinlog`, `ledger` | Recent signed coin movement and balance history |
+| `/coin-log [user] [type] [page]` | `coins-log`, `coin-history`, `coinlog`, `ledger` | Recent signed coin movement; `global:true` / `all` shows the whole server |
 | `/coins-config [on\|off\|status]` | `coin-config`, `coinsconfig` | Turn coin transfers on/off (Manage Server, grantable) |
 | `/store [browse\|buy\|owned]` | `shop` | Catalogue, purchases: XP, behaviour, title, emoji, role, designs |
 | `/store-config <sub>` | `store-admin`, `shop-config` | Prices, visibility and `reset-user` (Manage Server, grantable) |
@@ -976,7 +980,7 @@ Behavior that must be preserved:
 
 - `node --check` across all `src/**/*.js`.
 - Load test with a fake token: 51 commands, 8 events, clean login failure.
-- Coin ledger test on a temp DB: an admin credit, a paid design purchase, a role delivery that fails (purchase + refund rows), a member-to-member transfer (two rows with a shared `transferId`), a level reward (11 levels → 50 coins), and an opening balance for a pre-ledger balance. `coinTotals` and the type filter matched the rows, and `/coin-log` rendered the balance, in/out totals and the signed history lines (transfer, purchase, admin/opening).
+- Coin ledger test on a temp DB: an admin credit, a paid design purchase, a role delivery that fails (purchase + refund rows), a member-to-member transfer (two rows with a shared `transferId`), a level reward (11 levels → 50 coins), and an opening balance for a pre-ledger balance. `coinTotals` and the type filter matched the rows, and `/coin-log` rendered the balance, in/out totals and the signed history lines (transfer, purchase, admin/opening). The guild-wide query returns every member’s rows with a distinct-member count; the `global:true` command path is Manage Server only.
 - Store integration test on a temp DB (126 checks): catalogue and paid-design items, per-guild price/visibility overrides, funds/limit/disabled refusals, atomic charge + purchase row, XP/behaviour/title delivery, design ownership, role creation and assignment, emoji name/type/size/slot checks, refund after a failed delivery, `reset-user` + rebuy, sales totals, `/store` and `/store-config` slash and prefix paths, and selecting a bought design on `/background`.
 - Activity integration test on a temp DB (41 checks): storefront shape (guild/user/balance/level, `behavior-1` price and stacking, rarity banding, the full background collection with locked/unlocked/selected flags), buying through `buyFromActivity` (3 behaviour points for 300 coins with the balance after, custom role created, emoji uploaded from a `data:` URL, an SVG data URL refused), stock checks before charging, `equipFromActivity` refusing a locked paid design and accepting Classic, and the HTTP layer (consent-free `/api/config`, `/healthz`, HTML/CSS/JS and the vendored SDK served, a background image served as `image/jpeg`, `/api/store` refusing an unauthenticated call with 401, and the `/.proxy` prefix stripped).
 - Activity linked-level regression test on a temp DB with a stubbed E Bot 1 attachment: with 2,500 linked Vex points and no local points, `profileLevel` is 1 without the linked map and 6 with it; `storefront` reports level 6 and unlocks Ember (`tier-05`); `equipFromActivity` equips Ember, switches to Classic and re-equips Ember successfully.

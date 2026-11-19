@@ -53,8 +53,14 @@ function filterTypes(filter) {
 }
 
 function whereFor(guildId, userId, filter) {
-  const clauses = ['guild_id = ?', 'user_id = ?'];
-  const args = [guildId, userId];
+  const clauses = ['guild_id = ?'];
+  const args = [guildId];
+
+  if (userId) {
+    clauses.push('user_id = ?');
+    args.push(userId);
+  }
+
   const types = filterTypes(filter);
 
   if (types) {
@@ -136,10 +142,19 @@ export function ensureOpeningBalance(guildId, userId, balance) {
 }
 
 export function coinHistory(guildId, userId, { filter = 'all', limit = COIN_PAGE_SIZE, offset = 0 } = {}) {
+  return queryHistory(guildId, userId, { filter, limit, offset });
+}
+
+/** The same history for every member in the guild (Manage Server only). */
+export function guildCoinHistory(guildId, { filter = 'all', limit = COIN_PAGE_SIZE, offset = 0 } = {}) {
+  return queryHistory(guildId, null, { filter, limit, offset });
+}
+
+function queryHistory(guildId, userId, { filter = 'all', limit = COIN_PAGE_SIZE, offset = 0 } = {}) {
   const { where, args } = whereFor(guildId, userId, filter);
   const rows = getDb()
     .prepare(
-      `SELECT id, amount, balance_after, type, actor_id, detail, created_at
+      `SELECT id, user_id, amount, balance_after, type, actor_id, detail, created_at
          FROM coin_transactions
         WHERE ${where}
         ORDER BY id DESC
@@ -163,10 +178,20 @@ export function coinHistory(guildId, userId, { filter = 'all', limit = COIN_PAGE
 }
 
 export function coinTotals(guildId, userId, { filter = 'all' } = {}) {
+  return queryTotals(guildId, userId, filter);
+}
+
+/** Guild-wide totals, including the number of distinct members with rows. */
+export function guildCoinTotals(guildId, { filter = 'all' } = {}) {
+  return queryTotals(guildId, null, filter);
+}
+
+function queryTotals(guildId, userId, filter) {
   const { where, args } = whereFor(guildId, userId, filter);
   const row = getDb()
     .prepare(
       `SELECT COUNT(*) AS count,
+              COUNT(DISTINCT user_id) AS members,
               COALESCE(SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END), 0) AS earned,
               COALESCE(SUM(CASE WHEN amount < 0 THEN -amount ELSE 0 END), 0) AS spent
          FROM coin_transactions
@@ -176,6 +201,7 @@ export function coinTotals(guildId, userId, { filter = 'all' } = {}) {
 
   return {
     count: Number(row?.count) || 0,
+    members: Number(row?.members) || 0,
     earned: Number(row?.earned) || 0,
     spent: Number(row?.spent) || 0,
   };
