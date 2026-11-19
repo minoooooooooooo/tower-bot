@@ -314,7 +314,7 @@ function itemCard(item) {
 
   return `<button class="card rarity-${item.rarity}" data-item="${escapeHtml(item.key)}">
     <div class="art">
-      ${item.art ? `<img src="${escapeHtml(item.art)}" alt="">` : glyph(item.type)}
+      ${item.art ? `<img src="${escapeHtml(item.art)}" alt="" loading="lazy" decoding="async">` : glyph(item.type)}
       <span class="rarity">${item.rarity}</span>
       ${badge}
     </div>
@@ -401,7 +401,7 @@ function backgroundCard(background) {
 
   return `<button class="card rarity-${background.rarity}" data-bg="${escapeHtml(background.id)}">
     <div class="art">
-      ${background.art ? `<img src="${escapeHtml(background.art)}" alt="">` : glyph('background')}
+      ${background.art ? `<img src="${escapeHtml(background.art)}" alt="" loading="lazy" decoding="async">` : glyph('background')}
       <span class="rarity">${background.price > 0 ? 'store design' : background.rarity}</span>
       ${badge}
     </div>

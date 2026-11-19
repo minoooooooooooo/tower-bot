@@ -560,7 +560,26 @@ export function backgroundArtFile(id) {
   return null;
 }
 
+/** A 480 px card thumbnail for the store, so 60 cards do not load full art. */
+function backgroundThumbFile(id) {
+  const text = String(id ?? '').trim().toLowerCase();
+
+  if (!ID_PATTERN.test(text)) return null;
+
+  for (const dir of [DATA_ART_DIR, path.join(rootDir, 'assets', 'profile', 'backgrounds')]) {
+    const file = path.join(dir, `${text}-thumb.jpg`);
+
+    if (existsSync(file)) return file;
+  }
+
+  return null;
+}
+
 export function backgroundArtUrl(id) {
+  const thumb = backgroundThumbFile(id);
+
+  if (thumb) return `/assets/backgrounds/${path.basename(thumb)}`;
+
   const art = backgroundArtFile(id);
 
   return art ? `/assets/backgrounds/${path.basename(art.file)}` : null;
@@ -731,9 +750,25 @@ export async function saveBackgroundArt(id, input) {
 
   const encoded = canvas.toBuffer('image/jpeg', WALLPAPER_QUALITY);
   const file = path.join(DATA_ART_DIR, `${text}.jpg`);
+  const thumbFile = path.join(DATA_ART_DIR, `${text}-thumb.jpg`);
 
   await mkdir(DATA_ART_DIR, { recursive: true });
   await writeFile(file, encoded);
+
+  const thumb = createCanvas(480, 270);
+  const thumbCtx = thumb.getContext('2d');
+  const thumbScale = Math.max(480 / CARD_WIDTH, 270 / CARD_HEIGHT);
+  const thumbWidth = CARD_WIDTH * thumbScale;
+  const thumbHeight = CARD_HEIGHT * thumbScale;
+
+  thumbCtx.drawImage(
+    canvas,
+    (480 - thumbWidth) / 2,
+    (270 - thumbHeight) / 2,
+    thumbWidth,
+    thumbHeight,
+  );
+  await writeFile(thumbFile, thumb.toBuffer('image/jpeg', 78));
 
   // Keep one file per id, whichever extension the previous upload used.
   for (const extension of ART_EXTENSIONS) {
@@ -743,6 +778,7 @@ export async function saveBackgroundArt(id, input) {
 
   return {
     file,
+    thumb: thumbFile,
     width: image.width,
     height: image.height,
     bytes: encoded.length,
@@ -756,6 +792,8 @@ export async function deleteBackgroundArt(id) {
   for (const extension of ART_EXTENSIONS) {
     await rm(path.join(DATA_ART_DIR, `${text}.${extension}`), { force: true });
   }
+
+  await rm(path.join(DATA_ART_DIR, `${text}-thumb.jpg`), { force: true });
 }
 
 /* ── Custom wallpapers ────────────────────────────────────────────────────── */

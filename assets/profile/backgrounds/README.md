@@ -79,6 +79,11 @@ a replaced design is picked up without a restart. Uploads are cover-cropped to
 1868 × 1200 and stored as JPEG. `data/` is the persistent folder; the bundled
 files stay untouched for a restore.
 
+The store does not load the full artwork for every card. If a
+`<id>-thumb.jpg` (480 × 270) exists it is used for the grid and sheet; the
+profile renderer still uses the full file. The bundled designs ship with
+thumbnails, and an Activity upload generates one automatically.
+
 ## Default designs
 
 | Id | Level | Design |
