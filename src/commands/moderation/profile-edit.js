@@ -31,6 +31,9 @@ const FIELDS = {
   nightmare: 'nightmare',
   night: 'nightmare',
   vex: 'vex',
+  xp: 'xp',
+  experience: 'xp',
+  exp: 'xp',
   punishment: 'punishMini',
   punishments: 'punishMini',
   punish: 'punishMini',
@@ -43,7 +46,7 @@ const FIELDS = {
   coin: 'coins',
 };
 
-function summaryLines(before, after, changes) {
+function summaryLines(before, after, changes, xpBefore = xpFor(before), xpAfter = xpFor(after)) {
   const lines = [];
 
   if (changes.title !== undefined) {
@@ -58,6 +61,10 @@ function summaryLines(before, after, changes) {
 
   if (changes.vex) {
     lines.push(`**Vex points:** ${before.vex} → ${after.vex}`);
+  }
+
+  if (changes.xp) {
+    lines.push(`**XP:** ${xpBefore} → ${xpAfter}`);
   }
 
   if (changes.punishMini) {
@@ -97,12 +104,22 @@ function parseAmount(value) {
   return Number.isFinite(number) ? number : null;
 }
 
+/** XP shown on the card includes the linked bots' points. */
+function withLinkedProfile(profile, linked, userId) {
+  return {
+    ...profile,
+    nightmare: Number(profile.nightmare) + (Number(linked?.nightmare?.[userId]) || 0),
+    vex: Number(profile.vex) + (Number(linked?.vex?.[userId]) || 0),
+  };
+}
+
 /** Slash: options are already typed and validated by Discord. */
 function slashChanges(ctx) {
   const title = ctx.getString('title');
   const changes = {
     nightmare: ctx.getInteger('nightmare') ?? 0,
     vex: ctx.getInteger('vex') ?? 0,
+    xp: ctx.getInteger('xp') ?? 0,
     punishMini: ctx.getInteger('punishment') ?? 0,
     goodBehavior: ctx.getInteger('behavior') ?? 0,
     coins: ctx.getInteger('coins') ?? 0,
@@ -123,6 +140,7 @@ function prefixChanges(tokens) {
   const changes = {
     nightmare: 0,
     vex: 0,
+    xp: 0,
     punishMini: 0,
     goodBehavior: 0,
     coins: 0,
@@ -141,7 +159,7 @@ function prefixChanges(tokens) {
     if (!field) {
       return {
         changes,
-        problem: `\`${tokens[index]}\` is not a field. Use **nightmare**, **vex**, **punishment**, **behavior**, **coins**, or **title**.`,
+        problem: `\`${tokens[index]}\` is not a field. Use **nightmare**, **vex**, **xp**, **punishment**, **behavior**, **coins**, or **title**.`,
       };
     }
 
@@ -163,6 +181,7 @@ function hasChange(changes) {
     changes.title !== undefined ||
     changes.nightmare !== 0 ||
     changes.vex !== 0 ||
+    changes.xp !== 0 ||
     changes.punishMini !== 0 ||
     changes.goodBehavior !== 0 ||
     changes.coins !== 0
@@ -172,7 +191,7 @@ function hasChange(changes) {
 export default {
   data: new SlashCommandBuilder()
     .setName('profile-edit')
-    .setDescription('Edit a member’s profile title and points')
+    .setDescription('Edit a member’s profile title, points and XP')
     .setContexts(InteractionContextType.Guild)
     .addUserOption((option) =>
       option.setName('user').setDescription('Member to edit').setRequired(true),
@@ -198,6 +217,12 @@ export default {
     )
     .addIntegerOption((option) =>
       option
+        .setName('xp')
+        .setDescription('Add or subtract XP directly, e.g. 25 or -10')
+        .setRequired(false),
+    )
+    .addIntegerOption((option) =>
+      option
         .setName('punishment')
         .setDescription('Add or subtract punishment mini points (7 = one punishment)')
         .setRequired(false),
@@ -217,10 +242,10 @@ export default {
 
   name: 'profile-edit',
   aliases: ['editprofile', 'profile-points'],
-  description: 'Edit a member’s profile title and points',
+  description: 'Edit a member’s profile title, points and XP',
   category: 'Moderation',
   usage:
-    'profile-edit <@member> [title <text>] [nightmare <±n>] [vex <±n>] [punishment <±n>] [behavior <±n>] [coins <±n>]',
+    'profile-edit <@member> [title <text>] [nightmare <±n>] [vex <±n>] [xp <±n>] [punishment <±n>] [behavior <±n>] [coins <±n>]',
   cooldown: 2,
   guildOnly: true,
   permissions: ['ManageGuild'],
@@ -318,6 +343,7 @@ export default {
       {
         nightmare: changes.nightmare,
         vex: changes.vex,
+        xp: changes.xp,
         punishMini: changes.punishMini,
         goodBehavior: changes.goodBehavior,
         coins: changes.coins,
@@ -326,6 +352,7 @@ export default {
         coinType: 'admin',
         coinDetail: { source: 'profile-edit' },
         actorId: ctx.user.id,
+        linked,
       },
     );
 
@@ -338,7 +365,13 @@ export default {
       linked,
     );
     const after = getProfile(ctx.guildId, user.id);
-    const lines = summaryLines(before, after, changes);
+    const lines = summaryLines(
+      before,
+      after,
+      changes,
+      xpFor(withLinkedProfile(before, linked, user.id)),
+      xpFor(withLinkedProfile(after, linked, user.id)),
+    );
 
     await ctx.reply(
       ephemeral({

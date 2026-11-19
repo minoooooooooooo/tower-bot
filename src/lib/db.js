@@ -407,6 +407,7 @@ const SCHEMA = `
     level_coins_paid INTEGER NOT NULL DEFAULT 0,
     xp_penalty   INTEGER NOT NULL DEFAULT 0,
     xp_seen      INTEGER NOT NULL DEFAULT 0,
+    xp_adjust    INTEGER NOT NULL DEFAULT 0,
     created_at   INTEGER NOT NULL,
     updated_at   INTEGER NOT NULL,
     PRIMARY KEY (guild_id, user_id)
@@ -682,6 +683,7 @@ const COLUMN_MIGRATIONS = [
   ['profiles', 'level_coins_paid', 'INTEGER NOT NULL DEFAULT 0'],
   ['profiles', 'xp_penalty', 'INTEGER NOT NULL DEFAULT 0'],
   ['profiles', 'xp_seen', 'INTEGER NOT NULL DEFAULT 0'],
+  ['profiles', 'xp_adjust', 'INTEGER NOT NULL DEFAULT 0'],
   ['profile_meta', 'coins_seeded_at', 'INTEGER'],
 ];
 

@@ -60,6 +60,7 @@ const EMPTY_PROFILE = Object.freeze({
   levelCoinsPaid: 0,
   xpPenalty: 0,
   xpSeen: 0,
+  xpAdjust: 0,
   createdAt: null,
   updatedAt: null,
 });
@@ -104,6 +105,7 @@ function toProfile(row) {
     levelCoinsPaid: Number(row.level_coins_paid) || 0,
     xpPenalty: Number(row.xp_penalty) || 0,
     xpSeen: Number(row.xp_seen) || 0,
+    xpAdjust: Number(row.xp_adjust) || 0,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -114,7 +116,7 @@ export function getProfile(guildId, userId) {
   const row = getDb()
     .prepare(
       `SELECT title, nightmare, vex, punish_mini, good_behavior, show_birthday,
-              background, coins, level_coins_paid, xp_penalty, xp_seen,
+              background, coins, level_coins_paid, xp_penalty, xp_seen, xp_adjust,
               created_at, updated_at
          FROM profiles WHERE guild_id = ? AND user_id = ?`,
     )
@@ -138,8 +140,8 @@ function upsertProfile(db, guildId, userId, now) {
 export function addProfilePoints(
   guildId,
   userId,
-  { nightmare = 0, vex = 0, punishMini = 0, goodBehavior = 0, coins = 0 } = {},
-  { coinType = 'adjust', coinDetail = null, actorId = null } = {},
+  { nightmare = 0, vex = 0, punishMini = 0, goodBehavior = 0, coins = 0, xp = 0 } = {},
+  { coinType = 'adjust', coinDetail = null, actorId = null, linked = null } = {},
 ) {
   const deltas = {
     nightmare: Math.trunc(Number(nightmare) || 0),
@@ -147,6 +149,7 @@ export function addProfilePoints(
     punish_mini: Math.trunc(Number(punishMini) || 0),
     good_behavior: Math.trunc(Number(goodBehavior) || 0),
     coins: Math.trunc(Number(coins) || 0),
+    xp: Math.trunc(Number(xp) || 0),
   };
 
   const db = getDb();
@@ -157,9 +160,11 @@ export function addProfilePoints(
   try {
     upsertProfile(db, guildId, userId, now);
 
-    const read = db
-      .prepare('SELECT coins FROM profiles WHERE guild_id = ? AND user_id = ?');
-    const before = Number(read.get(guildId, userId)?.coins) || 0;
+    const read = db.prepare(
+      `SELECT nightmare, vex, xp_adjust, coins
+         FROM profiles WHERE guild_id = ? AND user_id = ?`,
+    );
+    const before = read.get(guildId, userId);
 
     db.prepare(
       `UPDATE profiles
@@ -181,15 +186,39 @@ export function addProfilePoints(
       userId,
     );
 
-    const after = Number(read.get(guildId, userId)?.coins) || 0;
-    const actual = after - before;
+    const after = read.get(guildId, userId);
+
+    if (deltas.xp !== 0) {
+      const oldAdjust = Number(before?.xp_adjust) || 0;
+      const linkedNightmare = Number(linked?.nightmare?.[userId]) || 0;
+      const linkedVex = Number(linked?.vex?.[userId]) || 0;
+      const baseAfter = Math.floor(
+        ((Number(after?.nightmare) || 0) +
+          (Number(after?.vex) || 0) +
+          linkedNightmare +
+          linkedVex) /
+          POINTS_PER_XP,
+      );
+      const postBase = Math.max(0, baseAfter + oldAdjust);
+      const newRaw = Math.max(0, postBase + deltas.xp);
+      const newAdjust = oldAdjust + (newRaw - postBase);
+
+      db.prepare(
+        `UPDATE profiles SET xp_adjust = ?, updated_at = ?
+          WHERE guild_id = ? AND user_id = ?`,
+      ).run(newAdjust, now, guildId, userId);
+    }
+
+    const balanceBefore = Number(before?.coins) || 0;
+    const balanceAfter = Number(after?.coins) || 0;
+    const actual = balanceAfter - balanceBefore;
 
     if (actual !== 0) {
       recordCoinTransaction({
         guildId,
         userId,
         amount: actual,
-        balanceAfter: after,
+        balanceAfter,
         type: coinType,
         actorId,
         detail: coinDetail ?? { source: 'profile points' },
@@ -529,7 +558,7 @@ export function ensureCoinBackfill(guildId, linked = null) {
   const now = Date.now();
   const rows = db
     .prepare(
-      `SELECT user_id, nightmare, vex, coins, level_coins_paid
+      `SELECT user_id, nightmare, vex, coins, level_coins_paid, xp_adjust
          FROM profiles WHERE guild_id = ?`,
     )
     .all(guildId);
@@ -553,10 +582,11 @@ export function ensureCoinBackfill(guildId, linked = null) {
     const nightmare = (row?.nightmare ?? 0) + (linked?.nightmare?.[id] ?? 0);
     const vex = (row?.vex ?? 0) + (linked?.vex?.[id] ?? 0);
     const xp = Math.floor((nightmare + vex) / POINTS_PER_XP);
+    const adjustedXp = Math.max(0, xp + (Number(row?.xp_adjust) || 0));
 
     if (!row && xp <= 0) continue;
 
-    const level = levelFor(xp);
+    const level = levelFor(adjustedXp);
 
     seeded.push({
       id,
@@ -613,9 +643,15 @@ export function ensureCoinBackfill(guildId, linked = null) {
   return seeded.length;
 }
 
-/** XP earned by the raw points alone, before the punishment toll. */
-export function rawXpFor(profile) {
+/** XP from the stored points alone, before staff XP adjustment or punishment. */
+export function baseXpFor(profile) {
   return Math.floor((profile.nightmare + profile.vex) / POINTS_PER_XP);
+}
+
+/** XP from points plus the staff adjustment, before the punishment toll. */
+export function rawXpFor(profile) {
+  const adjust = Math.trunc(Number(profile.xpAdjust) || 0);
+  return Math.max(0, baseXpFor(profile) + adjust);
 }
 
 /**
@@ -656,6 +692,7 @@ export function displayedPunishments(profile) {
  */
 function applySettlement(stored, linked, userId, seeded) {
   const profile = withLinkedPoints(stored, linked, userId);
+  const baseXp = baseXpFor(profile);
   const xp = rawXpFor(profile);
 
   let coins = stored.coins;
@@ -669,7 +706,7 @@ function applySettlement(stored, linked, userId, seeded) {
 
   const fresh = !seeded && levelCoinsPaid <= 0 && xpSeen <= 0;
 
-  if (xp > xpSeen) {
+  if (baseXp > xpSeen) {
     if (fresh) {
       const level = levelFor(xp);
       const before = coins;
@@ -683,7 +720,7 @@ function applySettlement(stored, linked, userId, seeded) {
 
       levelCoinsPaid = level;
     } else {
-      const gained = xp - xpSeen;
+      const gained = baseXp - xpSeen;
       const toll = Math.min(
         gained,
         displayedPunishments(profile) * XP_PENALTY_PER_PUNISHMENT,
@@ -692,7 +729,7 @@ function applySettlement(stored, linked, userId, seeded) {
       if (toll > 0) xpPenalty += toll;
     }
 
-    xpSeen = xp;
+    xpSeen = baseXp;
     changed = true;
   }
 

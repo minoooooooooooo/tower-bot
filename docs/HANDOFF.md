@@ -161,15 +161,16 @@ makes it free), enables/disables, resets one item to its default, and clears a
 member's purchases. All mutations are additive rows in `store_items`.
 
 Punishment points now cost XP. The profile row stores `xp_penalty` (XP taken so
-far) and `xp_seen` (high-water raw XP). Every time raw XP `floor((nightmare +
-vex) / 5)` reaches a new high, the gain is reduced by `2 × displayed
-punishments` XP, capped at the gain, so nobody goes backwards. 3 punishments
-turn a +10 XP gain into +4. `xpFor()` subtracts the penalty everywhere (level,
-XP bar, rank, backgrounds), the first observation of a profile seeds history
-instead of charging it, and staff point corrections never lower the high-water
-mark (no double charging when linked bots fail and recover). SQLite columns
-`coins`, `level_coins_paid`, `xp_penalty`, `xp_seen` are added by
-`COLUMN_MIGRATIONS`.
+far), `xp_seen` (high-water **base** XP) and `xp_adjust` (the staff correction).
+Every time base XP `floor((nightmare + vex) / 5)` reaches a new high, the gain is
+reduced by `2 × displayed punishments` XP, capped at the gain, so nobody goes
+backwards. 3 punishments turn a +10 point-earned XP gain into +4. `xpFor()` uses
+`max(0, baseXp + xp_adjust - xp_penalty)` everywhere (level, XP bar, rank,
+backgrounds); a staff `xp` edit adjusts `xp_adjust` and is not tolled. The first
+observation of a profile seeds history instead of charging it, and staff point
+corrections never lower the high-water mark (no double charging when linked bots
+fail and recover). SQLite columns `coins`, `level_coins_paid`, `xp_penalty`,
+`xp_seen`, `xp_adjust` are added by `COLUMN_MIGRATIONS`.
 
 **Store Activity (added 2026-11-18).** The store also has an optional Discord
 Activity: a dark, Fizbo-style card grid opened from an **Open store** button on
@@ -280,7 +281,7 @@ fix was verified in a one-viewport-body harness at multiple scroll offsets.
 | `/perm grant\|revoke\|list` | `perms`, `commandperm` | Bot-side per-role command grants |
 | `/nickname [user] [name]` | `nick` | Self-rename; **Manage Nicknames** for others; empty resets |
 | `/role toggle\|add\|remove <@role> [user]` | `roles` | Single role change; `bulk` for every human or bot (**Manage Roles**) |
-| `/profile-edit <@member> ...` | `editprofile`, `profile-points` | Title and point edits (Manage Server, grantable) |
+| `/profile-edit <@member> ...` | `editprofile`, `profile-points` | Title and point/XP edits (Manage Server, grantable) |
 | `/summary <sub>` | `summarize`, `report` | AI summary of any channel into the management channel + HTML export |
 | `/watch <sub>` | `alert`, `keywords` | Post an alert in a channel when a keyword appears anywhere in the server |
 | `/glossary <sub>` | `jargon` | Server terms sent to the summarizer as context |
@@ -420,9 +421,9 @@ Behavior that must be preserved:
 - **The birthday block is opt-in per member per server.** `profiles.show_birthday` defaults to `1`; `/birthday show visible:false` hides the date, current age and time zone together. The card shows `Hidden by member` (or `Not shared` when no birthday exists) instead of leaking either value. Age is today's age, not `ageTurning`, and a missing birth year simply omits it.
 - **Fonts are bundled and registered once.** Inter Medium/SemiBold/ExtraBold for Latin; `Noto Sans Arabic` is selected whenever the nickname matches `/[\u0600-\u06ff…]/`. Canvas shapes Arabic correctly with no HarfBuzz workaround. Long names shrink to a floor and then truncate with `…`, so a renamed member cannot leave the panel.
 - **Members who left still render.** The card falls back to the `user` for the name and avatar and reads stored points; `rankFor` returns `null` because the id is not in the current member list. The rank field is left empty in that case.
-- **XP:** `xp = floor((nightmare + vex) / 5)`, `level = floor(xp / 100) + 1`, bar progress `xp % 100`. The bar text reads `progress / 100`.
+- **XP:** `baseXp = floor((nightmare + vex) / 5)`, `xp = max(0, baseXp + xp_adjust - xp_penalty)`, `level = floor(xp / 100) + 1`, bar progress `xp % 100`. The bar text reads `progress / 100`. `xp_adjust` is the staff correction from `/profile-edit xp:<±n>`; the punishment high-water (`xp_seen`) remains base XP, so earned points are still tolled while a direct staff XP edit is not.
 - **Rank:** nightmare + vex among current members. Ties share the rank; a score of zero has no rank; members who left do not push anyone down.
-- **Manual points are deltas, never replacements.** Nightmare, vex, good behavior and raw punishment mini points clamp at zero in SQL (`MAX(0, …)`). Good behavior accepts both signs. `/profile-edit` with no options shows the current block instead of changing anything.
+- **Manual points are deltas, never replacements.** Nightmare, vex, good behavior and raw punishment mini points clamp at zero in SQL (`MAX(0, …)`). Good behavior accepts both signs. `/profile-edit` with no options shows the current block instead of changing anything. The `xp` option is a direct XP delta: a positive change can raise the level and pay level coins; a negative change lowers XP/level but never reclaims coins already paid. The command adjusts `xp_adjust` so the effective XP never drops below zero, using the same merged level (linked points included) for the cap.
 - **Punishments are raw mini points.** Seven raw points display as one punishment, and the remainder carries over. Mute/timeout/kick/ban = +1. Exile follows its level: `main` = 0, levels 1–9 = their number, level 10 = ten punishments (70 mini).
 - **Only fresh, successful bot actions count.** A failed API call returns before the award. A re-mute while the Muted role is still present, a timeout extension (`member.isCommunicationDisabled()` was true), a ban of someone already banned (`guild.bans.fetch` succeeds before the call), and a level change on an active exile add nothing. A fresh action after release/expiry counts again.
 - **Exile history is imported once per guild.** `profile_meta.exile_seeded_at` gates `ensureExileBackfill`, which groups the rows by member and level and adds each level's value (`main` 0, 1–9 = level, 10 = 70). `/exile` calls it **before** `createExile`, so the new row cannot be counted by both the import and the live hook. `/profile` and `/profile-edit` call it too, so old points appear without needing an exile first.
@@ -1001,6 +1002,7 @@ Behavior that must be preserved:
 - `package.bat` produces `dist/bot.zip` with no `node_modules`, `.tools`, `.env`, or `data`, and no entry containing a backslash (the script verifies this and fails loudly).
 - Runtime guard test (20 checks): `hasSqliteModule` across Node 18/20/22.4/22.5/24/26 and a malformed version, `needsSqliteFlag` across the 22.5–23.3 boundary, and the three message branches (unsupported version, flag required, unexpected failure).
 - Profile/status integration test on a temp DB (126 checks): schema and `show_birthday` migration, points/titles/rank, card PNG dimensions and XP pixels, status-block artwork visibility and presence-dot colours, long/Arabic values, `/profile` slash and prefix replies, `/profile-edit`, birthday visibility defaults, the `/birthday show` slash/prefix toggle, exile level points (per-level backfill, `main` = 0, level 10 = ten punishments, escalation deltas, no subtraction on a downgrade), and linked-bot points (`profileStats`/`rankFor` adding `{ vex, nightmare }` to the stored numbers and the ranking).
+- XP edit test on a temp DB: `xp:+25` adds to the effective XP without changing Nightmare/Vex, `xp:-100` clamps at zero and stores only the removable offset, later base points do not inherit a debt, a direct +100 XP reaches level 2 and pays exactly 5 level coins (written as an `earn` ledger row), and the slash `/profile-edit xp:25` path renders `**XP:** 30 → 55` plus the new level block.
 - Nickname/role integration test with fake guild/member/role objects (107 checks): `/nickname` slash and prefix self-renames, reset words and an empty name, renaming another member with and without **Manage Nicknames**, mention targeting, the bot renaming itself, the server owner, hierarchy and bot-permission refusals, the 32-character cap, escaped markdown in the confirmation, and API failure messages; `/role` schema and Manage Roles default, toggle on/off, `+`/`-` in every accepted position, the words `add`/`remove`, idempotent add/remove, spaced role names, partial Arabic name search (`سكان` → `سكان البرج`), `@`-prefixed search, starts-with outranking contains, an ambiguous word (`رون`) refused with every candidate listed and nothing changed, a word with no match, member targeting, slash toggle/add/remove, `all`/`bots` bulk add/remove/toggle with skip and failure counts, `@everyone`/managed/higher-role refusals, higher-member refusal, missing bot permission, unknown role, usage text, and no-ping payloads.
 - Alias integration test on a temp DB (142 checks): store roundtrip, guild scoping, normalization (diacritics, alef variants, case, upsert in place), remove/clear, table creation; channel rules (allow/deny storage, mode switching clears the old list, removing the last channel resets, clear, category and thread inheritance, cache invalidation, cleanup on remove/clear); dispatch (`مسح 100` → `clear` with `["100"]`, quotes, no arguments, ordinary chat not hijacked, unknown word, missing permission stays silent, owner-only refused for others and allowed for the owner, broken target explained, slash-only target explained, a real command name outranks an alias and the alias returns when that command is removed, allow/deny silence incl. threads and the prefixed form); `messageCreate` for the bare and `:-`-prefixed forms with real commands unaffected; the command surface (add/update/remove/list, channel allow/deny/remove/clear/list, slash options and autocomplete, one-word/punctuation/emoji/length validation, command-name and built-in-alias refusal, unknown command, slash-only and `alias` targets, Manage Server guard on add/remove/channel but not list, prefixed and slashed command input cleaned, common-word warning, the 50-alias limit with updates still allowed, empty list, usage text, broken-row marker, footer count), `help <command>` merging custom aliases with built-ins (no aliases, merged field, resolving a custom alias, other commands excluded, built-in duplicate printed once), and the slash schema.
 - `node src/boot.js` with a fake token logs the runtime version, loads 51 commands / 8 events, then fails login cleanly with `TokenInvalid`.

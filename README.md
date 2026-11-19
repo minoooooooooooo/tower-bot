@@ -102,7 +102,7 @@ Both run `src/boot.js`, which checks the Node version before loading the bot and
 | `/perm grant\|revoke <@role> <command>` | `:-perms`, `:-commandperm` | Let a role run a command without its Discord permission |
 | `/nickname [user] [name]` | `:-nick` | Change your own nickname; **Manage Nicknames** to rename someone else; empty or `reset` clears |
 | `/role toggle\|add\|remove <@role> [user]` | `:-roles` | Add, remove or toggle a role for you or a member; `bulk` covers every human or bot (**Manage Roles**) |
-| `/profile-edit <@member> ...` | `:-editprofile`, `:-profile-points` | Set the title and add or subtract profile points and coins (Manage Server, grantable) |
+| `/profile-edit <@member> ...` | `:-editprofile`, `:-profile-points` | Set the title and add or subtract points, XP and coins (Manage Server, grantable) |
 | `/exile <@member> [level] [reason]` | `:-jail`, `:-prison` | Give a member an exile role and hide the server from them |
 | `/exile-release <@member> [reason]` | `:-unjail`, `:-unexile` | Remove a member's exile role |
 | `/exile-setup <@role> [#except ...]` | — | Hide every channel from a role, except the listed ones |
@@ -162,7 +162,7 @@ Role names are searched, not just matched exactly: `:-role سكان` finds **س�
 | Punishments | `floor(punishment mini points / 7)` |
 | Good behavior | Manual points added or subtracted by staff |
 
-XP is `floor((nightmare + vex) / 5)` minus the punishment toll. Each time the raw XP reaches a new high-water mark, 2 XP per displayed punishment is deducted from that gain (7 mini points = 1 punishment). The deduction is capped at the XP gained, so a card never goes backwards, and 3 punishments turn a `+10 XP` gain into `+4`. Points members already had were not charged when the rule was introduced.
+XP is `max(0, floor((nightmare + vex) / 5) + xp_adjust - punishment toll)`. `xp_adjust` is the direct staff correction from `/profile-edit xp:<±n>`. Each time the **base** XP reaches a new high-water mark, 2 XP per displayed punishment is deducted from that gain (7 mini points = 1 punishment). The deduction is capped at the XP gained, so a card never goes backwards, and 3 punishments turn a `+10 XP` earned gain into `+4`. A staff XP edit is applied directly and is not tolled. Points members already had were not charged when the rule was introduced.
 
 Coins are paid once per level: reaching level `L` means `5 × (L − 1)` coins in total. Everybody who had already levelled was backfilled once at startup (linked-bot points included), and a member who loses a level and regains it is not paid twice.
 
@@ -358,12 +358,14 @@ Existing exile rows are imported once per guild at their own level's value (`mai
 `/profile-edit` requires **Manage Server** and can be opened to a role with `/perm grant @Role profile-edit`.
 
 ```text
-/profile-edit user:@member title:The Keeper nightmare:10 vex:-5 punishment:7 behavior:3 coins:25
+/profile-edit user:@member title:The Keeper nightmare:10 vex:-5 xp:25 punishment:7 behavior:3 coins:25
 :-profile-edit @member title The Keeper
-:-profile-edit @member nightmare +10 vex -5 punishment +7 behavior -2 coins +25
+:-profile-edit @member nightmare +10 vex -5 xp +25 punishment +7 behavior -2 coins +25
 ```
 
 Values are deltas, not replacements. Every stored field is clamped at zero, so a correction can empty a field but never push it negative. The `punishment` option is raw mini points (`7` is one displayed punishment). `title:reset` (or `:-profile-edit @member title reset`) clears the title. `coins` works like the other fields: `coins:25` adds 25 and `coins:-10` takes 10 away.
+
+`xp` is a **direct staff adjustment** on top of the XP produced by Nightmare + Vex points. `xp:25` adds 25 XP and `xp:-10` removes 10, clamped at zero. It raises or lowers the level and progress exactly like ordinary XP, pays level-up coins when the level rises, and is not charged the punishment toll (that toll applies to new point-earned XP). Removing XP does not reclaim coins already paid for a level. The confirmation shows the old and new XP alongside the other changed fields.
 
 ## Activity stats
 
