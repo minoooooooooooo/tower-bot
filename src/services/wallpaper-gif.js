@@ -1,3 +1,4 @@
+import { setImmediate as yieldToEventLoop } from 'node:timers/promises';
 import { createCanvas, GifEncoder } from '@napi-rs/canvas';
 import { GifReader } from 'omggif';
 
@@ -15,17 +16,17 @@ import { GifReader } from 'omggif';
  * of breaking `/profile`.
  */
 
-export const ANIMATED_WIDTH = 934;
-export const ANIMATED_HEIGHT = 600;
-export const ANIMATED_MAX_FRAMES = 36;
-export const ANIMATED_MAX_DURATION_MS = 8000;
-export const ANIMATED_MAX_BYTES = 8 * 1024 * 1024;
+export const ANIMATED_WIDTH = 800;
+export const ANIMATED_HEIGHT = 514;
+export const ANIMATED_MAX_FRAMES = 24;
+export const ANIMATED_MAX_DURATION_MS = 6000;
+export const ANIMATED_MAX_BYTES = 6 * 1024 * 1024;
 
 // GIF delays are in hundredths of a second. Browsers treat 0 as "as fast as
 // possible", and some encoders write absurd values; keep the card watchable.
 const MIN_DELAY_MS = 40;
 const MAX_DELAY_MS = 400;
-export const ANIMATED_QUALITY = 14; // NeuQuant quality: 1 slowest/best, 30 fastest
+export const ANIMATED_QUALITY = 18; // NeuQuant quality: 1 slowest/best, 30 fastest
 
 /** True for the GIF87a/GIF89a magic bytes, whatever the attachment claims. */
 export function isGifBytes(bytes) {
@@ -65,14 +66,18 @@ function clearFrame(pixels, width, info) {
  * Walks the frames of an animated GIF, compositing each one onto the previous.
  *
  * `visit` gets a reusable canvas holding the current frame plus its delay, and
- * must draw from it synchronously before returning. Frames are sampled down to
- * `maxFrames` / `maxDurationMs` by merging the delays of skipped frames, so the
- * animation keeps its speed even when the source has hundreds of frames.
+ * must draw from it before returning (it may also be async). Frames are sampled
+ * down to `maxFrames` / `maxDurationMs` by merging the delays of skipped frames,
+ * so the animation keeps its speed even when the source has hundreds of frames.
+ *
+ * The loop yields to the event loop between frames. GIF decoding and encoding
+ * are CPU-bound, and a profile render must never starve Discord's gateway
+ * heartbeat when two members open animated cards at the same time.
  *
  * Returns `{ width, height, frames, duration }`, or `null` when the bytes are
  * not a readable animated GIF (one frame counts as still).
  */
-export function eachGifFrame(
+export async function eachGifFrame(
   bytes,
   visit,
   {
@@ -81,6 +86,7 @@ export function eachGifFrame(
     // Compositing needs every frame in order, so a long GIF would decode its
     // whole length. Stop at a sensible multiple of what will be kept.
     maxSourceFrames = Math.max(120, maxFrames * 8),
+    yieldEvery = 1,
   } = {},
 ) {
   if (typeof visit !== 'function' || !isGifBytes(bytes)) return null;
@@ -133,6 +139,9 @@ export function eachGifFrame(
   let keptDuration = 0;
 
   for (let i = 0; i < count && i < maxSourceFrames; i += 1) {
+    // Give the event loop a turn before the next decode/encode burst.
+    if (yieldEvery > 0 && i > 0 && i % yieldEvery === 0) await yieldToEventLoop();
+
     const info = infos[i];
 
     // Dispose of the previous frame before the next one is drawn: 2 restores
@@ -162,7 +171,10 @@ export function eachGifFrame(
     kept += 1;
     keptDuration += carried;
 
-    if (visit(canvas, carried, kept) === false) break;
+    const result = visit(canvas, carried, kept);
+    const keepGoing = result && typeof result.then === 'function' ? await result : result;
+
+    if (keepGoing === false) break;
     if (kept >= maxFrames) break;
 
     carried = 0;
@@ -187,15 +199,15 @@ export function drawCover(ctx, source, width, height) {
  * file size. Returns `null` for a still GIF or when the result would still be
  * too large after halving the frame count.
  */
-export function normaliseAnimatedGif(bytes, { maxFrames = ANIMATED_MAX_FRAMES } = {}) {
+export async function normaliseAnimatedGif(bytes, { maxFrames = ANIMATED_MAX_FRAMES } = {}) {
   if (!isGifBytes(bytes)) return null;
 
-  const attempt = (limit) => {
+  const attempt = async (limit) => {
     const canvas = createCanvas(ANIMATED_WIDTH, ANIMATED_HEIGHT);
     const ctx = canvas.getContext('2d');
     let encoder = null;
 
-    const result = eachGifFrame(
+    const result = await eachGifFrame(
       bytes,
       (source, delay) => {
         if (!encoder) {
@@ -225,13 +237,21 @@ export function normaliseAnimatedGif(bytes, { maxFrames = ANIMATED_MAX_FRAMES } 
 
     const buffer = encoder.finish();
 
-    return { buffer, ...result };
+    return {
+      buffer,
+      width: ANIMATED_WIDTH,
+      height: ANIMATED_HEIGHT,
+      sourceWidth: result.width,
+      sourceHeight: result.height,
+      frames: result.frames,
+      duration: result.duration,
+    };
   };
 
-  let out = attempt(maxFrames);
+  let out = await attempt(maxFrames);
 
   if (out && out.buffer.length > ANIMATED_MAX_BYTES) {
-    out = attempt(Math.max(6, Math.floor(maxFrames / 2)));
+    out = await attempt(Math.max(6, Math.floor(maxFrames / 2)));
   }
 
   if (!out || out.buffer.length > ANIMATED_MAX_BYTES) return null;

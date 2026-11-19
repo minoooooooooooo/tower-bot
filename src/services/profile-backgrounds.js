@@ -46,9 +46,9 @@ export const CUSTOM_ID = 'custom';
 /** Discord's normal upload limit; larger files are refused before download. */
 export const MAX_WALLPAPER_BYTES = 10 * 1024 * 1024;
 
-const MIN_WALLPAPER_WIDTH = 400;
-const MIN_WALLPAPER_HEIGHT = 300;
-const MAX_WALLPAPER_SIDE = 12_000;
+const MIN_WALLPAPER_WIDTH = 64;
+const MIN_WALLPAPER_HEIGHT = 64;
+const MAX_WALLPAPER_SIDE = 6000;
 const WALLPAPER_QUALITY = 90;
 const WALLPAPER_EXTENSIONS = /\.(png|jpe?g|webp|gif)$/i;
 const ALLOWED_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
@@ -627,7 +627,7 @@ export async function saveCustomWallpaper(
 
   if (wasGif) {
     try {
-      animation = normaliseAnimatedGif(bytes);
+      animation = await normaliseAnimatedGif(bytes);
     } catch (error) {
       logger.warn(`Could not prepare the animated wallpaper for ${userId}: ${error.message}`);
     }

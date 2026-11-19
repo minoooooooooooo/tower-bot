@@ -17,6 +17,32 @@ import {
 
 const logger = createLogger('profile-card');
 
+// Card rendering is CPU-bound, and an animated wallpaper can encode two dozen
+// frames. Running one render at a time keeps the Discord gateway responsive
+// when two members open GIF profiles together; slash replies are already
+// deferred, so the wait is invisible beyond a slightly slower image.
+const RENDER_CONCURRENCY = 1;
+let activeRenders = 0;
+const renderWaiters = [];
+
+function acquireRenderSlot() {
+  if (activeRenders < RENDER_CONCURRENCY) {
+    activeRenders += 1;
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve) => renderWaiters.push(resolve));
+}
+
+function releaseRenderSlot() {
+  const next = renderWaiters.shift();
+
+  // Hand the slot straight to the next render instead of dropping to zero and
+  // racing another caller into it.
+  if (next) next();
+  else activeRenders -= 1;
+}
+
 const ASSET_DIR = path.join(rootDir, 'assets', 'profile');
 const FONT_DIR = path.join(ASSET_DIR, 'fonts');
 const COIN_FILE = path.join(ASSET_DIR, 'coin.png');
@@ -985,13 +1011,13 @@ async function renderAnimatedCard({ gifPath, avatar, member, stats, status, back
   const frame = createCanvas(ANIMATED_WIDTH, ANIMATED_HEIGHT);
   const frameCtx = frame.getContext('2d');
 
-  const attempt = (maxFrames) => {
+  const attempt = async (maxFrames) => {
     const encoder = new GifEncoder(ANIMATED_WIDTH, ANIMATED_HEIGHT, {
       repeat: 0,
       quality: ANIMATED_QUALITY,
     });
 
-    const info = eachGifFrame(
+    const info = await eachGifFrame(
       bytes,
       (source, delay) => {
         frameCtx.fillStyle = '#101218';
@@ -1016,10 +1042,10 @@ async function renderAnimatedCard({ gifPath, avatar, member, stats, status, back
   };
 
   try {
-    let buffer = attempt(ANIMATED_MAX_FRAMES);
+    let buffer = await attempt(ANIMATED_MAX_FRAMES);
 
     if (buffer && buffer.length > ANIMATED_MAX_BYTES) {
-      buffer = attempt(Math.max(6, Math.floor(ANIMATED_MAX_FRAMES / 2)));
+      buffer = await attempt(Math.max(6, Math.floor(ANIMATED_MAX_FRAMES / 2)));
     }
 
     if (!buffer || buffer.length > ANIMATED_MAX_BYTES) return null;
@@ -1043,7 +1069,17 @@ async function renderAnimatedCard({ gifPath, avatar, member, stats, status, back
  * `background` is the descriptor from profile-backgrounds.resolveBackground:
  * a tier treatment, a custom wallpaper, or the classic template.
  */
-export async function renderProfileCard({ member, stats, status = null, background = null }) {
+export async function renderProfileCard(args) {
+  await acquireRenderSlot();
+
+  try {
+    return await renderProfileCardNow(args);
+  } finally {
+    releaseRenderSlot();
+  }
+}
+
+async function renderProfileCardNow({ member, stats, status = null, background = null }) {
   ensureFonts();
 
   const [{ image, custom, authored, gifPath }, avatar, coin] = await Promise.all([
