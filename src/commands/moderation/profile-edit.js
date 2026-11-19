@@ -312,13 +312,22 @@ export default {
       setProfileTitle(ctx.guildId, user.id, changes.title);
     }
 
-    addProfilePoints(ctx.guildId, user.id, {
-      nightmare: changes.nightmare,
-      vex: changes.vex,
-      punishMini: changes.punishMini,
-      goodBehavior: changes.goodBehavior,
-      coins: changes.coins,
-    });
+    addProfilePoints(
+      ctx.guildId,
+      user.id,
+      {
+        nightmare: changes.nightmare,
+        vex: changes.vex,
+        punishMini: changes.punishMini,
+        goodBehavior: changes.goodBehavior,
+        coins: changes.coins,
+      },
+      {
+        coinType: 'admin',
+        coinDetail: { source: 'profile-edit' },
+        actorId: ctx.user.id,
+      },
+    );
 
     // Reading the profile back settles the punishment toll and any level-up
     // coins, so the confirmation shows the balance the card will show.

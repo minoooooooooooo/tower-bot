@@ -428,6 +428,28 @@ const SCHEMA = `
     updated_at       INTEGER NOT NULL
   );
 
+  -- One signed row for every coin movement. balance_after is written in the
+  -- same transaction as the profile update, so the history can be audited
+  -- without replaying it. type is earn, backfill, transfer_in, transfer_out,
+  -- purchase, refund, admin_add, admin_remove or adjust.
+  CREATE TABLE IF NOT EXISTS coin_transactions (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    guild_id      TEXT    NOT NULL,
+    user_id       TEXT    NOT NULL,
+    amount        INTEGER NOT NULL,
+    balance_after INTEGER NOT NULL,
+    type          TEXT    NOT NULL,
+    actor_id      TEXT,
+    detail        TEXT,
+    created_at    INTEGER NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS coin_transactions_member
+    ON coin_transactions (guild_id, user_id, id);
+
+  CREATE INDEX IF NOT EXISTS coin_transactions_guild
+    ON coin_transactions (guild_id, created_at);
+
   -- Store overrides. The items themselves live in src/services/store-catalog.js;
   -- a row here only changes one guild's price or hides an item.
   CREATE TABLE IF NOT EXISTS store_items (

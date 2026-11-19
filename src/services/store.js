@@ -2,6 +2,7 @@ import { PermissionFlagsBits } from 'discord.js';
 import { getDb } from '../lib/db.js';
 import { createLogger } from '../lib/logger.js';
 import { parseColor } from '../commands/general/color.js';
+import { recordCoinTransaction } from './coin-ledger.js';
 import {
   MAX_EMOJI_BYTES,
   EMOJI_NAME_PATTERN,
@@ -331,16 +332,38 @@ async function deliver({ item, guild, guildId, userId, member, name, color, atta
 
 function refundPurchase(guildId, userId, purchaseId, price) {
   const now = Date.now();
+  const refund = Math.max(0, Math.trunc(Number(price) || 0));
+  const purchase = db()
+    .prepare('SELECT item_key FROM store_purchases WHERE id = ?')
+    .get(purchaseId);
 
   db().exec('BEGIN');
 
   try {
     db()
       .prepare('UPDATE profiles SET coins = coins + ?, updated_at = ? WHERE guild_id = ? AND user_id = ?')
-      .run(price, now, guildId, userId);
+      .run(refund, now, guildId, userId);
     db()
       .prepare('UPDATE store_purchases SET status = ?, updated_at = ? WHERE id = ?')
       .run(REFUNDED, now, purchaseId);
+
+    if (refund > 0) {
+      const balance = db()
+        .prepare('SELECT coins FROM profiles WHERE guild_id = ? AND user_id = ?')
+        .get(guildId, userId);
+      const after = Number(balance?.coins) || 0;
+
+      recordCoinTransaction({
+        guildId,
+        userId,
+        amount: refund,
+        balanceAfter: after,
+        type: 'refund',
+        actorId: userId,
+        detail: { purchaseId, itemKey: purchase?.item_key ?? null },
+      });
+    }
+
     db().exec('COMMIT');
   } catch (error) {
     db().exec('ROLLBACK');
@@ -549,6 +572,24 @@ export async function buyStoreItem({
 
     purchaseId = Number(info.lastInsertRowid);
     balance -= totalPrice;
+
+    recordCoinTransaction({
+      guildId: id,
+      userId,
+      amount: -totalPrice,
+      balanceAfter: balance,
+      type: 'purchase',
+      actorId: userId,
+      detail: {
+        purchaseId,
+        itemKey: item.key,
+        itemName: item.name,
+        itemType: item.type,
+        quantity: qty,
+        unitPrice: item.price,
+      },
+    });
+
     db().exec('COMMIT');
   } catch (error) {
     db().exec('ROLLBACK');

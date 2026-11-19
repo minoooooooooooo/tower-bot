@@ -80,6 +80,7 @@ Both run `src/boot.js`, which checks the Node version before loading the bot and
 | `/avatar [user]` | `:-av`, `:-pfp` | Show a member's global and per-server avatar |
 | `/profile [user]` | `:-card`, `:-profilecard` | Generated profile card: status, role and point panels |
 | `/coins [user] [amount]` | `:-coin`, `:-balance`, `:-wallet` | Show your balance, show another member's, or send coins to a member |
+| `/coin-log [user] [type] [page]` | `:-coin-log`, `:-coins-log`, `:-coin-history`, `:-ledger` | Show recent coin movement, signed amounts and the balance after each |
 | `/coins-config [on\|off\|status]` | `:-coin-config`, `:-coinsconfig` | Turn coin transfers between members on or off (Manage Server, grantable) |
 | `/store [browse\|buy\|owned]` | `:-shop` | Spend coins on designs, XP, good behaviour, a title, a custom role or an emoji |
 | `/store-config <subcommand>` | `:-store-admin`, `:-shop-config` | Set prices, hide items, clear a member's purchases (Manage Server) |
@@ -178,6 +179,20 @@ Coins are paid once per level: reaching level `L` means `5 × (L − 1)` coins i
 A transfer is atomic: the sender's balance is checked first, so an amount larger than the balance changes nothing. The command refuses bots, yourself and members who have left the server. Every transfer is logged with the sender, the recipient and the amount.
 
 Coin transfers are on by default. `/coins-config off` (prefix `:-coins-config off`, **Manage Server**, grantable with `/perm grant`) stops transfers while leaving balances readable; `/coins-config on` turns them back on and `/coins-config status` shows the current state. Turning transfers off does not touch any balance.
+
+### Coin log
+
+`/coin-log` (prefix `:-coin-log`, aliases `:-coins-log`, `:-coin-history`, `:-ledger`, `:-bank-log`) shows recent coin movement for you, or for another member if you have **Manage Server**:
+
+```
+:-coin-log
+:-coin-log @member
+:-coin-log @member transfer 2
+```
+
+Each line is a signed amount, the kind of movement, a short detail, the balance after it and when it happened. Types are **Level reward**, **Opening balance**, **Transfer in/out**, **Purchase**, **Refund**, **Admin added/removed** and **Adjustment**; the `type` filter narrows the list to one group. There are eight records per page. The embed shows the current balance plus the filtered in/out totals.
+
+The ledger is written in the same database transaction as the coin update, so a transfer, purchase or refund cannot commit without its history row. A member who already had coins before the ledger is given a one-time **Opening balance** entry at their current balance, rather than inventing backdated income. Staff coin changes from `/profile-edit` record the acting admin.
 
 ### Store
 
@@ -896,6 +911,7 @@ src/
     birthday-greetings.js greeting rendering, preview, delivery + dedupe
     birthday-scheduler.js per-member reconciliation + scheduler
     profile-store.js    points, titles, coins, XP/level math, punishment weights, rank
+    coin-ledger.js      signed coin history, opening balances, /coin-log queries
     profile-card.js     canvas renderer: template, fonts, panels, XP bar
     welcome-store.js    welcome settings, per-style text and GIFs
     welcome-styles.js   the six card layouts and their text pieces

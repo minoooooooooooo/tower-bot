@@ -1,5 +1,7 @@
+import { randomUUID } from 'node:crypto';
 import { getDb } from '../lib/db.js';
 import { createLogger } from '../lib/logger.js';
+import { recordCoinTransaction } from './coin-ledger.js';
 
 const logger = createLogger('profile');
 
@@ -137,6 +139,7 @@ export function addProfilePoints(
   guildId,
   userId,
   { nightmare = 0, vex = 0, punishMini = 0, goodBehavior = 0, coins = 0 } = {},
+  { coinType = 'adjust', coinDetail = null, actorId = null } = {},
 ) {
   const deltas = {
     nightmare: Math.trunc(Number(nightmare) || 0),
@@ -153,6 +156,10 @@ export function addProfilePoints(
 
   try {
     upsertProfile(db, guildId, userId, now);
+
+    const read = db
+      .prepare('SELECT coins FROM profiles WHERE guild_id = ? AND user_id = ?');
+    const before = Number(read.get(guildId, userId)?.coins) || 0;
 
     db.prepare(
       `UPDATE profiles
@@ -173,6 +180,21 @@ export function addProfilePoints(
       guildId,
       userId,
     );
+
+    const after = Number(read.get(guildId, userId)?.coins) || 0;
+    const actual = after - before;
+
+    if (actual !== 0) {
+      recordCoinTransaction({
+        guildId,
+        userId,
+        amount: actual,
+        balanceAfter: after,
+        type: coinType,
+        actorId,
+        detail: coinDetail ?? { source: 'profile points' },
+      });
+    }
 
     db.exec('COMMIT');
   } catch (error) {
@@ -227,6 +249,7 @@ export function transferCoins(guildId, fromUserId, toUserId, amount) {
 
   const db = getDb();
   const now = Date.now();
+  const transferId = randomUUID();
   const read = db.prepare(
     'SELECT coins FROM profiles WHERE guild_id = ? AND user_id = ?',
   );
@@ -254,6 +277,26 @@ export function transferCoins(guildId, fromUserId, toUserId, amount) {
 
     update.run(balance - value, now, guildId, fromUserId);
     update.run(target + value, now, guildId, toUserId);
+
+    recordCoinTransaction({
+      guildId,
+      userId: fromUserId,
+      amount: -value,
+      balanceAfter: balance - value,
+      type: 'transfer_out',
+      actorId: fromUserId,
+      detail: { transferId, toUserId },
+    });
+
+    recordCoinTransaction({
+      guildId,
+      userId: toUserId,
+      amount: value,
+      balanceAfter: target + value,
+      type: 'transfer_in',
+      actorId: fromUserId,
+      detail: { transferId, fromUserId },
+    });
 
     db.exec('COMMIT');
     fromBalance = balance - value;
@@ -543,6 +586,20 @@ export function ensureCoinBackfill(guildId, linked = null) {
     for (const entry of seeded) {
       upsertProfile(db, guildId, entry.id, now);
       update.run(entry.coins, entry.level, entry.xp, now, guildId, entry.id);
+
+      const previous = Number(stored.get(entry.id)?.coins) || 0;
+      const delta = entry.coins - previous;
+
+      if (delta !== 0) {
+        recordCoinTransaction({
+          guildId,
+          userId: entry.id,
+          amount: delta,
+          balanceAfter: entry.coins,
+          type: 'backfill',
+          detail: { level: entry.level, xp: entry.xp, source: 'coin import' },
+        });
+      }
     }
 
     db.exec('COMMIT');
@@ -606,13 +663,24 @@ function applySettlement(stored, linked, userId, seeded) {
   let xpPenalty = stored.xpPenalty;
   let xpSeen = stored.xpSeen;
   let changed = false;
+  let coinDelta = 0;
+  let coinType = null;
+  let coinLevel = null;
 
   const fresh = !seeded && levelCoinsPaid <= 0 && xpSeen <= 0;
 
   if (xp > xpSeen) {
     if (fresh) {
       const level = levelFor(xp);
+      const before = coins;
+
       coins = Math.max(coins, coinsForLevel(level));
+      if (coins !== before) {
+        coinDelta += coins - before;
+        coinType = 'backfill';
+        coinLevel = level;
+      }
+
       levelCoinsPaid = level;
     } else {
       const gained = xp - xpSeen;
@@ -631,16 +699,29 @@ function applySettlement(stored, linked, userId, seeded) {
   const level = levelFor(Math.max(0, xp - xpPenalty));
 
   if (level > levelCoinsPaid) {
+    const before = coins;
+
     coins += Math.max(0, level - Math.max(levelCoinsPaid, 1)) * COINS_PER_LEVEL;
+    if (coins !== before) {
+      coinDelta += coins - before;
+      if (!coinType) coinType = 'earn';
+      coinLevel = level;
+    }
+
     levelCoinsPaid = level;
     changed = true;
   }
 
-  if (!changed) return { profile: stored, changed: false };
+  if (!changed) {
+    return { profile: stored, changed: false, coinDelta: 0, coinType: null, coinLevel: null };
+  }
 
   return {
     profile: { ...stored, coins, levelCoinsPaid, xpPenalty, xpSeen },
     changed: true,
+    coinDelta,
+    coinType,
+    coinLevel,
   };
 }
 
@@ -677,6 +758,21 @@ export function settleProfile(guildId, userId, linked = null) {
 
     try {
       writeSettlement(db, guildId, userId, settled.profile, now);
+
+      if (settled.coinDelta) {
+        recordCoinTransaction({
+          guildId,
+          userId,
+          amount: settled.coinDelta,
+          balanceAfter: settled.profile.coins,
+          type: settled.coinType ?? 'earn',
+          detail: {
+            level: settled.coinLevel ?? null,
+            xp: settled.profile.xpSeen,
+          },
+        });
+      }
+
       db.exec('COMMIT');
     } catch (error) {
       db.exec('ROLLBACK');
