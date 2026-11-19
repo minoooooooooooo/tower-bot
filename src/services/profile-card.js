@@ -19,6 +19,7 @@ const logger = createLogger('profile-card');
 
 const ASSET_DIR = path.join(rootDir, 'assets', 'profile');
 const FONT_DIR = path.join(ASSET_DIR, 'fonts');
+const COIN_FILE = path.join(ASSET_DIR, 'coin.png');
 
 const CARD_WIDTH = 1868;
 const CARD_HEIGHT = 1200;
@@ -45,6 +46,8 @@ const PANELS = {
 };
 
 const NUMBER_FONT_SIZE = 58;
+const COIN_ICON_SIZE = 62;
+const COIN_ICON_GAP = 14;
 const ARABIC = /[\u0600-\u06ff\u0750-\u077f\u08a0-\u08ff]/;
 
 // A custom wallpaper replaces the whole artwork, so its glass panels are drawn
@@ -177,6 +180,23 @@ async function loadTemplate() {
   }
 
   return templatePromise;
+}
+
+/** The coin logo drawn beside the balance; missing artwork is not fatal. */
+let coinPromise = null;
+
+function loadCoinIcon() {
+  if (!coinPromise) {
+    coinPromise = readFile(COIN_FILE)
+      .then((buffer) => loadImage(buffer))
+      .catch((error) => {
+        coinPromise = null;
+        logger.warn(`Could not load the coin icon: ${error.message}`);
+        return null;
+      });
+  }
+
+  return coinPromise;
 }
 
 /**
@@ -452,16 +472,33 @@ function drawTitle(ctx, title) {
   ctx.fillText(fitted.text, TITLE_BOX.right, TITLE_BOX.baseline);
 }
 
-function drawPanelValue(ctx, panel, value) {
+function drawPanelValue(ctx, panel, value, { icon = null } = {}) {
   if (value === null || value === undefined || value === '') return;
 
   const text = String(value);
+  const baseline = panel.y + panel.height - 34;
+  const right = panel.x + panel.width - 44;
 
   ctx.textAlign = 'right';
   ctx.textBaseline = 'alphabetic';
   ctx.fillStyle = '#ffffff';
   ctx.font = fontOf(NUMBER_FONT_SIZE, 800, text);
-  ctx.fillText(text, panel.x + panel.width - 44, panel.y + panel.height - 34);
+
+  // The balance keeps its usual right edge; the logo sits between the value
+  // and that edge so the digit group never collides with it.
+  const iconSpace = icon ? COIN_ICON_SIZE + COIN_ICON_GAP : 0;
+  ctx.fillText(text, right - iconSpace, baseline);
+
+  if (!icon) return;
+
+  const centerY = baseline - NUMBER_FONT_SIZE * 0.34;
+  ctx.drawImage(
+    icon,
+    right - COIN_ICON_SIZE,
+    centerY - COIN_ICON_SIZE / 2,
+    COIN_ICON_SIZE,
+    COIN_ICON_SIZE,
+  );
 }
 
 function drawXpBar(ctx, progress, accent = FILL_COLOR) {
@@ -902,12 +939,12 @@ function drawStatusPanel(ctx, status) {
  * Everything that sits on top of the background: avatar, name and values. The
  * same routine paints the still card and the static layer of an animated one.
  */
-function drawCardContent(ctx, { member, avatar, stats, status, background }) {
+function drawCardContent(ctx, { member, avatar, stats, status, background, coin = null }) {
   drawAvatar(ctx, avatar, member);
   drawName(ctx, member);
 
   drawTitle(ctx, stats.title);
-  drawPanelValue(ctx, PANELS.coins, formatNumber(stats.coins));
+  drawPanelValue(ctx, PANELS.coins, formatNumber(stats.coins), { icon: coin });
   drawPanelValue(ctx, PANELS.level, stats.level);
   drawPanelValue(ctx, PANELS.rank, stats.rank ? `#${stats.rank}` : '');
   drawPanelValue(ctx, PANELS.vex, formatNumber(stats.vex));
@@ -928,7 +965,7 @@ function drawCardContent(ctx, { member, avatar, stats, status, background }) {
  * Returns null when the animation cannot be read or the result stays too large,
  * so the caller falls back to the still card.
  */
-async function renderAnimatedCard({ gifPath, avatar, member, stats, status, background }) {
+async function renderAnimatedCard({ gifPath, avatar, member, stats, status, background, coin }) {
   let bytes;
 
   try {
@@ -940,7 +977,7 @@ async function renderAnimatedCard({ gifPath, avatar, member, stats, status, back
   const full = createCanvas(CARD_WIDTH, CARD_HEIGHT);
   const fullCtx = full.getContext('2d');
   drawCustomChrome(fullCtx);
-  drawCardContent(fullCtx, { member, avatar, stats, status, background });
+  drawCardContent(fullCtx, { member, avatar, stats, status, background, coin });
 
   const overlay = createCanvas(ANIMATED_WIDTH, ANIMATED_HEIGHT);
   overlay.getContext('2d').drawImage(full, 0, 0, ANIMATED_WIDTH, ANIMATED_HEIGHT);
@@ -1009,9 +1046,10 @@ async function renderAnimatedCard({ gifPath, avatar, member, stats, status, back
 export async function renderProfileCard({ member, stats, status = null, background = null }) {
   ensureFonts();
 
-  const [{ image, custom, authored, gifPath }, avatar] = await Promise.all([
+  const [{ image, custom, authored, gifPath }, avatar, coin] = await Promise.all([
     backgroundImageFor(background),
     loadAvatar(member.avatarUrl),
+    loadCoinIcon(),
   ]);
 
   if (gifPath) {
@@ -1022,6 +1060,7 @@ export async function renderProfileCard({ member, stats, status = null, backgrou
       stats,
       status,
       background,
+      coin,
     });
 
     if (animated) return { buffer: animated, extension: 'gif' };
@@ -1039,7 +1078,7 @@ export async function renderProfileCard({ member, stats, status = null, backgrou
     if (!authored) applyTheme(ctx, background?.theme);
   }
 
-  drawCardContent(ctx, { member, avatar, stats, status, background });
+  drawCardContent(ctx, { member, avatar, stats, status, background, coin });
 
   return { buffer: canvas.toBuffer('image/png'), extension: 'png' };
 }

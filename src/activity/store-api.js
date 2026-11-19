@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { config, rootDir } from '../config.js';
 import { createLogger } from '../lib/logger.js';
+import { linkedPoints } from '../services/ebot-vex.js';
 import {
   BACKGROUNDS,
   backgroundById,
@@ -232,14 +233,17 @@ function shapeBackground(background, level, owned, selected) {
  * Everything the storefront needs in one response: who is looking, the balance,
  * the sellable items and the full background collection.
  */
-export function storefront(client, guild, member, user) {
+export async function storefront(client, guild, member, user) {
   const guildId = guild.id;
   const userId = user.id;
   const balance = storeBalance(guildId, userId);
   const purchases = memberPurchases(guildId, userId);
   const owned = ownedBackgroundIds(guildId, userId);
   const counts = purchaseCounts(purchases);
-  const level = profileLevel(guildId, userId);
+  // Match `/background` and the card: linked VEX/Nightmare points count toward
+  // the level, so a design unlocked on the card is never locked in the store.
+  const linked = await linkedPoints(client, guildId);
+  const level = profileLevel(guildId, userId, linked);
   const profile = getProfile(guildId, userId);
   const selected = profile.background ?? 'default';
 
@@ -367,7 +371,7 @@ export async function buyFromActivity({
 
 /* ── Backgrounds ──────────────────────────────────────────────────────────── */
 
-export function equipFromActivity(client, guildId, userId, backgroundId) {
+export async function equipFromActivity(client, guildId, userId, backgroundId) {
   const context = client.guilds.cache.get(String(guildId ?? ''));
   if (!context) return { ok: false, reason: 'guild', message: 'The bot is not in this server.' };
 
@@ -376,7 +380,11 @@ export function equipFromActivity(client, guildId, userId, backgroundId) {
   if (!background) return { ok: false, reason: 'unknown', message: 'Unknown background.' };
 
   const owned = ownedBackgroundIds(guildId, userId);
-  const level = profileLevel(guildId, userId);
+  // Re-check with the same merged level the storefront displayed, otherwise a
+  // member whose points come from a linked bot can see a design unlocked but
+  // have the equip request refused.
+  const linked = await linkedPoints(client, guildId);
+  const level = profileLevel(guildId, userId, linked);
 
   if (!isBackgroundUnlocked(background, level, owned)) {
     return {

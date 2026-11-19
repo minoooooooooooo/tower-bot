@@ -187,10 +187,11 @@ button {
   white-space: nowrap;
 }
 
-.wallet svg {
+.wallet .coin-icon {
   width: 18px;
   height: 18px;
-  fill: currentColor;
+  object-fit: contain;
+  flex: none;
 }
 
 .hero {
@@ -485,10 +486,10 @@ button {
   color: #dfe7ff;
 }
 
-.price svg {
+.price .coin-icon {
   width: 17px;
   height: 17px;
-  fill: var(--gold);
+  object-fit: contain;
   flex: none;
 }
 

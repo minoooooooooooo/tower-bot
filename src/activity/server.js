@@ -20,6 +20,7 @@ const logger = createLogger('activity');
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(HERE, 'public');
 const ART_DIR = path.join(HERE, '..', '..', 'assets', 'profile', 'backgrounds');
+const COIN_FILE = path.join(HERE, '..', '..', 'assets', 'profile', 'coin.png');
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -167,7 +168,7 @@ async function handleApi(req, res, client, route, url) {
 
     sendJson(res, 200, {
       ok: true,
-      data: storefront(client, context.guild, context.member, user),
+      data: await storefront(client, context.guild, context.member, user),
     });
 
     return true;
@@ -210,7 +211,7 @@ async function handleApi(req, res, client, route, url) {
       return true;
     }
 
-    sendJson(res, 200, equipFromActivity(client, context.guild.id, user.id, body.backgroundId));
+    sendJson(res, 200, await equipFromActivity(client, context.guild.id, user.id, body.backgroundId));
     return true;
   }
 
@@ -261,6 +262,11 @@ function safeJoin(root, relative) {
 
 async function handleStatic(req, res, route) {
   if (req.method !== 'GET' && req.method !== 'HEAD') return false;
+
+  if (route === '/assets/coin.png') {
+    if (existsSync(COIN_FILE)) return serveFile(req, res, COIN_FILE);
+    return false;
+  }
 
   if (route.startsWith('/assets/backgrounds/')) {
     const name = path.basename(route);

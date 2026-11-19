@@ -191,6 +191,22 @@ id, a missing channel, missing View Channel / Send Messages or a non-text channe
 only logs a warning. Off by default; it only fires when the bot's own tunnel
 produces the address.
 
+**Activity levels and the coin mark (fixed 2026-11-19).** `storefront()` and
+`equipFromActivity()` now await `linkedPoints(client, guildId)` and pass the
+`{ vex, nightmare }` map to `profileLevel()`, exactly like `/background` and
+`/profile`. Before this, the Activity computed the level from stored points only:
+a member whose level came from E Bot 1 or Al-Kabus saw higher designs locked, and
+after switching to a lower tier the storefront refused the higher one again.
+The official coin artwork is `assets/profile/coin.png` (512×512, trimmed from
+the supplied transparent source, 3% padding). The Activity serves it at
+`/assets/coin.png` (also reached through Discord's `/.proxy` prefix) and uses it
+in the wallet and every price pill; `renderProfileCard()` draws it immediately
+right of the COINS value, shifting the number left by the icon width plus gap.
+A missing file is not fatal: the card simply renders without the mark. The
+Activity client builds the URL as `${base}/assets/coin.png`, while `index.html`
+uses the relative `assets/coin.png`, so both the tunnel and the Discord proxy
+resolve it.
+
 ## What exists
 
 | Command | Aliases | Notes |
@@ -929,6 +945,8 @@ Behavior that must be preserved:
 - Load test with a fake token: 50 commands, 8 events, clean login failure.
 - Store integration test on a temp DB (126 checks): catalogue and paid-design items, per-guild price/visibility overrides, funds/limit/disabled refusals, atomic charge + purchase row, XP/behaviour/title delivery, design ownership, role creation and assignment, emoji name/type/size/slot checks, refund after a failed delivery, `reset-user` + rebuy, sales totals, `/store` and `/store-config` slash and prefix paths, and selecting a bought design on `/background`.
 - Activity integration test on a temp DB (41 checks): storefront shape (guild/user/balance/level, `behavior-1` price and stacking, rarity banding, the full background collection with locked/unlocked/selected flags), buying through `buyFromActivity` (3 behaviour points for 300 coins with the balance after, custom role created, emoji uploaded from a `data:` URL, an SVG data URL refused), stock checks before charging, `equipFromActivity` refusing a locked paid design and accepting Classic, and the HTTP layer (consent-free `/api/config`, `/healthz`, HTML/CSS/JS and the vendored SDK served, a background image served as `image/jpeg`, `/api/store` refusing an unauthenticated call with 401, and the `/.proxy` prefix stripped).
+- Activity linked-level regression test on a temp DB with a stubbed E Bot 1 attachment: with 2,500 linked Vex points and no local points, `profileLevel` is 1 without the linked map and 6 with it; `storefront` reports level 6 and unlocks Ember (`tier-05`); `equipFromActivity` equips Ember, switches to Classic and re-equips Ember successfully.
+- Coin mark check: `assets/profile/coin.png` is 512×512 with a transparent background (trimmed to the artwork); the demo storefront loads the wallet icon and all five price pills from `assets/coin.png` at 18/17 px with no console errors; a profile-card render places the logo beside `1,234` and still returns a PNG.
 - The activity server was also exercised without `ACTIVITY_ENABLED` during the normal fake-token load test, where it correctly does not start.
 - Tunnel integration test on this PC (real network): `TUNNEL_ENABLED=1` downloaded `cloudflared` into the temp `data/tunnel/`, spawned it against a local server, printed `Store activity public URL: https://…trycloudflare.com`, saved `data/tunnel-url.txt`, and a `fetch` through the public address returned the local server's `200 hello from the bot`. A newly created name needed about two minutes before DNS answered (documented).
 - Address announcement test with a mocked client: the configured channel receives a message containing the URL with mentions suppressed, an unset id never touches Discord, an invalid id is ignored, a failed fetch is swallowed, and a non-text channel is refused without throwing. A trailing slash (single or repeated) is stripped, the address is wrapped in a code block, and an empty address is ignored.

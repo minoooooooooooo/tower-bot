@@ -146,7 +146,7 @@ Role names are searched, not just matched exactly: `:-role سكان` finds **س�
 
 ## Profile cards
 
-`/profile` (prefix `:-profile`, aliases `:-card` and `:-profilecard`) renders a 1868×1200 PNG for you or the member you mention. The reply is the image alone — no embed text. Members who have left still render their stored numbers, but their rank is empty. Arabic nicknames are shaped and drawn right to left with the bundled Noto Sans Arabic; the labels on the card stay English.
+`/profile` (prefix `:-profile`, aliases `:-card` and `:-profilecard`) renders a 1868×1200 PNG for you or the member you mention. The reply is the image alone — no embed text. Members who have left still render their stored numbers, but their rank is empty. Arabic nicknames are shaped and drawn right to left with the bundled Noto Sans Arabic; the labels on the card stay English. The **COINS** value carries the official coin mark from [`assets/profile/coin.png`](assets/profile/coin.png) beside it.
 
 `/rank` (prefix `:-rank`, `:-levels`, `:-levelboard`, `:-ranks`) is the level leaderboard: member, level, coins, Vex points and Nightmare points, ordered by level and then total points. It pages 10 members at a time with the same buttons as `/top`. Because `/rank` is a real command, `:-rank` reaches it even though `/top` still lists `rank` among its aliases; a command name always beats an alias.
 
@@ -231,7 +231,7 @@ TUNNEL_ENABLED=1
 
 The bot downloads Cloudflare's tunnel client once (about 35 MB, into `data/`) and prints `Store activity public URL: https://…trycloudflare.com`. Paste that into **Activities → URL Mappings** in the Developer Portal and create the entry-point command. The address changes when the bot restarts — copy the new one into the portal whenever that happens, or set `ACTIVITY_URL_CHANNEL_ID` and let the bot post the new address in a channel each time it starts.
 
-With `ACTIVITY_ENABLED` unset the bot, `/store` and every other command behave exactly as before; the button is simply not shown. Setup, your own domain/proxy alternatives and the API are in [`docs/activity-store.md`](docs/activity-store.md), and `?demo=1` renders the storefront with mock data for layout checks.
+With `ACTIVITY_ENABLED` unset the bot, `/store` and every other command behave exactly as before; the button is simply not shown. Setup, your own domain/proxy alternatives and the API are in [`docs/activity-store.md`](docs/activity-store.md), and `?demo=1` renders the storefront with mock data for layout checks. The wallet and every coin price use the same official mark as the profile card, and the design ladder counts linked E Bot 1 / Al-Kabus points, so a design unlocked on `/background` is also unlocked in the Activity.
 
 ### Backgrounds
 

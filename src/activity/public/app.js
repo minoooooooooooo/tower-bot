@@ -62,7 +62,7 @@ function escapeHtml(value) {
 }
 
 function coinSvg() {
-  return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5 21 7v10l-9 4.5L3 17V7l9-4.5Zm0 2.3L5.2 8.2v7.6L12 19.2l6.8-3.4V8.2L12 4.8Z"/><path d="M12 7a5 5 0 1 1 0 10 5 5 0 0 1 0-10Zm0 2a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z"/></svg>';
+  return `<img class="coin-icon" src="${base}/assets/coin.png" alt="" aria-hidden="true" />`;
 }
 
 function glyph(type) {

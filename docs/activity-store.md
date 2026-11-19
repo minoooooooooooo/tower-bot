@@ -210,8 +210,8 @@ before any coins are taken, and a delivery failure still refunds.
   CDN. There are no CDN script tags: the Embedded App SDK is bundled at
   `src/activity/public/vendor/discord-sdk.js`.
 - Bodies are capped at 2 MB, static paths are normalised and confined to
-  `src/activity/public` and `assets/profile/backgrounds`, and no route writes
-  files outside `data/`.
+  `src/activity/public`, `assets/profile/backgrounds` and the single
+  `assets/profile/coin.png` mark, and no route writes files outside `data/`.
 - The API mutates coins only through `buyStoreItem`, so all the existing checks
   (limits, enabled, price overrides, atomic charge) apply unchanged.
 
@@ -234,7 +234,7 @@ npm run build:activity     # rewrites src/activity/public/vendor/discord-sdk.js
 | `invalid_origin` from `/api/token` | The request reached the server through a host the portal does not map (open the store from Discord, not a bare browser tab). |
 | Bot in the guild but "You are not a member" | The member cache (1 minute) still holds an old state, or the user is not actually in that guild. Reopen after a minute. |
 | `/.proxy` paths 404 | Missing `/` URL mapping in the Developer Portal. |
-| Images missing in the Activity | The design's file is missing from `assets/profile/backgrounds/`. |
+| Images missing in the Activity | The design's file is missing from `assets/profile/backgrounds/`, or `assets/profile/coin.png` was not deployed (only the coin pills/wallet are affected). |
 | No `Store activity public URL` line | `TUNNEL_ENABLED` unset, the activity server is off, or the 35 MB download failed — check the warning just above it. |
 | Portal rejects the tunnel address | A fresh `trycloudflare.com` name can take a minute or two to resolve. Wait, then save again. |
 | Activity broke after a restart | The tunnel address changed. Copy the new one from the channel message, the log or `data/tunnel-url.txt` into the URL mapping. |
