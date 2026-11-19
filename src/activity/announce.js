@@ -40,12 +40,24 @@ export async function announceActivityUrl(client, url) {
     return;
   }
 
+  // Discord renders a bare URL as a link and can display it with a trailing
+  // slash, which makes it unclear what to paste into the portal. Post it in a
+  // code block instead so the value is copied exactly, and normalise it here.
+  const address = String(url).trim().replace(/\/+$/, '');
+
+  if (!address) {
+    logger.warn('The tunnel reported an empty address; nothing was posted.');
+    return;
+  }
+
   try {
     await channel.send({
       content: [
         '**Store address updated**',
         '',
-        url,
+        '```',
+        address,
+        '```',
         '',
         'Developer Portal → **Activities → URL Mappings** → prefix `/` → paste the address above.',
         '',

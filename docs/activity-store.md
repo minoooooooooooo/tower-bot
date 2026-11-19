@@ -98,7 +98,8 @@ panel's file manager if the console scrolled. Use it as the portal **Target**.
 
 **Getting the new address without opening the panel:** set
 `ACTIVITY_URL_CHANNEL_ID` to a channel id and the bot posts the address there on
-every start, with a one-line reminder of where to paste it:
+every start in a code block, so copying it gives exactly the value the portal
+needs (no trailing slash), along with a one-line reminder of where to paste it:
 
 ```ini
 ACTIVITY_URL_CHANNEL_ID=123456789012345678

@@ -184,10 +184,12 @@ whole module is inert without the flag.
 **Address in a channel (added 2026-11-18).** `ACTIVITY_URL_CHANNEL_ID` makes the
 bot post that fresh address in a channel on every start (`src/activity/announce.js`),
 so the portal mapping can be updated from Discord instead of the panel console.
-`tunnel.js` hands the URL to the callback in `index.js`; an unset/invalid id, a
-missing channel, missing View Channel / Send Messages or a non-text channel only
-logs a warning. Off by default; it only fires when the bot's own tunnel produces
-the address.
+The address goes in a code block (and trailing slashes are stripped), because
+Discord renders a bare URL as a link and can show a slash the value does not
+contain. `tunnel.js` hands the URL to the callback in `index.js`; an unset/invalid
+id, a missing channel, missing View Channel / Send Messages or a non-text channel
+only logs a warning. Off by default; it only fires when the bot's own tunnel
+produces the address.
 
 ## What exists
 
@@ -928,7 +930,7 @@ Behavior that must be preserved:
 - Activity integration test on a temp DB (41 checks): storefront shape (guild/user/balance/level, `behavior-1` price and stacking, rarity banding, the full background collection with locked/unlocked/selected flags), buying through `buyFromActivity` (3 behaviour points for 300 coins with the balance after, custom role created, emoji uploaded from a `data:` URL, an SVG data URL refused), stock checks before charging, `equipFromActivity` refusing a locked paid design and accepting Classic, and the HTTP layer (consent-free `/api/config`, `/healthz`, HTML/CSS/JS and the vendored SDK served, a background image served as `image/jpeg`, `/api/store` refusing an unauthenticated call with 401, and the `/.proxy` prefix stripped).
 - The activity server was also exercised without `ACTIVITY_ENABLED` during the normal fake-token load test, where it correctly does not start.
 - Tunnel integration test on this PC (real network): `TUNNEL_ENABLED=1` downloaded `cloudflared` into the temp `data/tunnel/`, spawned it against a local server, printed `Store activity public URL: https://…trycloudflare.com`, saved `data/tunnel-url.txt`, and a `fetch` through the public address returned the local server's `200 hello from the bot`. A newly created name needed about two minutes before DNS answered (documented).
-- Address announcement test with a mocked client: the configured channel receives a message containing the URL with mentions suppressed, an unset id never touches Discord, an invalid id is ignored, a failed fetch is swallowed, and a non-text channel is refused without throwing.
+- Address announcement test with a mocked client: the configured channel receives a message containing the URL with mentions suppressed, an unset id never touches Discord, an invalid id is ignored, a failed fetch is swallowed, and a non-text channel is refused without throwing. A trailing slash (single or repeated) is stripped, the address is wrapped in a code block, and an empty address is ignored.
 - Background manager test on a temp DB: a level-1 member is refused a custom wallpaper, the same member with **Manage Server** gets the upload hint, a normal member cannot target someone else, a manager can target another member, and a manager's real upload (served PNG over HTTP) is saved under the target's id, switches the target's background to `custom`, and leaves the author's untouched.
 - Date math: Feb 29 in leap/non-leap years, timezone date shift (`America/New_York`), year rollover.
 - Scheduler: role added on birthday, removed the next day, removed immediately when the birthday is deleted.
