@@ -480,7 +480,8 @@ Required Discord permissions: `/mute` and `/unmute` need **Manage Roles**; `/tim
 :-lock #announcements
 ```
 
-- Locking denies **Send Messages**, **Send Messages in Threads**, **Add Reactions** and thread creation to `@everyone`. Staff roles that are explicitly allowed to talk keep working — an explicit role allow beats the `@everyone` deny. In a **voice** channel it denies **Connect**, **Speak** and **Stream** instead.
+- Locking denies **Send Messages**, **Send Messages in Threads** and thread creation to `@everyone`. **Reactions stay allowed**, so members can still react to messages that are already in the channel. Staff roles that are explicitly allowed to talk keep working — an explicit role allow beats the `@everyone` deny. In a **voice** channel it denies **Connect**, **Speak** and **Stream** instead.
+- A channel locked by an older version that also blocked reactions is repaired by running `/lock` again (it re-allows reactions and stays locked) or by `/unlock`.
 - The `@everyone` permissions from before the lock are saved in SQLite (`channel_locks`), so `/unlock` restores exactly that state. A channel that was already read-only stays read-only afterwards.
 - Locking twice is harmless: the second run reports **Already locked** and keeps the original snapshot, so an unlock never restores a lock.
 - Unlocking a channel the bot never locked clears the lock permissions and says so, because there is no earlier state to replay.

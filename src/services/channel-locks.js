@@ -16,12 +16,22 @@ const logger = createLogger('channel-locks');
  * to everyone.
  */
 
+/**
+ * Reactions are deliberately not locked: a closed channel still lets members
+ * react to messages that are already there. `TEXT_RESTORE_PERMISSIONS` keeps
+ * AddReactions in the restore set so channels locked by an older build (which
+ * did deny it) are repaired by /unlock — or by a repeated /lock.
+ */
 export const TEXT_LOCK_PERMISSIONS = Object.freeze([
   'SendMessages',
   'SendMessagesInThreads',
-  'AddReactions',
   'CreatePublicThreads',
   'CreatePrivateThreads',
+]);
+
+export const TEXT_RESTORE_PERMISSIONS = Object.freeze([
+  ...TEXT_LOCK_PERMISSIONS,
+  'AddReactions',
 ]);
 
 export const VOICE_LOCK_PERMISSIONS = Object.freeze(['Connect', 'Speak', 'Stream']);
@@ -33,6 +43,14 @@ export function lockPermissionsFor(channel) {
   if (channel?.isThread?.()) return null;
   if (channel?.isVoiceBased?.()) return VOICE_LOCK_PERMISSIONS;
   if (channel?.isTextBased?.()) return TEXT_LOCK_PERMISSIONS;
+  return null;
+}
+
+/** What /unlock restores: the lock set plus anything older locks also denied. */
+export function restorePermissionsFor(channel) {
+  if (channel?.isThread?.()) return null;
+  if (channel?.isVoiceBased?.()) return VOICE_LOCK_PERMISSIONS;
+  if (channel?.isTextBased?.()) return TEXT_RESTORE_PERMISSIONS;
   return null;
 }
 
@@ -136,8 +154,9 @@ function auditReason(actor, verb) {
 
 /**
  * Denies the channel's talk permissions to @everyone and saves the old state.
- * Locking an already-locked channel is a no-op: re-saving the deny bits would
- * make /unlock restore the lock.
+ * Reactions are not denied, so members can still react to existing messages.
+ * Locking an already-locked channel does not re-save the snapshot (that would
+ * make /unlock restore the lock); it only repairs an older AddReactions deny.
  */
 export async function lockChannel({ guild, channel, actor = {} }) {
   const permissions = lockPermissionsFor(channel);
@@ -146,11 +165,36 @@ export async function lockChannel({ guild, channel, actor = {} }) {
     return { ok: false, reason: unsupportedReason(channel) };
   }
 
-  if (lockRecord(guild.id, channel.id)) {
+  const record = lockRecord(guild.id, channel.id);
+  const bits = everyoneBits(channel, guild.roles.everyone.id);
+
+  if (record) {
+    // Already locked. Older builds also denied AddReactions; restoring it from
+    // the saved snapshot means a repeated /lock repairs the channel without
+    // losing the lock or the pre-lock permissions.
+    const reactionsDenied = deniedNames(['AddReactions'], bits).length > 0;
+
+    if (reactionsDenied && (await botCanManage(guild, channel))) {
+      try {
+        await channel.permissionOverwrites.edit(
+          guild.roles.everyone,
+          restorePatch(['AddReactions'], {
+            allow: BigInt(record.allow),
+            deny: BigInt(record.deny),
+          }),
+          { reason: auditReason(actor, 'السماح بالتفاعلات') },
+        );
+
+        return { ok: true, already: true, reactionsRestored: true, permissions };
+      } catch (error) {
+        logger.warn(
+          `Could not re-enable reactions in #${channel.name ?? channel.id}: ${error.message}`,
+        );
+      }
+    }
+
     return { ok: true, already: true, permissions };
   }
-
-  const bits = everyoneBits(channel, guild.roles.everyone.id);
 
   // Locked by hand before the bot ever saw it: report it as locked and leave the
   // snapshot alone, so /unlock can still open the channel afterwards.
@@ -192,7 +236,7 @@ export async function lockChannel({ guild, channel, actor = {} }) {
  * says the earlier state was not known.
  */
 export async function unlockChannel({ guild, channel, actor = {} }) {
-  const permissions = lockPermissionsFor(channel);
+  const permissions = restorePermissionsFor(channel);
 
   if (!permissions) {
     return { ok: false, reason: unsupportedReason(channel) };
