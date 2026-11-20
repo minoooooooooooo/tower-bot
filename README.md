@@ -244,7 +244,7 @@ The member's own **Custom background** is a free item in the same tab, not a cat
 
 #### Characters
 
-The **Characters** tab is separate from the level ladder. It sells collectible character portraits with a name, a picture and a coin price; a character never unlocks by level.
+The **Characters** tab is separate from the level ladder. It sells collectible character portraits with a name, a picture and a coin price; a character never unlocks by level. The tab is **Manage Server only**: members without that permission do not see it, and the storefront API returns no character or reservation data to them.
 
 **Manage Server** members get an **Add character** tile with a name, a price and a portrait. Any picture is accepted (10 MB max) and cover-cropped to exactly **225×350**, so a tall illustration and a wide screenshot both fill the card without stretching. Characters are stored in `data/characters.json` + `data/characters/<id>.jpg`, and each card has **Edit** / **Delete** in its sheet. Buying one writes a permanent `character:<id>` purchase row and shows **Owned** afterwards; buying it again is refused.
 

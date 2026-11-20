@@ -262,6 +262,14 @@ refused. Both character purchases and reservations write normal `purchase` rows
 to the coin ledger; `cancelReservation()` refunds a pending row and is ready for
 future moderator actions but is not exposed in the UI yet.
 
+The whole Characters tab is **Manage Server only** (changed 2026-11-20 by
+request). `renderTabs()` drops the tab for anyone without it, `renderGrid()`
+falls back to **All** if a stale filter points at it, and `storefront()` returns
+`characters: []` plus `reserve: null` to non-managers instead of shaping the
+data and letting the client hide it. That also means members cannot start or
+rename a reservation until the tab is opened up again; the pending rows stay in
+the database untouched, and the manager surface still lists and edits them.
+
 ## What exists
 
 | Command | Aliases | Notes |

@@ -252,6 +252,7 @@ function render() {
 function renderTabs() {
   const data = state.data;
   const reserve = data.reserve ?? {};
+  const manager = Boolean(data.canManage);
   const counts = {
     all: data.items.filter((item) => item.type !== 'background').length,
     xp: data.items.filter((item) => item.type === 'xp').length,
@@ -260,14 +261,19 @@ function renderTabs() {
     role: data.items.filter((item) => item.type === 'role').length,
     emoji: data.items.filter((item) => item.type === 'emoji').length,
     background: data.backgrounds.length,
-    character:
-      (data.characters?.length ?? 0) +
-      (reserve.hasPending ? 1 : 0) +
-      (reserve.enabled ? 1 : 0) +
-      (data.canManage ? 2 : 0),
+    character: manager
+      ? (data.characters?.length ?? 0) +
+        (reserve.hasPending ? 1 : 0) +
+        (reserve.enabled ? 1 : 0) +
+        2
+      : 0,
   };
 
-  const visible = TABS.filter((tab) => tab.id === 'all' || counts[tab.id] > 0);
+  // The Characters tab itself is Manage Server only; members never see it.
+  const visible = TABS.filter(
+    (tab) =>
+      (tab.id !== 'character' || manager) && (tab.id === 'all' || counts[tab.id] > 0),
+  );
 
   if (!visible.some((tab) => tab.id === state.filter)) state.filter = 'all';
 
@@ -294,8 +300,12 @@ function renderGrid() {
   }
 
   if (state.filter === 'character') {
-    renderCharacters();
-    return;
+    if (!state.data.canManage) {
+      state.filter = 'all';
+    } else {
+      renderCharacters();
+      return;
+    }
   }
 
   const list = state.data.items.filter(

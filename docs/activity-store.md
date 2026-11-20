@@ -226,7 +226,9 @@ place, so no restart is needed.
 ### Characters
 
 The **Characters** tab is separate from the background/ladder system and has no
-level requirement. `data/characters.json` is the catalogue and
+level requirement. It is also **Manage Server only**: the tab is not rendered
+for other members, and `GET /api/store` omits the character catalogue and the
+`reserve` block for them. `data/characters.json` is the catalogue and
 `data/characters/<id>.jpg` the portrait. Every upload is cover-cropped to
 **225×350** and re-encoded as JPEG, so the card never stretches the picture.
 
@@ -248,8 +250,9 @@ level requirement. `data/characters.json` is the catalogue and
   renameable by their owner.
 
 `GET /api/store` returns `characters` (name, price, portrait, owned) and
-`reserve` (`enabled`, `price`, the caller's pending reservation, and for managers
-the full pending list plus `pendingCount`).
+`reserve` (`enabled`, `price`, the caller's pending reservation, and the full
+pending list plus `pendingCount`) **to Manage Server members only**. For everyone
+else `characters` is `[]` and `reserve` is `null`.
 
 ## Security notes
 

@@ -330,9 +330,11 @@ export async function storefront(client, guild, member, user) {
   const hasCustom = hasCustomWallpaper(guildId, userId);
   const customArt = hasCustom ? await customPreview(guildId, userId) : null;
   const canUploadCustom = manager || hasCustom || level >= CUSTOM_LEVEL;
-  const ownedCharacters = ownedCharacterIds(guildId, userId);
-  const reserveSettings = reservationSettings(guildId);
-  const myReservation = pendingReservationFor(guildId, userId);
+  // Characters are a Manage Server surface for now: only managers get the
+  // catalogue and reservation state, so a regular member never sees the tab.
+  const ownedCharacters = manager ? ownedCharacterIds(guildId, userId) : new Set();
+  const reserveSettings = manager ? reservationSettings(guildId) : null;
+  const myReservation = manager ? pendingReservationFor(guildId, userId) : null;
   const managerReservations = manager ? pendingReservations(guildId) : [];
 
   const custom = {
@@ -399,15 +401,21 @@ export async function storefront(client, guild, member, user) {
     customLevel: CUSTOM_LEVEL,
     items: catalog.filter((item) => item.enabled).map((item) => shapeItem(item, counts)),
     backgrounds,
-    characters: CHARACTERS.map((character) => shapeCharacter(character, ownedCharacters)),
-    reserve: {
-      enabled: reserveSettings.enabled,
-      price: reserveSettings.price,
-      hasPending: Boolean(myReservation),
-      reservation: myReservation,
-      pendingCount: managerReservations.length,
-      reservations: managerReservations,
-    },
+    characters: manager
+      ? CHARACTERS.map((character) => shapeCharacter(character, ownedCharacters))
+      : [],
+    // Null for non-managers on purpose: the Characters tab is manager-only, and
+    // an empty shape would only invite a future UI to render it by accident.
+    reserve: manager
+      ? {
+          enabled: reserveSettings.enabled,
+          price: reserveSettings.price,
+          hasPending: Boolean(myReservation),
+          reservation: myReservation,
+          pendingCount: managerReservations.length,
+          reservations: managerReservations,
+        }
+      : null,
   };
 }
 
