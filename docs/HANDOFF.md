@@ -239,6 +239,29 @@ ambient gradient with `background-attachment: fixed; background-repeat:
 no-repeat`; the colour stays smooth and identical at every scroll position. The
 fix was verified in a one-viewport-body harness at multiple scroll offsets.
 
+**Store characters and reservations (added 2026-11-20).** The Activity has a
+**Characters** tab that is deliberately separate from the background/ladder
+system: no level unlocks, only a name, a portrait and a coin price. The catalogue
+is `data/characters.json`, the art is `data/characters/<id>.jpg`, and every admin
+upload is cover-cropped to exactly **225×350** then re-encoded as JPEG
+(`src/services/character-store.js`). `createCharacter`/`updateCharacter`/
+`deleteCharacter` are the Manage-Server CRUD path used by
+`POST /api/admin/character`; `buyCharacter()` charges atomically and writes a
+`character:<id>` row to `store_purchases`, which is the collection entry (no
+delivery step). Characters never appear in `/store` or `storeCatalog`.
+
+Reservations are a separate paid option (`src/services/character-reservations.js`)
+whose settings live in `store_items` under `character-reserve`. Defaults are
+**visible at 100 coins**; a manager can change the price or hide the card from
+the **Reservation settings** tile. A member pays once, enters a name, and gets
+one `pending` row in `character_reservations` (new table, `user_name` stored for
+the Activity list). While pending, the owner can rename it for free — even after
+the option is hidden — and managers see every pending reservation in the
+**Reservations** tile. Starting a second reservation while one is pending is
+refused. Both character purchases and reservations write normal `purchase` rows
+to the coin ledger; `cancelReservation()` refunds a pending row and is ready for
+future moderator actions but is not exposed in the UI yet.
+
 ## What exists
 
 | Command | Aliases | Notes |
@@ -1003,6 +1026,7 @@ Behavior that must be preserved:
 - Runtime guard test (20 checks): `hasSqliteModule` across Node 18/20/22.4/22.5/24/26 and a malformed version, `needsSqliteFlag` across the 22.5–23.3 boundary, and the three message branches (unsupported version, flag required, unexpected failure).
 - Profile/status integration test on a temp DB (126 checks): schema and `show_birthday` migration, points/titles/rank, card PNG dimensions and XP pixels, status-block artwork visibility and presence-dot colours, long/Arabic values, `/profile` slash and prefix replies, `/profile-edit`, birthday visibility defaults, the `/birthday show` slash/prefix toggle, exile level points (per-level backfill, `main` = 0, level 10 = ten punishments, escalation deltas, no subtraction on a downgrade), and linked-bot points (`profileStats`/`rankFor` adding `{ vex, nightmare }` to the stored numbers and the ranking).
 - XP edit test on a temp DB: `xp:+25` adds to the effective XP without changing Nightmare/Vex, `xp:-100` clamps at zero and stores only the removable offset, later base points do not inherit a debt, a direct +100 XP reaches level 2 and pays exactly 5 level coins (written as an `earn` ledger row), and the slash `/profile-edit xp:25` path renders `**XP:** 30 → 55` plus the new level block.
+- Character store test on a temp DB: Manage-Server create with a 400×600 upload stores a 225×350 JPEG, the storefront returns the catalogue and default visible/100-coin reservation settings, buying charges atomically and marks the card owned (a second buy is refused as a limit), a non-manager is refused admin edits, hiding reservations blocks new ones but a pending one can still be renamed, a second pending reservation is refused, update keeps the id while changing name/price/art, delete removes the row and portrait, and both the character purchase and the reservation write `purchase` rows to the coin ledger. The new `character_reservations` table and its columns are checked directly.
 - Nickname/role integration test with fake guild/member/role objects (107 checks): `/nickname` slash and prefix self-renames, reset words and an empty name, renaming another member with and without **Manage Nicknames**, mention targeting, the bot renaming itself, the server owner, hierarchy and bot-permission refusals, the 32-character cap, escaped markdown in the confirmation, and API failure messages; `/role` schema and Manage Roles default, toggle on/off, `+`/`-` in every accepted position, the words `add`/`remove`, idempotent add/remove, spaced role names, partial Arabic name search (`سكان` → `سكان البرج`), `@`-prefixed search, starts-with outranking contains, an ambiguous word (`رون`) refused with every candidate listed and nothing changed, a word with no match, member targeting, slash toggle/add/remove, `all`/`bots` bulk add/remove/toggle with skip and failure counts, `@everyone`/managed/higher-role refusals, higher-member refusal, missing bot permission, unknown role, usage text, and no-ping payloads.
 - Alias integration test on a temp DB (142 checks): store roundtrip, guild scoping, normalization (diacritics, alef variants, case, upsert in place), remove/clear, table creation; channel rules (allow/deny storage, mode switching clears the old list, removing the last channel resets, clear, category and thread inheritance, cache invalidation, cleanup on remove/clear); dispatch (`مسح 100` → `clear` with `["100"]`, quotes, no arguments, ordinary chat not hijacked, unknown word, missing permission stays silent, owner-only refused for others and allowed for the owner, broken target explained, slash-only target explained, a real command name outranks an alias and the alias returns when that command is removed, allow/deny silence incl. threads and the prefixed form); `messageCreate` for the bare and `:-`-prefixed forms with real commands unaffected; the command surface (add/update/remove/list, channel allow/deny/remove/clear/list, slash options and autocomplete, one-word/punctuation/emoji/length validation, command-name and built-in-alias refusal, unknown command, slash-only and `alias` targets, Manage Server guard on add/remove/channel but not list, prefixed and slashed command input cleaned, common-word warning, the 50-alias limit with updates still allowed, empty list, usage text, broken-row marker, footer count), `help <command>` merging custom aliases with built-ins (no aliases, merged field, resolving a custom alias, other commands excluded, built-in duplicate printed once), and the slash schema.
 - `node src/boot.js` with a fake token logs the runtime version, loads 51 commands / 8 events, then fails login cleanly with `TokenInvalid`.

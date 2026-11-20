@@ -19,6 +19,24 @@ import {
 } from '../services/profile-backgrounds.js';
 import { createBackground, deleteBackground, updateBackground } from '../services/background-admin.js';
 import {
+  CHARACTERS,
+  buyCharacter,
+  characterArtUrl,
+  createCharacter,
+  deleteCharacter,
+  ownedCharacterIds,
+  updateCharacter,
+} from '../services/character-store.js';
+import {
+  MAX_RESERVE_PRICE,
+  pendingReservationFor,
+  pendingReservations,
+  renameReservation,
+  reservationSettings,
+  reserveCharacter,
+  setReservationSettings,
+} from '../services/character-reservations.js';
+import {
   getProfile,
   profileLevel,
   setProfileBackground,
@@ -274,6 +292,17 @@ function shapeBackground(background, level, owned, selected, priceOverride = bac
   };
 }
 
+function shapeCharacter(character, owned) {
+  return {
+    id: character.id,
+    name: character.name,
+    price: character.price,
+    rarity: rarityFor(character.price),
+    art: characterArtUrl(character.id),
+    owned: owned.has(character.id),
+  };
+}
+
 /**
  * Everything the storefront needs in one response: who is looking, the balance,
  * the sellable items and the full background collection.
@@ -301,6 +330,10 @@ export async function storefront(client, guild, member, user) {
   const hasCustom = hasCustomWallpaper(guildId, userId);
   const customArt = hasCustom ? await customPreview(guildId, userId) : null;
   const canUploadCustom = manager || hasCustom || level >= CUSTOM_LEVEL;
+  const ownedCharacters = ownedCharacterIds(guildId, userId);
+  const reserveSettings = reservationSettings(guildId);
+  const myReservation = pendingReservationFor(guildId, userId);
+  const managerReservations = manager ? pendingReservations(guildId) : [];
 
   const custom = {
     id: CUSTOM_ID,
@@ -366,6 +399,15 @@ export async function storefront(client, guild, member, user) {
     customLevel: CUSTOM_LEVEL,
     items: catalog.filter((item) => item.enabled).map((item) => shapeItem(item, counts)),
     backgrounds,
+    characters: CHARACTERS.map((character) => shapeCharacter(character, ownedCharacters)),
+    reserve: {
+      enabled: reserveSettings.enabled,
+      price: reserveSettings.price,
+      hasPending: Boolean(myReservation),
+      reservation: myReservation,
+      pendingCount: managerReservations.length,
+      reservations: managerReservations,
+    },
   };
 }
 
@@ -683,4 +725,191 @@ export async function adminBackground({
       message: 'The background could not be saved. Try again.',
     };
   }
+}
+
+/* ── Characters ───────────────────────────────────────────────────────────── */
+
+/** Charges for one character from the Characters tab. */
+export async function buyCharacterFromActivity({ client, guildId, user, characterId }) {
+  const context = await guildContext(client, guildId, user.id);
+
+  if (context.error === 'guild') {
+    return { ok: false, reason: 'guild', message: 'The bot is not in this server.' };
+  }
+
+  if (context.error === 'member') {
+    return { ok: false, reason: 'member', message: 'You are not a member of this server.' };
+  }
+
+  return buyCharacter({
+    guildId: context.guild.id,
+    userId: user.id,
+    characterId,
+  });
+}
+
+/** Creates or renames the caller's paid character reservation. */
+export async function reserveFromActivity({ client, guildId, user, action = 'create', id = null, name = null }) {
+  const context = await guildContext(client, guildId, user.id);
+
+  if (context.error === 'guild') {
+    return { ok: false, reason: 'guild', message: 'The bot is not in this server.' };
+  }
+
+  if (context.error === 'member') {
+    return { ok: false, reason: 'member', message: 'You are not a member of this server.' };
+  }
+
+  if (action === 'update') {
+    return renameReservation({
+      guildId: context.guild.id,
+      userId: user.id,
+      id,
+      name,
+    });
+  }
+
+  if (action !== 'create') {
+    return { ok: false, reason: 'action', message: 'Unknown reservation action.' };
+  }
+
+  return reserveCharacter({
+    guildId: context.guild.id,
+    userId: user.id,
+    userName: context.member.displayName || user.global_name || user.username,
+    name,
+  });
+}
+
+/** Manage Server only: add, edit or delete a character. */
+export async function adminCharacter({
+  client,
+  guildId,
+  user,
+  action,
+  id = null,
+  name = null,
+  price = null,
+  image = null,
+  imageName = null,
+}) {
+  const context = await guildContext(client, guildId, user.id);
+
+  if (context.error === 'guild') {
+    return { ok: false, reason: 'guild', message: 'The bot is not in this server.' };
+  }
+
+  if (context.error === 'member') {
+    return { ok: false, reason: 'member', message: 'You are not a member of this server.' };
+  }
+
+  if (!context.member.permissions?.has?.(PermissionFlagsBits.ManageGuild)) {
+    return {
+      ok: false,
+      reason: 'permission',
+      message: 'You need **Manage Server** to change the shop.',
+    };
+  }
+
+  const parsed = image
+    ? parseImage(image, imageName, {
+        maxBytes: MAX_WALLPAPER_BYTES,
+        limitLabel: '10 MB',
+        defaultName: 'character.jpg',
+      })
+    : { error: null, attachment: null };
+
+  if (parsed.error) return { ok: false, ...parsed.error };
+
+  const priceValue = price === null || price === undefined ? undefined : Number(price);
+
+  try {
+    if (action === 'create') {
+      const created = await createCharacter({
+        name,
+        price: priceValue,
+        image: parsed.attachment?.buffer ?? null,
+      });
+
+      return {
+        ok: true,
+        character: created
+          ? { id: created.id, name: created.name, price: created.price }
+          : null,
+      };
+    }
+
+    if (action === 'update') {
+      const updated = await updateCharacter(String(id ?? ''), {
+        name: name === null ? undefined : name,
+        price: priceValue,
+        image: parsed.attachment?.buffer ?? null,
+      });
+
+      return {
+        ok: true,
+        character: { id: updated.id, name: updated.name, price: updated.price },
+      };
+    }
+
+    if (action === 'delete') {
+      const deleted = await deleteCharacter(String(id ?? ''));
+      return { ok: true, ...deleted };
+    }
+
+    return { ok: false, reason: 'action', message: 'Unknown character action.' };
+  } catch (error) {
+    if (error instanceof WallpaperError) {
+      return { ok: false, reason: error.code, message: error.message };
+    }
+
+    logger.warn(`Character admin action ${action} failed: ${error?.message ?? error}`);
+    return {
+      ok: false,
+      reason: 'server',
+      message: 'The character could not be saved. Try again.',
+    };
+  }
+}
+
+/** Manage Server only: reserve price and whether the option is visible. */
+export async function adminReserve({ client, guildId, user, enabled, price }) {
+  const context = await guildContext(client, guildId, user.id);
+
+  if (context.error === 'guild') {
+    return { ok: false, reason: 'guild', message: 'The bot is not in this server.' };
+  }
+
+  if (context.error === 'member') {
+    return { ok: false, reason: 'member', message: 'You are not a member of this server.' };
+  }
+
+  if (!context.member.permissions?.has?.(PermissionFlagsBits.ManageGuild)) {
+    return {
+      ok: false,
+      reason: 'permission',
+      message: 'You need **Manage Server** to change the shop.',
+    };
+  }
+
+  let priceValue;
+
+  if (price !== null && price !== undefined) {
+    priceValue = Math.trunc(Number(price));
+
+    if (!Number.isInteger(priceValue) || priceValue < 0 || priceValue > MAX_RESERVE_PRICE) {
+      return {
+        ok: false,
+        reason: 'price',
+        message: `The price must be a whole number from 0 to ${MAX_RESERVE_PRICE}.`,
+      };
+    }
+  }
+
+  const settings = setReservationSettings(context.guild.id, {
+    enabled: enabled === undefined ? undefined : Boolean(enabled),
+    price: priceValue,
+  });
+
+  return { ok: true, reserve: { enabled: settings.enabled, price: settings.price } };
 }

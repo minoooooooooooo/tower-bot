@@ -479,6 +479,28 @@ const SCHEMA = `
   CREATE INDEX IF NOT EXISTS store_purchases_member
     ON store_purchases (guild_id, user_id, item_key);
 
+  -- A paid character-name reservation. A pending row can be renamed by its
+  -- owner for free and is listed for managers in the store's Characters tab.
+  -- status is pending, approved, rejected or cancelled.
+  CREATE TABLE IF NOT EXISTS character_reservations (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    guild_id    TEXT    NOT NULL,
+    user_id     TEXT    NOT NULL,
+    user_name   TEXT,
+    name        TEXT    NOT NULL,
+    status      TEXT    NOT NULL DEFAULT 'pending',
+    price       INTEGER NOT NULL DEFAULT 0,
+    purchase_id INTEGER,
+    created_at  INTEGER NOT NULL,
+    updated_at  INTEGER NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS character_reservations_member
+    ON character_reservations (guild_id, user_id, status, id);
+
+  CREATE INDEX IF NOT EXISTS character_reservations_pending
+    ON character_reservations (guild_id, status, id);
+
   -- Dry-run counterpart to activity_backfill. It walks the same channels but
   -- only counts what it sees, so the totals can be checked without writing.
   CREATE TABLE IF NOT EXISTS activity_backfill_audit (

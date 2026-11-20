@@ -242,6 +242,21 @@ Paid backgrounds can also be added, edited or deleted from the **Store Activity*
 
 The member's own **Custom background** is a free item in the same tab, not a catalogue purchase. It appears with a preview once they upload a wallpaper (level 50+, or Manage Server), can be equipped or replaced from the sheet, and remains in the collection after switching to another design.
 
+#### Characters
+
+The **Characters** tab is separate from the level ladder. It sells collectible character portraits with a name, a picture and a coin price; a character never unlocks by level.
+
+**Manage Server** members get an **Add character** tile with a name, a price and a portrait. Any picture is accepted (10 MB max) and cover-cropped to exactly **225×350**, so a tall illustration and a wide screenshot both fill the card without stretching. Characters are stored in `data/characters.json` + `data/characters/<id>.jpg`, and each card has **Edit** / **Delete** in its sheet. Buying one writes a permanent `character:<id>` purchase row and shows **Owned** afterwards; buying it again is refused.
+
+The same tab has a **Reserve your character** option, controlled by **Manage Server**:
+
+- **Reservation settings** sets the price and shows or hides the option. Hiding it removes the reserve card from the shop but leaves existing reservations alone.
+- A member pays once and enters a character name. A member can hold one pending reservation at a time and can rename it for free until a moderator reviews it; the **My reservation** card stays reachable even if the option is later hidden.
+- Moderators get a **Reservations** tile with every pending name, member and submit date.
+- The option starts visible at **100 coins**; change or hide it before announcing it if that price is not right. The reserve purchase is recorded in the coin ledger like every other purchase.
+
+All of this lives in the **Store Activity**, not the message `/store` command.
+
 #### Store Activity (optional)
 
 `/store` can also open as a **Discord Activity** — a full-screen storefront with the same catalogue, prices and purchases, opened from an **Open store** button on `/store`. It is off by default and needs an HTTPS address plus the OAuth2 client secret. The bot can provide that address itself, free, with no domain, no VPS and no open ports:

@@ -410,6 +410,11 @@ button {
   object-fit: cover;
 }
 
+/* Characters are portraits: a 225x350 card instead of the landscape item art. */
+.art.portrait {
+  aspect-ratio: 225 / 350;
+}
+
 .art svg {
   position: relative;
   width: 52%;
@@ -607,6 +612,15 @@ button {
   object-fit: cover;
 }
 
+/* A portrait should be shown whole in the sheet, not cropped to a landscape. */
+.sheet-art.portrait {
+  height: 280px;
+}
+
+.sheet-art.portrait img {
+  object-fit: contain;
+}
+
 .sheet-art svg {
   width: 96px;
   height: 96px;
@@ -724,6 +738,55 @@ button {
 
 .field input:focus {
   border-color: rgba(255, 207, 106, 0.5);
+}
+
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 13px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.check-row input {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  accent-color: var(--gold);
+}
+
+.reservation-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.reservation-list li {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.reservation-list strong {
+  font-size: 14px;
+}
+
+.reservation-list span {
+  color: var(--muted);
+  font-size: 11px;
 }
 
 .color-row {

@@ -8,11 +8,15 @@ import { createLogger } from '../lib/logger.js';
 import {
   activityConfigured,
   adminBackground,
+  adminCharacter,
+  adminReserve,
   authUser,
+  buyCharacterFromActivity,
   buyFromActivity,
   equipFromActivity,
   exchangeCode,
   guildContext,
+  reserveFromActivity,
   saveCustomFromActivity,
   storefront,
 } from './store-api.js';
@@ -23,6 +27,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(HERE, 'public');
 const ART_DIR = path.join(HERE, '..', '..', 'assets', 'profile', 'backgrounds');
 const DATA_ART_DIR = path.join(config.dataDir, 'backgrounds');
+const CHARACTER_ART_DIR = path.join(config.dataDir, 'characters');
 const COIN_FILE = path.join(HERE, '..', '..', 'assets', 'profile', 'coin.png');
 
 const MIME = {
@@ -261,6 +266,86 @@ async function handleApi(req, res, client, route, url) {
     return true;
   }
 
+  if (route === '/api/character/buy' && req.method === 'POST') {
+    const user = await requireUser(req, res);
+    if (!user) return true;
+
+    const body = await readJson(req, 64 * 1024);
+    sendJson(
+      res,
+      200,
+      await buyCharacterFromActivity({
+        client,
+        guildId: body.guildId,
+        user,
+        characterId: body.characterId,
+      }),
+    );
+    return true;
+  }
+
+  if (route === '/api/character/reserve' && req.method === 'POST') {
+    const user = await requireUser(req, res);
+    if (!user) return true;
+
+    const body = await readJson(req, 64 * 1024);
+    sendJson(
+      res,
+      200,
+      await reserveFromActivity({
+        client,
+        guildId: body.guildId,
+        user,
+        action: body.action,
+        id: body.id,
+        name: body.name,
+      }),
+    );
+    return true;
+  }
+
+  if (route === '/api/admin/character' && req.method === 'POST') {
+    const user = await requireUser(req, res);
+    if (!user) return true;
+
+    const body = await readJson(req);
+    sendJson(
+      res,
+      200,
+      await adminCharacter({
+        client,
+        guildId: body.guildId,
+        user,
+        action: body.action,
+        id: body.id,
+        name: body.name,
+        price: body.price,
+        image: body.image,
+        imageName: body.imageName,
+      }),
+    );
+    return true;
+  }
+
+  if (route === '/api/admin/reserve' && req.method === 'POST') {
+    const user = await requireUser(req, res);
+    if (!user) return true;
+
+    const body = await readJson(req, 64 * 1024);
+    sendJson(
+      res,
+      200,
+      await adminReserve({
+        client,
+        guildId: body.guildId,
+        user,
+        enabled: body.enabled,
+        price: body.price,
+      }),
+    );
+    return true;
+  }
+
   return false;
 }
 
@@ -321,6 +406,13 @@ async function handleStatic(req, res, route) {
     if (dataFile && existsSync(dataFile)) return serveFile(req, res, dataFile);
 
     const file = safeJoin(ART_DIR, name);
+
+    if (file && existsSync(file)) return serveFile(req, res, file);
+    return false;
+  }
+
+  if (route.startsWith('/assets/characters/')) {
+    const file = safeJoin(CHARACTER_ART_DIR, path.basename(route));
 
     if (file && existsSync(file)) return serveFile(req, res, file);
     return false;

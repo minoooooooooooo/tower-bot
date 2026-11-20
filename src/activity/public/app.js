@@ -13,6 +13,8 @@ const state = {
   imageName: null,
   backgroundImage: null,
   backgroundImageName: null,
+  characterImage: null,
+  characterImageName: null,
   sheet: null,
   demo: false,
   busy: false,
@@ -28,6 +30,7 @@ const TABS = [
   { id: 'role', label: 'Roles' },
   { id: 'emoji', label: 'Emoji' },
   { id: 'background', label: 'Backgrounds' },
+  { id: 'character', label: 'Characters' },
 ];
 
 const REASONS = {
@@ -43,6 +46,9 @@ const REASONS = {
   color: 'That colour is not valid.',
   image: 'Choose a PNG, JPEG, WebP or GIF image.',
   size: 'The image is too large (256 KB max).',
+  dimensions: 'That image is too small or too large.',
+  price: 'The price must be a whole number of coins.',
+  pending: 'You already have a pending reservation.',
   slots: 'The server has no free emoji slots.',
   permission: 'The bot is missing a permission for that.',
   delivery: 'Discord refused it, so your coins were refunded.',
@@ -86,6 +92,8 @@ function glyph(type) {
       '<path d="M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20Zm0 2a8 8 0 1 0 0 16 8 8 0 0 0 0-16Zm-3.2 5.3a1.3 1.3 0 1 1 0 2.6 1.3 1.3 0 0 1 0-2.6Zm6.4 0a1.3 1.3 0 1 1 0 2.6 1.3 1.3 0 0 1 0-2.6ZM7.4 14.2h9.2a5 5 0 0 1-9.2 0Z"/>',
     background:
       '<path d="M4 3h16a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Zm1 13.2V19h14v-6.5l-3.8 3.4-3.6-3.6-6.6 3.9ZM8 6.2a2.2 2.2 0 1 1 0 4.4 2.2 2.2 0 0 1 0-4.4Z"/>',
+    character:
+      '<path d="M12 2.5a4.2 4.2 0 1 1 0 8.4 4.2 4.2 0 0 1 0-8.4Zm0 10.2c4.6 0 8.3 2.5 8.3 5.6V21H3.7v-2.7c0-3.1 3.7-5.6 8.3-5.6Z"/>',
   };
 
   return `${open}${shapes[type] ?? shapes.background}</svg>`;
@@ -243,6 +251,7 @@ function render() {
 
 function renderTabs() {
   const data = state.data;
+  const reserve = data.reserve ?? {};
   const counts = {
     all: data.items.filter((item) => item.type !== 'background').length,
     xp: data.items.filter((item) => item.type === 'xp').length,
@@ -251,6 +260,11 @@ function renderTabs() {
     role: data.items.filter((item) => item.type === 'role').length,
     emoji: data.items.filter((item) => item.type === 'emoji').length,
     background: data.backgrounds.length,
+    character:
+      (data.characters?.length ?? 0) +
+      (reserve.hasPending ? 1 : 0) +
+      (reserve.enabled ? 1 : 0) +
+      (data.canManage ? 2 : 0),
   };
 
   const visible = TABS.filter((tab) => tab.id === 'all' || counts[tab.id] > 0);
@@ -276,6 +290,11 @@ function renderTabs() {
 function renderGrid() {
   if (state.filter === 'background') {
     renderBackgrounds();
+    return;
+  }
+
+  if (state.filter === 'character') {
+    renderCharacters();
     return;
   }
 
@@ -422,6 +441,136 @@ function wireItemCards() {
   }
 }
 
+/* ── Characters ───────────────────────────────────────────────────────────── */
+
+function characterCard(character) {
+  const badge = character.owned
+    ? '<span class="badge owned">Owned</span>'
+    : character.price === 0
+      ? '<span class="badge">Free</span>'
+      : '';
+  const price = character.owned
+    ? '<span class="price free">Owned</span>'
+    : character.price > 0
+      ? `<span class="price">${coinSvg()}<span>${format(character.price)}</span></span>`
+      : '<span class="price free">Free</span>';
+
+  return `<button class="card character-card rarity-${character.rarity}" data-character="${escapeHtml(character.id)}">
+    <div class="art portrait">
+      ${character.art ? `<img src="${escapeHtml(character.art)}" alt="" loading="lazy" decoding="async">` : glyph('character')}
+      <span class="rarity">character</span>
+      ${badge}
+    </div>
+    <div class="card-body">
+      <h3>${escapeHtml(character.name)}</h3>
+      <span class="card-meta">collectible</span>
+      ${price}
+    </div>
+  </button>`;
+}
+
+function addCharacterCard() {
+  return `<button class="card add-card" id="add-character">
+    <div class="art portrait">${glyph('character')}</div>
+    <div class="card-body">
+      <h3>Add character</h3>
+      <span class="card-meta">Manage Server</span>
+      <span class="price free">Portrait &amp; price</span>
+    </div>
+  </button>`;
+}
+
+function reserveSettingsCard(reserve) {
+  return `<button class="card add-card" id="reserve-settings">
+    <div class="art portrait">${glyph('character')}</div>
+    <div class="card-body">
+      <h3>Reservation settings</h3>
+      <span class="card-meta">Manage Server · ${reserve.enabled ? 'visible' : 'hidden'}</span>
+      <span class="price free">${reserve.price > 0 ? `${format(reserve.price)} coins` : 'Free'}</span>
+    </div>
+  </button>`;
+}
+
+function reservationsCard(count) {
+  return `<button class="card add-card" id="character-reservations">
+    <div class="art portrait">${glyph('character')}</div>
+    <div class="card-body">
+      <h3>Reservations</h3>
+      <span class="card-meta">Manage Server</span>
+      <span class="price free">${format(count)} pending</span>
+    </div>
+  </button>`;
+}
+
+function myReservationCard(reservation) {
+  return `<button class="card character-card rarity-epic" id="character-my-reservation">
+    <div class="art portrait">${glyph('character')}
+      <span class="rarity">reservation</span>
+      <span class="badge equipped">Pending</span>
+    </div>
+    <div class="card-body">
+      <h3>${escapeHtml(reservation.name)}</h3>
+      <span class="card-meta">your reservation</span>
+      <span class="price free">Tap to rename</span>
+    </div>
+  </button>`;
+}
+
+function reserveCard(price) {
+  return `<button class="card character-card rarity-rare" id="character-reserve">
+    <div class="art portrait">${glyph('character')}
+      <span class="rarity">reservation</span>
+    </div>
+    <div class="card-body">
+      <h3>Reserve your character</h3>
+      <span class="card-meta">pick a name</span>
+      <span class="price ${price > 0 ? '' : 'free'}">${price > 0 ? `${coinSvg()}<span>${format(price)}</span>` : 'Free'}</span>
+    </div>
+  </button>`;
+}
+
+function renderCharacters() {
+  const data = state.data;
+  const reserve = data.reserve ?? {};
+  const list = data.characters ?? [];
+  const grid = $('#grid');
+  const empty = $('#empty');
+  const cards = [];
+
+  if (data.canManage) {
+    cards.push(addCharacterCard(), reserveSettingsCard(reserve));
+    if (reserve.pendingCount > 0) cards.push(reservationsCard(reserve.pendingCount));
+  }
+
+  if (reserve.hasPending) cards.push(myReservationCard(reserve.reservation));
+  else if (reserve.enabled) cards.push(reserveCard(reserve.price));
+
+  cards.push(...list.map(characterCard));
+
+  if (cards.length === 0) {
+    grid.innerHTML = '';
+    empty.hidden = false;
+    empty.textContent = 'No characters yet.';
+    return;
+  }
+
+  empty.hidden = true;
+  grid.innerHTML = cards.join('');
+
+  for (const card of document.querySelectorAll('[data-character]')) {
+    card.addEventListener('click', () => {
+      const character = state.data.characters.find((entry) => entry.id === card.dataset.character);
+      if (character) openCharacterSheet(character);
+    });
+  }
+
+  $('#add-character')?.addEventListener('click', openCharacterCreator);
+  $('#reserve-settings')?.addEventListener('click', openReserveSettings);
+  $('#character-reservations')?.addEventListener('click', openReservationsSheet);
+  $('#character-reserve')?.addEventListener('click', openReserveSheet);
+  $('#character-my-reservation')?.addEventListener('click', openReserveSheet);
+}
+
 function wireBackgroundCards() {
   for (const card of document.querySelectorAll('[data-bg]')) {
     card.addEventListener('click', () => {
@@ -451,8 +600,11 @@ function openSheet(item, kind) {
   state.imageName = null;
   state.backgroundImage = null;
   state.backgroundImageName = null;
+  state.characterImage = null;
+  state.characterImageName = null;
   sheetEls.note.textContent = '';
   sheetEls.note.className = 'sheet-note';
+  sheetEls.art.classList.toggle('portrait', kind === 'character');
   sheetEls.art.style.setProperty('--rarity', `var(--${item.rarity ?? 'common'})`);
   sheetEls.art.innerHTML = item.art ? `<img src="${escapeHtml(item.art)}" alt="">` : glyph(item.type ?? 'background');
   sheetEls.rarity.textContent = item.rarity ?? 'common';
@@ -471,6 +623,8 @@ function closeSheet() {
   state.imageName = null;
   state.backgroundImage = null;
   state.backgroundImageName = null;
+  state.characterImage = null;
+  state.characterImageName = null;
   state.busy = false;
 }
 
@@ -1152,6 +1306,536 @@ async function buyBackground(background) {
   if (fresh?.unlocked && !fresh.selected) await equipBackground(fresh);
 }
 
+/* ── Character sheets ─────────────────────────────────────────────────────── */
+
+function openCharacterSheet(character) {
+  openSheet(
+    {
+      ...character,
+      type: 'character',
+      summary: character.owned
+        ? 'This character is in your collection.'
+        : character.price > 0
+          ? 'Buy this character once and keep it in your collection. Characters do not need a level.'
+          : 'This character is free to claim.',
+    },
+    'character',
+  );
+
+  if (character.owned) {
+    setAction('Owned', { disabled: true, secondary: true });
+  } else if (character.price > 0) {
+    const short = balanceNote(character.price);
+
+    setAction(`Buy · ${format(character.price)} coins`, {
+      disabled: short,
+      onClick: () => buyCharacter(character),
+    });
+  } else {
+    setAction('Claim for free', { onClick: () => buyCharacter(character) });
+  }
+
+  if (state.data.canManage) addCharacterAdminControls(character);
+}
+
+async function buyCharacter(character) {
+  if (state.demo) {
+    toast('Demo mode — open the store in Discord to buy.', 'error');
+    return;
+  }
+
+  if (state.busy) return;
+  state.busy = true;
+  setAction('Working…', { disabled: true });
+
+  try {
+    const result = await api('/api/character/buy', {
+      method: 'POST',
+      body: { guildId: state.guildId, characterId: character.id },
+    });
+
+    if (!result.ok) {
+      setNote(result.message || REASONS[result.reason] || 'The purchase did not go through.', 'error');
+      state.busy = false;
+      return;
+    }
+
+    state.data.balance = result.balance ?? state.data.balance;
+    closeSheet();
+    toast(`${character.name} added to your collection.`, 'good');
+    await loadStore();
+  } catch (error) {
+    setNote(error.message, 'error');
+    state.busy = false;
+  }
+}
+
+function addCharacterAdminControls(character) {
+  sheetEls.admin.innerHTML = `<button type="button" data-edit>Edit</button>
+    <button type="button" class="danger" data-delete>Delete</button>`;
+
+  sheetEls.admin.querySelector('[data-edit]').addEventListener('click', () => {
+    openCharacterEditor(character);
+  });
+
+  wireDeleteCharacter(character, sheetEls.admin.querySelector('[data-delete]'));
+}
+
+function wireDeleteCharacter(character, button) {
+  if (!button) return;
+
+  let armed = false;
+
+  button.addEventListener('click', () => {
+    if (!armed) {
+      armed = true;
+      button.textContent = 'Click again to delete';
+      setNote('This removes the character for everyone. Click again to confirm.', 'error');
+      return;
+    }
+
+    deleteCharacterAdmin(character, button);
+  });
+}
+
+function openCharacterCreator() {
+  openSheet(
+    {
+      id: 'new',
+      type: 'character',
+      name: 'Add character',
+      rarity: 'rare',
+      art: null,
+      summary:
+        'Upload a portrait (225 × 350 works best; any size is cropped to fit) and set a coin price.',
+    },
+    'character',
+  );
+
+  sheetEls.rarity.textContent = 'Manage Server';
+  sheetEls.rarity.style.color = 'var(--gold)';
+
+  sheetEls.controls.innerHTML = `<div class="field">
+      <label for="character-name">Name</label>
+      <input id="character-name" type="text" maxlength="40" placeholder="The Watcher" autocomplete="off">
+    </div>
+    <div class="field">
+      <label for="character-price">Price (coins)</label>
+      <input id="character-price" type="number" min="0" max="100000" value="100">
+    </div>
+    <div class="field">
+      <label for="character-image">Portrait</label>
+      <input id="character-image" type="file" accept="image/png,image/jpeg,image/webp,image/gif">
+      <span id="character-image-note" class="card-meta">PNG, JPEG, WebP or GIF · 10 MB max · 225 × 350 recommended</span>
+    </div>`;
+
+  const nameInput = $('#character-name');
+  const priceInput = $('#character-price');
+
+  const refresh = () => {
+    const ready = nameInput.value.trim().length > 0 && Boolean(state.characterImage);
+
+    setAction('Add character', {
+      disabled: state.busy || !ready,
+      onClick: () => saveCharacterAdmin({ action: 'create' }),
+    });
+
+    if (state.characterImage) {
+      setNote(`Price: ${format(Number(priceInput.value) || 0)} coins`);
+    }
+  };
+
+  nameInput.addEventListener('input', refresh);
+  priceInput.addEventListener('input', refresh);
+  $('#character-image').addEventListener('change', (event) => {
+    readCharacterImageFile(event.target.files?.[0], '#character-image-note').then(refresh);
+  });
+
+  refresh();
+}
+
+function openCharacterEditor(character) {
+  openSheet(
+    {
+      ...character,
+      type: 'character',
+      summary: 'Rename, reprice or replace this character portrait.',
+    },
+    'character',
+  );
+
+  sheetEls.rarity.textContent = 'Manage Server';
+  sheetEls.rarity.style.color = 'var(--gold)';
+
+  sheetEls.controls.innerHTML = `<div class="field">
+      <label for="character-name">Name</label>
+      <input id="character-name" type="text" maxlength="40" value="${escapeHtml(character.name)}" autocomplete="off">
+    </div>
+    <div class="field">
+      <label for="character-price">Price (coins)</label>
+      <input id="character-price" type="number" min="0" max="100000" value="${Number(character.price) || 0}">
+    </div>
+    <div class="field">
+      <label for="character-image">Replace portrait (optional)</label>
+      <input id="character-image" type="file" accept="image/png,image/jpeg,image/webp,image/gif">
+      <span id="character-image-note" class="card-meta">PNG, JPEG, WebP or GIF · 10 MB max</span>
+    </div>`;
+
+  const nameInput = $('#character-name');
+
+  const refresh = () => {
+    setAction('Save changes', {
+      disabled: state.busy || nameInput.value.trim().length === 0,
+      onClick: () => saveCharacterAdmin({ action: 'update', id: character.id }),
+    });
+  };
+
+  nameInput.addEventListener('input', refresh);
+  $('#character-image').addEventListener('change', (event) => {
+    readCharacterImageFile(event.target.files?.[0], '#character-image-note').then(refresh);
+  });
+
+  sheetEls.admin.innerHTML = '<button type="button" class="danger" data-delete>Delete character</button>';
+  wireDeleteCharacter(character, sheetEls.admin.querySelector('[data-delete]'));
+
+  refresh();
+}
+
+async function readCharacterImageFile(file, noteSelector) {
+  const note = $(noteSelector);
+
+  if (!file) return null;
+
+  if (!/^image\/(png|jpe?g|webp|gif)$/i.test(file.type)) {
+    if (note) note.textContent = 'That file type is not supported.';
+    state.characterImage = null;
+    return null;
+  }
+
+  if (file.size > 10 * 1024 * 1024) {
+    if (note) note.textContent = `This file is ${Math.ceil(file.size / 1024 / 1024)} MB; the limit is 10 MB.`;
+    state.characterImage = null;
+    return null;
+  }
+
+  const dataUrl = await new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => resolve(null);
+    reader.readAsDataURL(file);
+  });
+
+  if (!dataUrl) {
+    if (note) note.textContent = 'Could not read the image.';
+    return null;
+  }
+
+  state.characterImage = dataUrl;
+  state.characterImageName = file.name;
+  if (note) note.textContent = `${file.name} · ${Math.ceil(file.size / 1024)} KB`;
+  sheetEls.art.innerHTML = `<img src="${escapeHtml(dataUrl)}" alt="">`;
+  setNote('Portrait ready.');
+
+  return dataUrl;
+}
+
+async function saveCharacterAdmin({ action, id = null }) {
+  if (state.demo) {
+    toast('Demo mode — open the store in Discord to change the shop.', 'error');
+    return;
+  }
+
+  if (state.busy) return;
+
+  const name = $('#character-name')?.value?.trim() || '';
+  const price = Number($('#character-price')?.value);
+
+  if (!name) {
+    setNote('Give the character a name.', 'error');
+    return;
+  }
+
+  if (!Number.isInteger(price) || price < 0) {
+    setNote('The price must be a whole number of coins.', 'error');
+    return;
+  }
+
+  if (action === 'create' && !state.characterImage) {
+    setNote('Choose a portrait for the character.', 'error');
+    return;
+  }
+
+  state.busy = true;
+  setAction(action === 'create' ? 'Adding…' : 'Saving…', { disabled: true });
+
+  try {
+    const body = {
+      guildId: state.guildId,
+      action,
+      id,
+      name,
+      price,
+    };
+
+    if (state.characterImage) {
+      body.image = state.characterImage;
+      body.imageName = state.characterImageName;
+    }
+
+    const result = await api('/api/admin/character', { method: 'POST', body });
+
+    if (!result.ok) {
+      setNote(result.message || REASONS[result.reason] || 'The character was not saved.', 'error');
+      state.busy = false;
+      return;
+    }
+
+    closeSheet();
+    toast(action === 'create' ? 'Character added.' : 'Character updated.', 'good');
+    await loadStore();
+  } catch (error) {
+    setNote(error.message, 'error');
+    state.busy = false;
+  }
+}
+
+async function deleteCharacterAdmin(character, button) {
+  if (state.demo) {
+    toast('Demo mode — open the store in Discord to change the shop.', 'error');
+    return;
+  }
+
+  if (state.busy) return;
+
+  state.busy = true;
+  button.disabled = true;
+  button.textContent = 'Deleting…';
+
+  try {
+    const result = await api('/api/admin/character', {
+      method: 'POST',
+      body: { guildId: state.guildId, action: 'delete', id: character.id },
+    });
+
+    if (!result.ok) {
+      setNote(result.message || 'The character was not deleted.', 'error');
+      state.busy = false;
+      button.disabled = false;
+      button.textContent = 'Click again to delete';
+      return;
+    }
+
+    closeSheet();
+    toast('Character deleted.', 'good');
+    await loadStore();
+  } catch (error) {
+    setNote(error.message, 'error');
+    state.busy = false;
+    button.disabled = false;
+  }
+}
+
+function openReserveSettings() {
+  const reserve = state.data.reserve ?? { enabled: true, price: 100 };
+
+  openSheet(
+    {
+      id: 'reserve-settings',
+      type: 'character',
+      name: 'Reservation settings',
+      rarity: 'rare',
+      art: null,
+      summary:
+        'Members pay this price to reserve a character name. Hiding the option removes its card from the store; pending reservations can still be renamed.',
+    },
+    'character',
+  );
+
+  sheetEls.rarity.textContent = 'Manage Server';
+  sheetEls.rarity.style.color = 'var(--gold)';
+
+  sheetEls.controls.innerHTML = `<div class="field">
+      <label for="reserve-price">Price (coins)</label>
+      <input id="reserve-price" type="number" min="0" max="100000" value="${Number(reserve.price) || 0}">
+    </div>
+    <label class="check-row">
+      <input id="reserve-enabled" type="checkbox" ${reserve.enabled ? 'checked' : ''}>
+      <span>Show “Reserve your character” in the store</span>
+    </label>`;
+
+  setAction('Save settings', { onClick: saveReserveSettings });
+}
+
+async function saveReserveSettings() {
+  if (state.demo) {
+    toast('Demo mode — open the store in Discord to change the shop.', 'error');
+    return;
+  }
+
+  if (state.busy) return;
+
+  const price = Number($('#reserve-price')?.value);
+  const enabled = Boolean($('#reserve-enabled')?.checked);
+
+  if (!Number.isInteger(price) || price < 0) {
+    setNote('The price must be a whole number of coins.', 'error');
+    return;
+  }
+
+  state.busy = true;
+  setAction('Saving…', { disabled: true });
+
+  try {
+    const result = await api('/api/admin/reserve', {
+      method: 'POST',
+      body: { guildId: state.guildId, enabled, price },
+    });
+
+    if (!result.ok) {
+      setNote(result.message || REASONS[result.reason] || 'The settings were not saved.', 'error');
+      state.busy = false;
+      return;
+    }
+
+    closeSheet();
+    toast(enabled ? 'Reservations are visible.' : 'Reservations are hidden.', 'good');
+    await loadStore();
+  } catch (error) {
+    setNote(error.message, 'error');
+    state.busy = false;
+  }
+}
+
+function openReserveSheet() {
+  const reserve = state.data.reserve ?? {};
+  const existing = reserve.reservation ?? null;
+
+  openSheet(
+    {
+      id: existing?.id ?? 'reserve',
+      type: 'character',
+      name: existing ? 'Your reservation' : 'Reserve your character',
+      rarity: 'rare',
+      art: null,
+      summary: existing
+        ? `You reserved “${existing.name}”. You can rename it until a moderator reviews it.`
+        : reserve.enabled
+          ? `Pay ${format(reserve.price)} coins to submit a character name. A moderator will review the reservation.`
+          : 'Character reservations are closed right now.',
+    },
+    'character',
+  );
+
+  sheetEls.rarity.textContent = existing ? 'Pending review' : reserve.enabled ? 'Open' : 'Closed';
+
+  if (!existing && !reserve.enabled) {
+    setAction('Reservations closed', { disabled: true, secondary: true });
+    return;
+  }
+
+  sheetEls.controls.innerHTML = `<div class="field">
+      <label for="reservation-name">Character name</label>
+      <input id="reservation-name" type="text" maxlength="40" value="${escapeHtml(existing?.name ?? '')}" placeholder="The Watcher" autocomplete="off">
+    </div>`;
+
+  if (existing) {
+    setAction('Save name', { onClick: saveReservation });
+  } else {
+    const short = reserve.price > 0 ? balanceNote(reserve.price) : false;
+    const label = reserve.price > 0 ? `Reserve · ${format(reserve.price)} coins` : 'Reserve for free';
+
+    setAction(label, { disabled: short, onClick: saveReservation });
+  }
+}
+
+async function saveReservation() {
+  if (state.demo) {
+    toast('Demo mode — open the store in Discord to reserve.', 'error');
+    return;
+  }
+
+  if (state.busy) return;
+
+  const name = $('#reservation-name')?.value?.trim() || '';
+  const existing = state.data.reserve?.reservation ?? null;
+
+  if (!name) {
+    setNote('Enter a character name.', 'error');
+    return;
+  }
+
+  state.busy = true;
+  setAction(existing ? 'Saving…' : 'Reserving…', { disabled: true });
+
+  try {
+    const result = await api('/api/character/reserve', {
+      method: 'POST',
+      body: {
+        guildId: state.guildId,
+        action: existing ? 'update' : 'create',
+        id: existing?.id,
+        name,
+      },
+    });
+
+    if (!result.ok) {
+      if (result.reason === 'pending') {
+        closeSheet();
+        toast('You already have a pending reservation.', 'error');
+        await loadStore();
+        return;
+      }
+
+      setNote(result.message || REASONS[result.reason] || 'The reservation was not saved.', 'error');
+      state.busy = false;
+      return;
+    }
+
+    if (result.balance !== undefined) state.data.balance = result.balance;
+
+    closeSheet();
+    toast(existing ? 'Reservation renamed.' : 'Reservation submitted for review.', 'good');
+    await loadStore();
+  } catch (error) {
+    setNote(error.message, 'error');
+    state.busy = false;
+  }
+}
+
+function openReservationsSheet() {
+  const list = state.data.reserve?.reservations ?? [];
+
+  openSheet(
+    {
+      id: 'reservations',
+      type: 'character',
+      name: 'Pending reservations',
+      rarity: 'rare',
+      art: null,
+      summary: list.length
+        ? 'Every pending character reservation. Members can rename theirs until it is reviewed.'
+        : 'No pending reservations right now.',
+    },
+    'character',
+  );
+
+  sheetEls.rarity.textContent = 'Manage Server';
+  sheetEls.rarity.style.color = 'var(--gold)';
+
+  if (list.length > 0) {
+    sheetEls.controls.innerHTML = `<ul class="reservation-list">${list
+      .map(
+        (row) => `<li>
+          <strong>${escapeHtml(row.name)}</strong>
+          <span>${escapeHtml(row.userName || 'Member')} · ${escapeHtml(row.userId)} · ${new Date(row.createdAt).toLocaleDateString()}</span>
+        </li>`,
+      )
+      .join('')}</ul>`;
+  }
+
+  setAction('Close', { onClick: closeSheet });
+}
+
 /* ── Demo data ────────────────────────────────────────────────────────────── */
 
 function demoData() {
@@ -1320,6 +2004,25 @@ function demoData() {
     { id: 'tier-30', name: 'Solaris', level: 30, price: 0, rarity: 'common', art: '/assets/backgrounds/tier-30.jpg', unlocked: false, owned: true, selected: false },
   ];
 
+  const characters = [
+    {
+      id: 'char-watcher',
+      name: 'The Watcher',
+      price: 150,
+      rarity: 'rare',
+      art: '/assets/backgrounds/bg-05-violet-storm.jpg',
+      owned: false,
+    },
+    {
+      id: 'char-oracle',
+      name: 'Oracle of Ash',
+      price: 320,
+      rarity: 'legendary',
+      art: '/assets/backgrounds/bg-31-candy-rainbow.jpg',
+      owned: true,
+    },
+  ];
+
   return {
     guild: { id: 'demo', name: 'Tower', icon: null },
     user: { id: 'demo', name: 'Demo member', username: 'demo', avatar: 'https://cdn.discordapp.com/embed/avatars/3.png' },
@@ -1331,6 +2034,25 @@ function demoData() {
     customLevel: 50,
     items,
     backgrounds,
+    characters,
+    reserve: {
+      enabled: true,
+      price: 120,
+      hasPending: false,
+      reservation: null,
+      pendingCount: 1,
+      reservations: [
+        {
+          id: 1,
+          userId: 'demo-member',
+          userName: 'Demo member',
+          name: 'The Keeper',
+          status: 'pending',
+          price: 120,
+          createdAt: Date.now() - 86_400_000,
+        },
+      ],
+    },
   };
 }
 

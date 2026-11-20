@@ -12,6 +12,8 @@ HTTP server never starts and `/store` behaves exactly as before.
 |---|---|
 | HTTP server, static files, API routing, CSP | `src/activity/server.js` |
 | OAuth exchange, guild/member auth, storefront shape | `src/activity/store-api.js` |
+| Character catalogue, portraits and purchases | `src/services/character-store.js` |
+| Character reservations and settings | `src/services/character-reservations.js` |
 | Client shell / theme / logic | `src/activity/public/index.html`, `styles.css`, `app.js` |
 | Bundled Embedded App SDK (no CDN) | `src/activity/public/vendor/discord-sdk.js` |
 | Optional free tunnel (`TUNNEL_ENABLED=1`) | `src/activity/tunnel.js` |
@@ -186,11 +188,15 @@ All routes are served from the same origin (Discord proxies them under
 |---|---|---|
 | `GET /api/config` | none | `{ enabled, client_id, activity_url }` |
 | `POST /api/token` | none | Exchanges the SDK `code`; returns `{ access_token, expires_in }` |
-| `GET /api/store?guildId=` | Bearer | Balance, items, full background collection |
+| `GET /api/store?guildId=` | Bearer | Balance, items, backgrounds, characters and reservations |
 | `POST /api/buy` | Bearer | Charges and delivers one item |
 | `POST /api/equip` | Bearer | Equips an owned/unlocked background, or the custom one |
 | `POST /api/background/custom` | Bearer | Uploads/replaces the caller's custom wallpaper |
 | `POST /api/admin/background` | Bearer + Manage Server | Adds, edits or deletes a shop background |
+| `POST /api/character/buy` | Bearer | Buys one character for the caller |
+| `POST /api/character/reserve` | Bearer | Creates or renames the caller's pending reservation |
+| `POST /api/admin/character` | Bearer + Manage Server | Adds, edits or deletes a character |
+| `POST /api/admin/reserve` | Bearer + Manage Server | Sets the reservation price and visibility |
 | `GET /healthz` | none | Liveness probe |
 
 The Bearer token is the member's OAuth access token; `store-api.js` validates it
@@ -217,6 +223,34 @@ image, imageName }` and checks **Manage Server** server-side. `create` and
 design or removes an uploaded one. The running bot reloads the merged ladder in
 place, so no restart is needed.
 
+### Characters
+
+The **Characters** tab is separate from the background/ladder system and has no
+level requirement. `data/characters.json` is the catalogue and
+`data/characters/<id>.jpg` the portrait. Every upload is cover-cropped to
+**225×350** and re-encoded as JPEG, so the card never stretches the picture.
+
+- `POST /api/character/buy` accepts `{ guildId, characterId }`, charges the
+  character's price atomically and writes a `character:<id>` purchase row. The
+  row is the collection entry; there is no delivery step.
+- `POST /api/character/reserve` accepts `{ guildId, action, id, name }`.
+  `create` charges the configured reservation price, writes the purchase and
+  creates a `character_reservations` row with status `pending`; `update` renames
+  a pending reservation the caller owns for free. One pending reservation is
+  allowed per member at a time.
+- `POST /api/admin/character` accepts `{ guildId, action, id, name, price, image,
+  imageName }` and checks **Manage Server**. `create`/`update` write the JSON
+  catalogue and portrait; `delete` removes both.
+- `POST /api/admin/reserve` accepts `{ guildId, enabled, price }` and stores the
+  per-guild reservation settings in `store_items` under `character-reserve`.
+  The option is visible by default at 100 coins; hiding it only removes the
+  member-facing card, and pending reservations stay visible to managers and
+  renameable by their owner.
+
+`GET /api/store` returns `characters` (name, price, portrait, owned) and
+`reserve` (`enabled`, `price`, the caller's pending reservation, and for managers
+the full pending list plus `pendingCount`).
+
 ## Security notes
 
 - The client secret never leaves the bot process; the browser only sees a
@@ -225,15 +259,17 @@ place, so no restart is needed.
   (`frame-ancestors`), and scripts/images only from this origin plus Discord's
   CDN. There are no CDN script tags: the Embedded App SDK is bundled at
   `src/activity/public/vendor/discord-sdk.js`.
-- Bodies are capped at 16 MB for background uploads (a 10 MB image becomes
-  ~13.4 MB as a `data:` URL), 2 MB for purchases and 64 KB for the token/equip
-  calls; static paths are normalised and confined to `src/activity/public`,
-  `assets/profile/backgrounds`, `data/backgrounds` and the single
-  `assets/profile/coin.png` mark, and no route writes files outside `data/`.
-- The API mutates coins only through `buyStoreItem`, so all the existing checks
-  (limits, enabled, price overrides, atomic charge) apply unchanged. The admin
-  background routes re-check **Manage Server** from the fetched guild member;
-  the browser's `canManage` flag is only a UI hint.
+- Bodies are capped at 16 MB for background/character uploads (a 10 MB image
+  becomes ~13.4 MB as a `data:` URL), 2 MB for purchases and 64 KB for the
+  token/equip/reservation calls; static paths are normalised and confined to
+  `src/activity/public`, `assets/profile/backgrounds`, `data/backgrounds`,
+  `data/characters` and the single `assets/profile/coin.png` mark, and no route
+  writes files outside `data/`.
+- The API mutates coins only through the store purchase paths, so all the
+  existing checks (limits, enabled, price overrides, atomic charge) apply
+  unchanged. The admin background/character routes re-check **Manage Server**
+  from the fetched guild member; the browser's `canManage` flag is only a UI
+  hint.
 
 ## Updating the bundled SDK
 
