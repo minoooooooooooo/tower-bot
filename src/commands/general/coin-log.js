@@ -71,9 +71,36 @@ function looksLikeUser(token) {
   return /^<@!?\d+>$/.test(String(token ?? '')) || /^\d{17,20}$/.test(String(token ?? ''));
 }
 
-function short(value, max = 38) {
+const LRM = '\u200E';
+
+function short(value, max = 32) {
   const text = String(value ?? '').replace(/\s+/g, ' ').trim();
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+
+/** `formatNumber` clamps at zero; history needs the sign. */
+function formatSigned(value) {
+  const number = Math.trunc(Number(value) || 0);
+  const sign = number > 0 ? '+' : number < 0 ? '-' : '';
+
+  return `${sign}${Math.abs(number).toLocaleString('en-US')}`;
+}
+
+/** Compact, locale-free age; avoids long "an hour ago" lines wrapping. */
+function ago(createdAt) {
+  const stamp = Number(createdAt) || 0;
+  const minutes = Math.floor(Math.max(0, Date.now() - stamp) / 60_000);
+
+  if (minutes < 1) return 'now';
+  if (minutes < 60) return `${minutes}m ago`;
+
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}d ago`;
+
+  return `<t:${Math.floor(stamp / 1000)}:d>`;
 }
 
 function describe(row, userId) {
@@ -81,9 +108,11 @@ function describe(row, userId) {
 
   switch (row.type) {
     case 'purchase':
-      return short(detail.itemName ?? detail.itemKey ?? 'store item');
-    case 'refund':
-      return short(detail.itemKey ? `refund ${detail.itemKey}` : 'purchase refund');
+      return short((detail.itemName ?? detail.itemKey ?? 'store item').replace(/\s+background$/i, ''));
+    case 'refund': {
+      const key = detail.itemKey ? String(detail.itemKey).replace(/^design:/, '') : '';
+      return key ? short(key, 24) : '';
+    }
     case 'transfer_in':
       return detail.fromUserId ? `from <@${detail.fromUserId}>` : '';
     case 'transfer_out':
@@ -91,8 +120,8 @@ function describe(row, userId) {
     case 'earn':
       return detail.level ? `level ${detail.level}` : '';
     case 'backfill':
-      if (detail.source === 'ledger started') return 'history before the ledger';
-      return detail.level ? `level ${detail.level} import` : short(detail.source ?? '');
+      if (detail.source === 'ledger started') return '';
+      return detail.level ? `level ${detail.level}` : short(detail.source ?? '');
     case 'admin_add':
     case 'admin_remove': {
       const source = detail.source === 'profile-edit' ? 'profile edit' : short(detail.source ?? '');
@@ -104,47 +133,40 @@ function describe(row, userId) {
   }
 }
 
-function historyLine(row, userId) {
-  const amount = `${row.amount > 0 ? '+' : ''}${formatNumber(row.amount)}`;
-  const label = COIN_TYPE_LABELS[row.type] ?? row.type;
-  const detail = describe(row, userId);
-  const when = `<t:${Math.floor(Number(row.created_at) / 1000)}:R>`;
+/**
+ * One compact line per movement. The invisible LRM after the opening bold
+ * marker makes the paragraph resolve LTR, so an Arabic member name inside a
+ * mention cannot flip the amount and balance to the right.
+ */
+function historyLine(row, { member = false, viewerId } = {}) {
+  const parts = [
+    `**${LRM}${formatSigned(row.amount)}**`,
+    COIN_TYPE_LABELS[row.type] ?? row.type,
+    member ? `<@${row.user_id}>` : null,
+    describe(row, viewerId),
+    `bal **${formatNumber(row.balance_after)}**`,
+    ago(row.created_at),
+  ].filter(Boolean);
 
-  return (
-    `${amount} · ${label}` +
-    (detail ? ` — ${detail}` : '') +
-    ` · bal ${formatNumber(row.balance_after)} · ${when}`
-  );
-}
-
-function guildHistoryLine(row) {
-  const amount = `${row.amount > 0 ? '+' : ''}${formatNumber(row.amount)}`;
-  const label = COIN_TYPE_LABELS[row.type] ?? row.type;
-  const detail = describe(row, row.user_id);
-  const when = `<t:${Math.floor(Number(row.created_at) / 1000)}:R>`;
-
-  return (
-    `${amount} · <@${row.user_id}> · ${label}` +
-    (detail ? ` — ${detail}` : '') +
-    ` · bal ${formatNumber(row.balance_after)} · ${when}`
-  );
+  return `${parts.join(' · ')}${LRM}`;
 }
 
 function logEmbed({ targetId, name, isSelf, filter, page, pages, totals, rows, balance }) {
   const lines = rows.length
-    ? rows.map((row) => historyLine(row, targetId)).join('\n')
+    ? rows.map((row) => historyLine(row, { viewerId: targetId })).join('\n')
     : '_No coin movement yet._';
 
   return embed({
     title: isSelf ? 'Your coin log' : `${name} · coin log`,
     description:
       `Filter: **${COIN_FILTER_LABELS[filter] ?? filter}**` +
-      (totals.count ? ` · ${formatNumber(totals.count)} records` : ''),
+      (totals.count ? ` · ${formatNumber(totals.count)} records` : '') +
+      ' · newest first',
     color: COLORS.primary,
     fields: [
       { name: 'Balance', value: `**${formatNumber(balance)}** coins`, inline: true },
-      { name: 'In', value: `+${formatNumber(totals.earned)}`, inline: true },
-      { name: 'Out', value: `-${formatNumber(totals.spent)}`, inline: true },
+      { name: 'In', value: totals.earned ? `**+${formatNumber(totals.earned)}**` : '**0**', inline: true },
+      { name: 'Out', value: totals.spent ? `**-${formatNumber(totals.spent)}**` : '**0**', inline: true },
       { name: 'History', value: lines, inline: false },
     ],
     footer: `Page ${formatNumber(page)} / ${formatNumber(pages)} · ${COIN_PAGE_SIZE} per page`,
@@ -153,18 +175,21 @@ function logEmbed({ targetId, name, isSelf, filter, page, pages, totals, rows, b
 
 function guildLogEmbed({ guildName, filter, page, pages, totals, rows }) {
   const lines = rows.length
-    ? rows.map((row) => guildHistoryLine(row)).join('\n')
+    ? rows
+        .map((row) => historyLine(row, { member: true, viewerId: row.user_id }))
+        .join('\n')
     : '_No coin movement yet._';
 
   return embed({
     title: `${guildName} · server coin log`,
     description:
       `All members · **${COIN_FILTER_LABELS[filter] ?? filter}**` +
-      (totals.count ? ` · ${formatNumber(totals.count)} records` : ''),
+      (totals.count ? ` · ${formatNumber(totals.count)} records` : '') +
+      ' · newest first',
     color: COLORS.primary,
     fields: [
-      { name: 'In', value: `+${formatNumber(totals.earned)}`, inline: true },
-      { name: 'Out', value: `-${formatNumber(totals.spent)}`, inline: true },
+      { name: 'In', value: totals.earned ? `**+${formatNumber(totals.earned)}**` : '**0**', inline: true },
+      { name: 'Out', value: totals.spent ? `**-${formatNumber(totals.spent)}**` : '**0**', inline: true },
       { name: 'Members', value: `**${formatNumber(totals.members)}**`, inline: true },
       { name: 'History', value: lines, inline: false },
     ],
