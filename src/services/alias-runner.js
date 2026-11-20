@@ -5,6 +5,7 @@ import { createLogger } from '../lib/logger.js';
 import { parseArgs } from '../lib/parse-args.js';
 import { runCommand } from '../lib/run-command.js';
 import { aliasAllowsChannel, getAlias } from './alias-store.js';
+import { hasGrantForMember } from './permission-store.js';
 
 const logger = createLogger('alias');
 
@@ -16,15 +17,20 @@ const FIRST_WORD = /^(\S+)(?:\s+([\s\S]*))?$/;
  * Whether a member could run this command at all. Aliases use it to stay
  * silent instead of answering "Missing permissions" in public chat every time
  * somebody happens to start a sentence with the trigger word.
+ *
+ * A bot-side `/perm grant` counts here too: the grant is attached to the
+ * command, so `:-role` and the alias `رول` must agree on who may run `role`.
  */
-export function canRunAlias(command, member, userId) {
+export function canRunAlias(command, member, userId, guildId = null) {
   if (command.ownerOnly && !config.ownerIds.includes(userId)) return false;
 
   const required = command.permissions ?? [];
   if (required.length === 0) return true;
   if (!member?.permissions) return false;
 
-  return required.every((permission) => member.permissions.has(permission));
+  if (required.every((permission) => member.permissions.has(permission))) return true;
+
+  return Boolean(guildId) && hasGrantForMember(guildId, command.name, member);
 }
 
 /** The alias and its command for a typed word, or null when there is none. */
@@ -93,7 +99,7 @@ export async function runAliasCommand(message, client) {
     return true;
   }
 
-  if (!canRunAlias(command, message.member, message.author.id)) return false;
+  if (!canRunAlias(command, message.member, message.author.id, message.guildId)) return false;
 
   const args = match[2] ? parseArgs(match[2]) : [];
   const ctx = new CommandContext({ client, command, message, args });
