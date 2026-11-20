@@ -11,24 +11,24 @@ import { apiProblem, defaultReason, done, fail, info, slashReason } from './_sha
 export default {
   data: new SlashCommandBuilder()
     .setName('unban')
-    .setDescription('Remove a ban so the user can join again')
+    .setDescription('ارفع الحظر عشان يقدر المستخدم يدخل من جديد')
     .setContexts(InteractionContextType.Guild)
     .addUserOption((option) =>
-      option.setName('user').setDescription('User to unban').setRequired(false),
+      option.setName('user').setDescription('المستخدم المطلوب رفع الحظر عنه').setRequired(false),
     )
     .addStringOption((option) =>
       option
         .setName('id')
-        .setDescription('Banned user id, when they are not in the server')
+        .setDescription('آيدي المستخدم المحظور، إذا مو موجود في السيرفر')
         .setRequired(false)
         .setMaxLength(20),
     )
     .addStringOption((option) =>
-      option.setName('reason').setDescription('Why they are being unbanned').setRequired(false),
+      option.setName('reason').setDescription('سبب رفع الحظر').setRequired(false),
     ),
 
   name: 'unban',
-  description: 'Remove a ban so the user can join again',
+  description: 'ارفع الحظر عشان يقدر المستخدم يدخل من جديد',
   category: 'Moderation',
   usage: 'unban <@user|id> [reason]',
   cooldown: 3,
@@ -45,8 +45,8 @@ export default {
     if (!userId) {
       await fail(
         ctx,
-        'Unknown user',
-        `Mention the user, paste their id, or use their username, for example \`${ctx.isSlash ? '/unban id:123456789012345678' : ':-unban 123456789012345678 appealed'}\`.`,
+        'المستخدم غير موجود',
+        `اذكر المستخدم أو الصق الآيدي أو اكتب اسمه، مثال: \`${ctx.isSlash ? '/unban id:123456789012345678' : ':-unban 123456789012345678 appealed'}\`.`,
       );
       return;
     }
@@ -58,7 +58,7 @@ export default {
     );
 
     if (permissionIssue) {
-      await fail(ctx, 'Cannot unban', permissionIssue);
+      await fail(ctx, 'ما أقدر أرفع الحظر', permissionIssue);
       return;
     }
 
@@ -66,7 +66,7 @@ export default {
 
     if (!ban) {
       deleteExpiry(ctx.guildId, userId, 'ban');
-      await info(ctx, 'Not banned', `${label} is not banned from this server.`);
+      await info(ctx, 'غير محظور', `${label} غير محظور في السيرفر.`);
       return;
     }
 
@@ -77,15 +77,15 @@ export default {
     try {
       await ctx.guild.bans.remove(
         userId,
-        `Unbanned by ${ctx.user.tag ?? ctx.user.username}: ${reason}`,
+        `رفع حظر بواسطة ${ctx.user.tag ?? ctx.user.username}: ${reason}`,
       );
     } catch (error) {
-      await fail(ctx, 'Could not unban that user', apiProblem(error));
+      await fail(ctx, 'تعذر رفع الحظر', apiProblem(error));
       return;
     }
 
     deleteExpiry(ctx.guildId, userId, 'ban');
 
-    await done(ctx, 'User unbanned', `${label} can join again.\n**Reason:** ${reason}`);
+    await done(ctx, 'تم رفع الحظر', `${label} يقدر يدخل من جديد.\n**السبب:** ${reason}`);
   },
 };

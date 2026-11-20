@@ -1,6 +1,5 @@
 import { resolveChannel } from '../../lib/resolve.js';
-import { errorEmbed } from '../../lib/embeds.js';
-import { ephemeral } from './_shared.js';
+import { errorReply, ephemeral } from '../../lib/replies.js';
 
 /**
  * The channel a lock/unlock run should change: the `channel` option on slash,
@@ -20,7 +19,7 @@ export async function targetChannel(ctx) {
   if (!channel) {
     return {
       channel: null,
-      problem: `I could not find a channel called \`${String(token).slice(0, 60)}\`. Mention it as \`#channel\` or paste its id.`,
+      problem: `ما لقيت قناة باسم \`${String(token).slice(0, 60)}\`. اذكرها كـ \`#channel\` أو الصق الآيدي.`,
     };
   }
 
@@ -29,33 +28,33 @@ export async function targetChannel(ctx) {
 
 export function unsupportedProblem(channel) {
   return `${
-    channel?.name ? `**#${channel.name}**` : 'That channel'
-  } cannot be locked. Only text and voice channels have the permissions to change — open a category and lock its channels one by one.`;
+    channel?.name ? `**#${channel.name}**` : 'هذي القناة'
+  } ما تنقفل. الأقفال تشتغل على قنوات النص والصوت بس — اقفل قنوات الفئة وحدة وحدة.`;
 }
 
 export function threadProblem(channel) {
   const parent = channel?.parent ?? null;
 
-  return `${channel} is a thread. Threads follow their parent channel, so lock ${
-    parent ? parent : 'the channel the thread belongs to'
-  } instead.`;
+  return `${channel} موضوع. المواضيع تتبع قناتها الأم، فاقفل ${
+    parent ? parent : 'القناة اللي يتبع لها الموضوع'
+  } بدالها.`;
 }
 
 export function botPermissionProblem(channel) {
-  return `I need **Manage Channels** in ${channel} to change its permissions.`;
+  return `أحتاج صلاحية **إدارة القنوات** في ${channel} عشان أعدّل صلاحياتها.`;
 }
 
 export function discordProblem(error) {
   if (error?.code === 50013) {
-    return 'Discord refused the permission change. Check that I have **Manage Channels** in that channel.';
+    return 'ديسكورد رفض تعديل الصلاحيات. تأكد أن عندي **إدارة القنوات** في القناة.';
   }
 
   return error?.message
     ? String(error.message).slice(0, 300)
-    : 'Discord rejected the permission change.';
+    : 'ديسكورد رفض تعديل الصلاحيات.';
 }
 
 /** Consistent "unknown channel" reply for both commands. */
 export function unknownChannel(ctx, problem) {
-  return ctx.fail(ephemeral({ embeds: [errorEmbed('Unknown channel', problem)] }));
+  return ctx.fail(ephemeral(errorReply('قناة غير معروفة', problem)));
 }

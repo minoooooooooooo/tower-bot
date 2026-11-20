@@ -129,7 +129,7 @@ async function botCanManage(guild, channel) {
 function auditReason(actor, verb) {
   const name = actor?.name ? `${actor.name} (${actor.id})` : String(actor?.id ?? 'unknown');
 
-  return `${verb} by ${name}`.slice(0, 512);
+  return `${verb} بواسطة ${name}`.slice(0, 512);
 }
 
 /* ── Public API ───────────────────────────────────────────────────────────── */
@@ -172,7 +172,7 @@ export async function lockChannel({ guild, channel, actor = {} }) {
 
   try {
     await channel.permissionOverwrites.edit(guild.roles.everyone, denyPatch(permissions), {
-      reason: auditReason(actor, 'Channel locked'),
+      reason: auditReason(actor, 'قفل قناة'),
     });
   } catch (error) {
     // The edit failed, so there is nothing to restore later.
@@ -215,14 +215,14 @@ export async function unlockChannel({ guild, channel, actor = {} }) {
     if (record && !(BigInt(record.allow) || BigInt(record.deny))) {
       // There was no @everyone overwrite before the lock, so removing it is the
       // exact restore. Keep an empty overwrite from littering the channel.
-      await channel.permissionOverwrites.delete(everyone, auditReason(actor, 'Channel unlocked'));
+      await channel.permissionOverwrites.delete(everyone, auditReason(actor, 'فتح قناة'));
     } else {
       const patch = record
         ? restorePatch(permissions, { allow: BigInt(record.allow), deny: BigInt(record.deny) })
         : restorePatch(permissions, { allow: 0n, deny: 0n });
 
       await channel.permissionOverwrites.edit(everyone, patch, {
-        reason: auditReason(actor, 'Channel unlocked'),
+        reason: auditReason(actor, 'فتح قناة'),
       });
     }
   } catch (error) {

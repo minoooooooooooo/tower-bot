@@ -7,17 +7,17 @@ import { apiProblem, defaultReason, done, fail, info, slashReason } from './_sha
 export default {
   data: new SlashCommandBuilder()
     .setName('unmute')
-    .setDescription('Remove the Muted role from a member')
+    .setDescription('شِل رتبة الكتم عن عضو')
     .setContexts(InteractionContextType.Guild)
     .addUserOption((option) =>
-      option.setName('user').setDescription('Member to unmute').setRequired(true),
+      option.setName('user').setDescription('العضو المطلوب إلغاء كتمه').setRequired(true),
     )
     .addStringOption((option) =>
-      option.setName('reason').setDescription('Why they are being unmuted').setRequired(false),
+      option.setName('reason').setDescription('سبب إلغاء الكتم').setRequired(false),
     ),
 
   name: 'unmute',
-  description: 'Remove the Muted role from a member',
+  description: 'شِل رتبة الكتم عن عضو',
   category: 'Moderation',
   usage: 'unmute <@member> [reason]',
   cooldown: 3,
@@ -30,8 +30,8 @@ export default {
     if (!member) {
       await fail(
         ctx,
-        'Unknown member',
-        `Mention the member or paste their id, for example \`${ctx.isSlash ? '/unmute user:@member' : ':-unmute @member'}\`.`,
+        'العضو غير موجود',
+        `اذكر العضو أو الصق الآيدي، مثال: \`${ctx.isSlash ? '/unmute user:@member' : ':-unmute @member'}\`.`,
       );
       return;
     }
@@ -41,7 +41,7 @@ export default {
       actorProblem(ctx.guild, ctx.member, member);
 
     if (issue) {
-      await fail(ctx, 'Cannot unmute that member', issue);
+      await fail(ctx, 'ما أقدر ألغي كتم هذا العضو', issue);
       return;
     }
 
@@ -57,7 +57,7 @@ export default {
 
     if (!role || !member.roles.cache.has(role.id)) {
       deleteExpiry(ctx.guildId, member.id, 'mute');
-      await info(ctx, 'Not muted', `${member} does not have the muted role.`);
+      await info(ctx, 'غير مكتوم', `${member} ما عنده رتبة الكتم.`);
       return;
     }
 
@@ -68,10 +68,10 @@ export default {
     try {
       await member.roles.remove(
         role,
-        `Unmuted by ${ctx.user.tag ?? ctx.user.username}: ${reason}`,
+        `إلغاء كتم بواسطة ${ctx.user.tag ?? ctx.user.username}: ${reason}`,
       );
     } catch (error) {
-      await fail(ctx, 'Could not unmute that member', apiProblem(error));
+      await fail(ctx, 'تعذر إلغاء الكتم', apiProblem(error));
       return;
     }
 
@@ -79,8 +79,8 @@ export default {
 
     await done(
       ctx,
-      'Member unmuted',
-      `${member} no longer has ${role}.\n**Reason:** ${reason}`,
+      'تم إلغاء الكتم',
+      `${member} ما عاد عليه ${role}.\n**السبب:** ${reason}`,
     );
   },
 };

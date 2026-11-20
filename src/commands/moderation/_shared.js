@@ -1,33 +1,27 @@
-import { MessageFlags } from 'discord.js';
-import { errorEmbed, successEmbed, warningEmbed } from '../../lib/embeds.js';
 import { parseDuration } from '../../lib/durations.js';
+import {
+  ephemeral,
+  errorReply,
+  okReply,
+  respond,
+  warnReply,
+} from '../../lib/replies.js';
+
+export { ephemeral, respond };
 
 export const MAX_REASON_LENGTH = 500;
 
-export function ephemeral(payload) {
-  return { ...payload, flags: MessageFlags.Ephemeral };
-}
-
-/** Reply or edit, depending on whether the interaction was deferred already. */
-export function respond(ctx, payload) {
-  if (ctx.interaction?.deferred || ctx.interaction?.replied) {
-    return ctx.editReply(payload);
-  }
-
-  return ctx.reply(payload);
-}
-
 /** Error reply that also releases the cooldown, for bad input and refusals. */
 export function fail(ctx, title, description) {
-  return ctx.fail(ephemeral({ embeds: [errorEmbed(title, description)] }));
+  return ctx.fail(ephemeral(errorReply(title, description)));
 }
 
 export function done(ctx, title, description) {
-  return respond(ctx, ephemeral({ embeds: [successEmbed(title, description)] }));
+  return respond(ctx, ephemeral(okReply(title, description)));
 }
 
 export function info(ctx, title, description) {
-  return respond(ctx, ephemeral({ embeds: [warningEmbed(title, description)] }));
+  return respond(ctx, ephemeral(warnReply(title, description)));
 }
 
 /** "40s spamming" / "spamming" from prefix arguments after the target. */
@@ -51,22 +45,22 @@ export function trimReason(reason) {
 }
 
 export function defaultReason(reason) {
-  return trimReason(reason) || 'No reason given';
+  return trimReason(reason) || 'بدون سبب';
 }
 
 /** Turns a Discord API error into one useful sentence. */
 export function apiProblem(error) {
   if (error?.code === 50013) {
-    return 'Discord says I do not have permission. Check **Manage Roles**, my role position, and that I outrank the target.';
+    return 'ديسكورد رفض العملية. تأكد من صلاحياتي ومن أن رتبتي فوق رتبة الهدف.';
   }
 
   if (error?.code === 50035) {
-    return 'Discord rejected the request as invalid. Double-check the member and the duration.';
+    return 'ديسكورد رفض الطلب كأنه غير صالح. راجع العضو والمدة.';
   }
 
   if (error?.code === 429 || /rate limit/i.test(String(error?.message))) {
-    return 'Discord is rate limiting moderation actions. Wait a minute and try again.';
+    return 'ديسكورد يحدّ الطلبات الآن. انتظر دقيقة وجرّب مرة ثانية.';
   }
 
-  return error?.message ? String(error.message).slice(0, 300) : 'Something went wrong.';
+  return error?.message ? String(error.message).slice(0, 300) : 'صار خطأ غير متوقع.';
 }

@@ -1,9 +1,9 @@
 import {
   ChannelType,
   PermissionFlagsBits,
-  PermissionsBitField,
 } from 'discord.js';
 import { createLogger } from '../lib/logger.js';
+import { permissionName } from '../lib/permissions.js';
 import { getMuteRoleId, getMuteSettings, setMuteRoleId } from './moderation-store.js';
 
 const logger = createLogger('moderation');
@@ -57,14 +57,14 @@ async function mapLimit(items, limit, run) {
 export function botPermissionProblem(guild, flag, label) {
   const me = guild?.members?.me;
 
-  if (!me) return 'I could not read my own server profile. Try again in a moment.';
+  if (!me) return 'تعذر قراءة بيانات العضو في السيرفر. جرّب بعد لحظات.';
 
   const has =
     me.permissions?.has(flag) || me.permissions?.has(PermissionFlagsBits.Administrator);
 
   if (has) return null;
 
-  return `I need the **${label}** permission to do that.`;
+  return `أحتاج صلاحية **${permissionName(flag ?? label)}** عشان أسوي هذا.`;
 }
 
 /**
@@ -72,7 +72,7 @@ export function botPermissionProblem(guild, flag, label) {
  * Administrator; Discord enforces the same rule for role edits.
  */
 export function actorProblem(guild, actor, target) {
-  if (!actor) return 'I could not read your server profile. Try again in a moment.';
+  if (!actor) return 'تعذر قراءة بياناتك في السيرفر. جرّب بعد لحظات.';
 
   if (actor.id === guild.ownerId) return null;
   if (actor.permissions?.has(PermissionFlagsBits.Administrator)) return null;
@@ -81,7 +81,7 @@ export function actorProblem(guild, actor, target) {
   const targetTop = target.roles?.highest?.position ?? 0;
 
   if (actorTop <= targetTop) {
-    return 'Your highest role must sit above that member’s highest role.';
+    return 'لازم أعلى رتبة عندك تكون فوق أعلى رتبة العضو.';
   }
 
   return null;
@@ -92,29 +92,29 @@ export function actorProblem(guild, actor, target) {
  * muting or timing out a bot cannot affect anything it does.
  */
 export function targetProblem(guild, target, actorId, { allowBot = false } = {}) {
-  if (!target) return 'Pick a member.';
+  if (!target) return 'اختر عضوًا.';
 
-  if (target.id === actorId) return 'You cannot target yourself.';
+  if (target.id === actorId) return 'ما تقدر تستهدف نفسك.';
 
   if (target.id === guild.ownerId) {
-    return 'The server owner cannot be moderated — the owner bypasses every permission.';
+    return 'ما يمكن معاقبة مالك السيرفر — المالك يتجاوز كل الصلاحيات.';
   }
 
   if (target.user?.bot && !allowBot) {
-    return 'Bots cannot be muted or timed out. Kick or ban them instead.';
+    return 'البوتات ما تنكتم ولا تنعطى تايم أوت. اطردها أو احظرها بدلًا من ذلك.';
   }
 
   const me = guild.members?.me;
 
-  if (!me) return 'I could not read my own server profile. Try again in a moment.';
+  if (!me) return 'تعذر قراءة بيانات العضو في السيرفر. جرّب بعد لحظات.';
 
-  if (target.id === me.id) return 'I cannot target myself.';
+  if (target.id === me.id) return 'ما أقدر أستهدف نفسي.';
 
   const botTop = me.roles?.highest?.position ?? 0;
   const targetTop = target.roles?.highest?.position ?? 0;
 
   if (botTop <= targetTop) {
-    return 'My highest role must sit above that member’s highest role. Move my role up in **Server Settings → Roles**.';
+    return 'لازم أعلى رتبة عندي تكون فوق أعلى رتبة العضو. ارفع رتبتي من **إعدادات السيرفر ← الرتب**.';
   }
 
   return null;
@@ -275,28 +275,24 @@ export function isMuted(member, roleId) {
 }
 
 export function muteRoleProblem(guild, role) {
-  if (!role) return 'I could not find or create the **Muted** role.';
+  if (!role) return 'ما لقيت رتبة **Muted** أو ما قدرت أنشئها.';
 
   if (role.managed) {
-    return `**${role.name}** is managed by an integration and cannot be assigned by hand.`;
+    return `**${role.name}** مرتبطة بتكامل ولا تنعطى يدويًا.`;
   }
 
   const me = guild.members?.me;
   const botTop = me?.roles?.highest?.position ?? 0;
 
   if (role.position >= botTop) {
-    return `My highest role must sit **above ${role.name}**. Drag my role up in **Server Settings → Roles**.`;
+    return `لازم أعلى رتبة عندي تكون **فوق ${role.name}**. ارفع رتبتي من **إعدادات السيرفر ← الرتب**.`;
   }
 
   return null;
 }
 
 export function permissionLabel(flag) {
-  const name = Object.keys(PermissionsBitField.Flags).find(
-    (key) => PermissionsBitField.Flags[key] === flag,
-  );
-
-  return name ? name.replace(/([a-z])([A-Z])/g, '$1 $2') : String(flag);
+  return permissionName(flag);
 }
 
 export { MUTE_DENY, isMuteChannel };

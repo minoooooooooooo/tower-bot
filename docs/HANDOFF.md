@@ -270,6 +270,21 @@ data and letting the client hide it. That also means members cannot start or
 rename a reservation until the tab is opened up again; the pending rows stay in
 the database untouched, and the manager surface still lists and edits them.
 
+**Arabic, short replies (pilot started 2026-11-21).** The operator asked for the
+whole bot in Arabic with one-or-two-line replies instead of embeds, while command
+names stay English. The shared layer is `src/lib/replies.js` (`okReply`,
+`warnReply`, `errorReply`, all returning `{ content }`) plus `src/lib/permissions.js`
+for Arabic permission names. `run-command.js` and `commands/moderation/_shared.js`
+now use those, so every moderation command speaks Arabic plain text even where its
+own strings have not been translated yet. Converted in the pilot: `lock`, `unlock`,
+`clear`, `kick`, `ban`, `unban`, `mute`, `unmute`, `timeout`, `untimeout`, their
+slash descriptions/options and their audit-log reasons; `services/moderation.js`
+refusals are Arabic too. List/table commands keep embeds (`/help`, `/store`,
+`/coin-log`, `/exile-list`, `/perm list`, `/store-config list`). Still English:
+`nickname`, `role`, `perm`, `profile-edit`, `coins-config`, `store-config`, the six
+exile commands, then the general/community categories, bot-posted content
+(birthday, welcome, tickets, watch, autoreport) and the card labels.
+
 ## What exists
 
 | Command | Aliases | Notes |
@@ -936,6 +951,7 @@ Behavior that must be preserved:
 - **Locking is a saved snapshot, not a fixed deny/allow pair.** `/unlock` has to put back *that* channel's permissions, not blindly allow `@everyone`: a read-only channel must stay read-only, and a channel with a custom `SendMessages` allow must get it back. `lockChannel()` therefore writes the current `@everyone` allow/deny bits to `channel_locks` before the first edit and `unlockChannel()` replays only the lock bits from them; every other permission is never touched. Locking twice is a no-op so the snapshot cannot be replaced by the deny state it just wrote.
 - **A channel locked by hand is reported as locked, not snapshotted.** If the bot has no row and every lock permission is already denied, `/lock` answers **Already locked** without writing anything, so a later `/unlock` opens it instead of restoring the manual lock. A missing row on unlock clears the lock bits and says the earlier state was unknown.
 - **Categories are refused.** Denying `SendMessages` on a category silently changes every child channel at once and mixes voice and text rules; the reply points at the children instead. Threads are refused for a mechanical reason: `ThreadChannel` in discord.js has no overwrite manager, and a thread follows its parent, so `/lock` in a thread tells the moderator to lock the parent.
+- **Replies are plain Arabic text, not embeds.** The operator wants short answers and a fully Arabic bot. A translation dictionary was rejected: the server has one language, so a second lookup table would add a file to edit for every command and a way for keys to drift. Instead `src/lib/replies.js` renders `✅ **عنوان**` plus one optional line, and the Arabic lives next to the logic it explains. The icon replaces the embed colour, so tone survives. Commands that are really tables (`/help`, `/store`, `/coin-log`, `/exile-list`, `/perm list`, `/store-config list`) keep their embeds until a text layout is approved. Command names, aliases and `usage` stay English, because the prefix parser and slash names are Latin; descriptions and options are Arabic. `RLM` (`\u200F`) is exported for lines that mix Arabic with a mention, id or number, and every mixed line was checked for reordering — the failure mode is visual, so it needs eyes, not tests.
 
 ## Known issues / caveats
 
@@ -1013,6 +1029,16 @@ Behavior that must be preserved:
 - [ ] Confirm the website shows the bot online, then test one read command (member lookup or stats) and one write command (send an embed) before trusting the rest. Only enable TCC if you trust the site owner: it can write files, deploy, restore the database and restart the bot. See `docs/tcc.md`.
 - [ ] If the close button still feels slow after this deploy, read the `[ticket] transcript` timing line in the console; the rename is already skipped when Discord rate-limits it.
 
+### Arabic conversion batches
+
+- [x] **Batch 1 (pilot):** shared reply layer, `run-command` errors, `services/moderation` refusals, and `lock`, `unlock`, `clear`, `kick`, `ban`, `unban`, `mute`, `unmute`, `timeout`, `untimeout` — replies, slash descriptions and audit reasons.
+- [ ] **Batch 2:** `nickname`, `role`, `perm`, `profile-edit`, `coins-config`, `store-config` (these build their own embeds today).
+- [ ] **Batch 3:** the six exile commands plus `exile-list` (keep its table embed, Arabic labels).
+- [ ] **Batch 4:** general category — `help` (embed, Arabic labels), `profile`/`rank`/`coins`/`coin-log` (keep list embed), `top`/`topchannels`/`compare`/`serverstats`/`lastseen`, `store`, `background`, `color`/`colors`, `alias`, `botinfo`, `ping`, avatars/banners, `backfill`, `emojibackfill`, `topemojis`.
+- [ ] **Batch 5:** community — `birthday`, `welcome` (card text), `ticket` (panels + transcript), `watch`, `summary`/`autoreport` (report labels), `glossary`, `autoreport`.
+- [ ] **Batch 6:** bot-posted content and card labels — birthday greetings, welcome cards, profile card labels, ticket transcripts.
+- [ ] **Batch 7 (optional):** the Store Activity UI (`src/activity/public`), still English.
+
 ## Verification used so far
 
 - `node --check` across all `src/**/*.js`.
@@ -1041,6 +1067,7 @@ Behavior that must be preserved:
 - XP edit test on a temp DB: `xp:+25` adds to the effective XP without changing Nightmare/Vex, `xp:-100` clamps at zero and stores only the removable offset, later base points do not inherit a debt, a direct +100 XP reaches level 2 and pays exactly 5 level coins (written as an `earn` ledger row), and the slash `/profile-edit xp:25` path renders `**XP:** 30 → 55` plus the new level block.
 - Character store test on a temp DB: Manage-Server create with a 400×600 upload stores a 225×350 JPEG, the storefront returns the catalogue and default visible/100-coin reservation settings, buying charges atomically and marks the card owned (a second buy is refused as a limit), a non-manager is refused admin edits, hiding reservations blocks new ones but a pending one can still be renamed, a second pending reservation is refused, update keeps the id while changing name/price/art, delete removes the row and portrait, and both the character purchase and the reservation write `purchase` rows to the coin ledger. The new `character_reservations` table and its columns are checked directly.
 - Channel lock test on a temp DB with a fake guild and a permission-overwrite stub that merges patches like discord.js: `/lock` denies the five text permissions and saves the old bits, a second lock is a no-op that keeps the snapshot, `/unlock` restores a custom `SendMessages`/`AddReactions` allow and removes the empty overwrite it created, a hand-locked channel is reported as locked without a row and opens on `/unlock`, an open channel says **Not locked**, voice channels use `Connect`/`Speak`/`Stream`, categories are refused, threads are refused and point at their parent, a bot without **Manage Channels** refuses and writes nothing, and the command layer resolves `#mention`, raw id, the invoking channel and the slash channel option, plus the unknown-channel and unsupported-channel replies. The `channel_locks` row is read back from SQLite.
+- Arabic pilot test: `okReply`/`warnReply`/`errorReply` render `{ content }` with the right marker and one optional line, `permissionName` maps both string flags and flag values and falls back for unknown ones, the lock test asserts the Arabic replies and the `قفل قناة بواسطة` audit reason, and the fake-token boot still loads 53 commands / 8 events before failing cleanly on the token.
 - Nickname/role integration test with fake guild/member/role objects (107 checks): `/nickname` slash and prefix self-renames, reset words and an empty name, renaming another member with and without **Manage Nicknames**, mention targeting, the bot renaming itself, the server owner, hierarchy and bot-permission refusals, the 32-character cap, escaped markdown in the confirmation, and API failure messages; `/role` schema and Manage Roles default, toggle on/off, `+`/`-` in every accepted position, the words `add`/`remove`, idempotent add/remove, spaced role names, partial Arabic name search (`سكان` → `سكان البرج`), `@`-prefixed search, starts-with outranking contains, an ambiguous word (`رون`) refused with every candidate listed and nothing changed, a word with no match, member targeting, slash toggle/add/remove, `all`/`bots` bulk add/remove/toggle with skip and failure counts, `@everyone`/managed/higher-role refusals, higher-member refusal, missing bot permission, unknown role, usage text, and no-ping payloads.
 - Alias integration test on a temp DB (142 checks): store roundtrip, guild scoping, normalization (diacritics, alef variants, case, upsert in place), remove/clear, table creation; channel rules (allow/deny storage, mode switching clears the old list, removing the last channel resets, clear, category and thread inheritance, cache invalidation, cleanup on remove/clear); dispatch (`مسح 100` → `clear` with `["100"]`, quotes, no arguments, ordinary chat not hijacked, unknown word, missing permission stays silent, owner-only refused for others and allowed for the owner, broken target explained, slash-only target explained, a real command name outranks an alias and the alias returns when that command is removed, allow/deny silence incl. threads and the prefixed form); `messageCreate` for the bare and `:-`-prefixed forms with real commands unaffected; the command surface (add/update/remove/list, channel allow/deny/remove/clear/list, slash options and autocomplete, one-word/punctuation/emoji/length validation, command-name and built-in-alias refusal, unknown command, slash-only and `alias` targets, Manage Server guard on add/remove/channel but not list, prefixed and slashed command input cleaned, common-word warning, the 50-alias limit with updates still allowed, empty list, usage text, broken-row marker, footer count), `help <command>` merging custom aliases with built-ins (no aliases, merged field, resolving a custom alias, other commands excluded, built-in duplicate printed once), and the slash schema.
 - `node src/boot.js` with a fake token logs the runtime version, loads 53 commands / 8 events, then fails login cleanly with `TokenInvalid`.

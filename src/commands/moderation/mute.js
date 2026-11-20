@@ -21,25 +21,25 @@ import {
 export default {
   data: new SlashCommandBuilder()
     .setName('mute')
-    .setDescription('Mute a member with the Muted role')
+    .setDescription('اكتم عضوًا برتبة الكتم')
     .setContexts(InteractionContextType.Guild)
     .addUserOption((option) =>
-      option.setName('user').setDescription('Member to mute').setRequired(true),
+      option.setName('user').setDescription('العضو المطلوب كتمه').setRequired(true),
     )
     .addStringOption((option) =>
       option
         .setName('duration')
-        .setDescription('How long, e.g. 40s, 10m, 2h, 7d — leave empty until unmuted')
+        .setDescription('المدة، مثل 40s أو 10m أو 2h أو 7d — اتركها فاضية لين ينرفع الكتم')
         .setRequired(false)
         .setMaxLength(20),
     )
     .addStringOption((option) =>
-      option.setName('reason').setDescription('Why they are being muted').setRequired(false),
+      option.setName('reason').setDescription('سبب الكتم').setRequired(false),
     ),
 
   name: 'mute',
   aliases: ['mute-member'],
-  description: 'Mute a member with the Muted role, optionally for a limited time',
+  description: 'اكتم عضوًا برتبة الكتم، مع خيار المدة',
   category: 'Moderation',
   usage: 'mute <@member> [40s|10m|2h|7d] [reason]',
   cooldown: 3,
@@ -52,8 +52,8 @@ export default {
     if (!member) {
       await fail(
         ctx,
-        'Unknown member',
-        `Mention the member or paste their id, for example \`${ctx.isSlash ? '/mute user:@member 10m spam' : ':-mute @member 10m spam'}\`.`,
+        'العضو غير موجود',
+        `اذكر العضو أو الصق الآيدي، مثال: \`${ctx.isSlash ? '/mute user:@member 10m spam' : ':-mute @member 10m spam'}\`.`,
       );
       return;
     }
@@ -63,15 +63,15 @@ export default {
       actorProblem(ctx.guild, ctx.member, member);
 
     if (issue) {
-      await fail(ctx, 'Cannot mute that member', issue);
+      await fail(ctx, 'ما أقدر أكتم هذا العضو', issue);
       return;
     }
 
     if (member.permissions?.has(PermissionFlagsBits.Administrator)) {
       await fail(
         ctx,
-        'Cannot mute that member',
-        'That member has **Administrator**, which bypasses channel overwrites, so the mute would do nothing. Remove Administrator first.',
+        'ما يمكن كتم هذا العضو',
+        'عنده **Administrator**، وهذا يتجاوز صلاحيات القنوات فالكتم ما راح يأثر. شِل Administrator أول.',
       );
       return;
     }
@@ -88,8 +88,8 @@ export default {
         if (!durationMs) {
           await fail(
             ctx,
-            'Invalid duration',
-            `\`${String(rawDuration).slice(0, 30)}\` is not a duration. Use \`40s\`, \`10m\`, \`2h\` or \`7d\`.`,
+            'مدة غير صحيحة',
+            `\`${String(rawDuration).slice(0, 30)}\` مو مدة. استخدم \`40s\` أو \`10m\` أو \`2h\` أو \`7d\`.`,
           );
           return;
         }
@@ -111,14 +111,14 @@ export default {
     const setup = await ensureMuteRole(ctx.guild);
 
     if (setup.problem) {
-      await fail(ctx, 'Could not prepare the muted role', setup.problem);
+      await fail(ctx, 'تعذر تجهيز رتبة الكتم', setup.problem);
       return;
     }
 
     const roleIssue = muteRoleProblem(ctx.guild, setup.role);
 
     if (roleIssue) {
-      await fail(ctx, 'Cannot apply the muted role', roleIssue);
+      await fail(ctx, 'تعذر إعطاء رتبة الكتم', roleIssue);
       return;
     }
 
@@ -139,20 +139,20 @@ export default {
 
       await info(
         ctx,
-        'Already muted',
-        `${member} already has ${setup.role}.${
+        'مكتوم أصلًا',
+        `${member} عنده ${setup.role} من قبل.${
           durationMs
-            ? ` The timer is now **${formatDuration(durationMs)}**.`
-            : ' The mute is now indefinite until unmuted.'
+            ? ` صارت المدة الآن **${formatDuration(durationMs)}**.`
+            : ' صار الكتم مفتوح لين أحد يلغيه.'
         }`,
       );
       return;
     }
 
     try {
-      await member.roles.add(setup.role, `Muted by ${ctx.user.tag ?? ctx.user.username}: ${reason}`);
+      await member.roles.add(setup.role, `كتم بواسطة ${ctx.user.tag ?? ctx.user.username}: ${reason}`);
     } catch (error) {
-      await fail(ctx, 'Could not mute that member', apiProblem(error));
+      await fail(ctx, 'تعذر كتم العضو', apiProblem(error));
       return;
     }
 
@@ -175,23 +175,26 @@ export default {
     }
 
     const lines = [
-      `${member} is muted with ${setup.role} ${
-        durationMs ? `for **${formatDuration(durationMs)}**` : 'until someone unmutes them'
+      `${member} انكتم بـ ${setup.role} ${
+        durationMs ? `لمدة **${formatDuration(durationMs)}**` : 'لين أحد يلغي الكتم'
       }.`,
-      `**Reason:** ${reason}`,
+      `**السبب:** ${reason}`,
     ];
 
     if (setup.created) {
-      lines.push('', `Created the **${setup.role.name}** role and muted it in ${setup.updated} channel(s).`);
+      lines.push(
+        '',
+        `أنشأت رتبة **${setup.role.name}** وطبّقت الكتم في ${setup.updated} قناة.`,
+      );
     }
 
     if (setup.failed?.length) {
       lines.push(
         '',
-        `⚠️ ${setup.failed.length} channel(s) could not be muted. Check my **Manage Roles** permission and my role position.`,
+        `⚠️ ${setup.failed.length} قناة ما انكتمت. تأكد من صلاحية **إدارة الرتب** ومن ترتيب رتبتي.`,
       );
     }
 
-    await done(ctx, 'Member muted', lines.join('\n'));
+    await done(ctx, 'تم الكتم', lines.join('\n'));
   },
 };

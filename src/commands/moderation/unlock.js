@@ -17,18 +17,18 @@ import {
 export default {
   data: new SlashCommandBuilder()
     .setName('unlock')
-    .setDescription('Let members talk in a channel again')
+    .setDescription('اسمح للأعضاء بالكلام في قناة من جديد')
     .setContexts(InteractionContextType.Guild)
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels)
     .addChannelOption((option) =>
       option
         .setName('channel')
-        .setDescription('Channel to unlock — defaults to this one')
+        .setDescription('القناة المطلوبة — الافتراضي القناة الحالية')
         .setRequired(false),
     ),
 
   name: 'unlock',
-  description: 'Let members talk in a channel again (defaults to this one)',
+  description: 'اسمح للأعضاء بالكلام في قناة من جديد (الافتراضي الحالية)',
   category: 'Moderation',
   usage: 'unlock [#channel]',
   cooldown: 3,
@@ -51,31 +51,31 @@ export default {
 
     if (!result.ok) {
       if (result.reason === 'thread') {
-        await fail(ctx, 'Thread channel', threadProblem(channel));
+        await fail(ctx, 'قناة موضوع', threadProblem(channel));
       } else if (result.reason === 'unsupported') {
-        await fail(ctx, 'Unsupported channel', unsupportedProblem(channel));
+        await fail(ctx, 'قناة غير مدعومة', unsupportedProblem(channel));
       } else if (result.reason === 'bot-permissions') {
-        await fail(ctx, 'Missing permissions', botPermissionProblem(channel));
+        await fail(ctx, 'صلاحيات ناقصة', botPermissionProblem(channel));
       } else {
-        await fail(ctx, 'Could not unlock the channel', discordProblem(result));
+        await fail(ctx, 'تعذر فتح القناة', discordProblem(result));
       }
 
       return;
     }
 
     if (result.already) {
-      await info(ctx, 'Not locked', `${channel} is already open — nothing to restore.`);
+      await info(ctx, 'مفتوحة', `${channel} مفتوحة من قبل — ما فيه شيء أرجّعه.`);
       return;
     }
 
-    const lines = [`${channel} is open again.`];
+    const lines = [`${channel} رجعت مفتوحة.`];
 
     lines.push(
       result.restored
-        ? 'The permissions from before the lock are back.'
-        : 'I had no saved state for this channel, so I cleared the lock permissions instead of restoring an earlier setup. Check the channel if it had custom permissions before.',
+        ? 'الصلاحيات اللي كانت قبل القفل رجعت زي ما كانت.'
+        : 'ما عندي سجل لهذي القناة، فشلت صلاحيات القفل بدل ما أرجّع إعداد قديم. تأكد من القناة إذا كانت لها صلاحيات مخصصة.',
     );
 
-    await done(ctx, 'Channel unlocked', lines.join('\n'));
+    await done(ctx, 'تم فتح القناة', lines.join('\n'));
   },
 };

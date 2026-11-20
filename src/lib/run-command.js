@@ -1,6 +1,7 @@
-import { MessageFlags, PermissionsBitField } from 'discord.js';
+import { MessageFlags } from 'discord.js';
 import { config } from '../config.js';
-import { errorEmbed } from './embeds.js';
+import { permissionName } from './permissions.js';
+import { errorReply } from './replies.js';
 import { logger } from './logger.js';
 import { hasGrantForMember } from '../services/permission-store.js';
 
@@ -8,18 +9,6 @@ const cooldowns = new Map();
 
 function ephemeral(payload) {
   return { ...payload, flags: MessageFlags.Ephemeral };
-}
-
-function humanizePermission(flag) {
-  if (typeof flag === 'string') {
-    return flag.replace(/([a-z])([A-Z])/g, '$1 $2');
-  }
-
-  const name = Object.keys(PermissionsBitField.Flags).find(
-    (key) => PermissionsBitField.Flags[key] === flag,
-  );
-
-  return name ? name.replace(/([a-z])([A-Z])/g, '$1 $2') : String(flag);
 }
 
 function formatDuration(ms) {
@@ -41,7 +30,7 @@ function pruneCooldowns() {
 
 async function replyError(ctx, title, description) {
   try {
-    await ctx.reply(ephemeral({ embeds: [errorEmbed(title, description)] }));
+    await ctx.reply(ephemeral(errorReply(title, description)));
   } catch {
     // The interaction may have expired; nothing useful to do.
   }
@@ -55,12 +44,12 @@ export async function runCommand(command, ctx) {
   const { user, guild, member } = ctx;
 
   if (command.guildOnly && !guild) {
-    await replyError(ctx, 'Server only', 'This command can only be used inside a server.');
+    await replyError(ctx, 'السيرفر فقط', 'هذا الأمر يشتغل داخل السيرفر فقط.');
     return;
   }
 
   if (command.ownerOnly && !config.ownerIds.includes(user.id)) {
-    await replyError(ctx, 'Owner only', 'You are not allowed to run this command.');
+    await replyError(ctx, 'للمالك فقط', 'ما عندك صلاحية تشغيل هذا الأمر.');
     return;
   }
 
@@ -81,8 +70,8 @@ export async function runCommand(command, ctx) {
     if (missing.length > 0 && !granted) {
       await replyError(
         ctx,
-        'Missing permissions',
-        `You need: ${missing.map(humanizePermission).join(', ')}`,
+        'صلاحيات ناقصة',
+        `تحتاج: ${missing.map(permissionName).join('، ')}`,
       );
       return;
     }
@@ -101,8 +90,8 @@ export async function runCommand(command, ctx) {
     if (Date.now() < expiresAt) {
       await replyError(
         ctx,
-        'Slow down',
-        `Try again in ${formatDuration(expiresAt - Date.now())}.`,
+        'تمهّل',
+        `جرّب بعد ${formatDuration(expiresAt - Date.now())}.`,
       );
       return;
     }
@@ -139,9 +128,7 @@ export async function runCommand(command, ctx) {
       error,
     );
 
-    const payload = ephemeral({
-      embeds: [errorEmbed('Command failed', 'Something went wrong while running this command.')],
-    });
+    const payload = ephemeral(errorReply('فشل الأمر', 'صار خطأ أثناء تنفيذ الأمر.'));
 
     try {
       if (ctx.interaction) {
@@ -151,7 +138,7 @@ export async function runCommand(command, ctx) {
           await ctx.interaction.reply(payload);
         }
       } else {
-        await ctx.message.reply({ embeds: payload.embeds });
+        await ctx.message.reply({ content: payload.content });
       }
     } catch {
       // Ignore secondary failures.

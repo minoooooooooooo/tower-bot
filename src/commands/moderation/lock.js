@@ -17,18 +17,18 @@ import {
 export default {
   data: new SlashCommandBuilder()
     .setName('lock')
-    .setDescription('Stop members from talking in a channel')
+    .setDescription('أوقف كلام الأعضاء في قناة')
     .setContexts(InteractionContextType.Guild)
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels)
     .addChannelOption((option) =>
       option
         .setName('channel')
-        .setDescription('Channel to lock — defaults to this one')
+        .setDescription('القناة المطلوبة — الافتراضي القناة الحالية')
         .setRequired(false),
     ),
 
   name: 'lock',
-  description: 'Stop members from talking in a channel (defaults to this one)',
+  description: 'أوقف كلام الأعضاء في قناة (الافتراضي الحالية)',
   category: 'Moderation',
   usage: 'lock [#channel]',
   cooldown: 3,
@@ -51,13 +51,13 @@ export default {
 
     if (!result.ok) {
       if (result.reason === 'thread') {
-        await fail(ctx, 'Thread channel', threadProblem(channel));
+        await fail(ctx, 'قناة موضوع', threadProblem(channel));
       } else if (result.reason === 'unsupported') {
-        await fail(ctx, 'Unsupported channel', unsupportedProblem(channel));
+        await fail(ctx, 'قناة غير مدعومة', unsupportedProblem(channel));
       } else if (result.reason === 'bot-permissions') {
-        await fail(ctx, 'Missing permissions', botPermissionProblem(channel));
+        await fail(ctx, 'صلاحيات ناقصة', botPermissionProblem(channel));
       } else {
-        await fail(ctx, 'Could not lock the channel', discordProblem(result));
+        await fail(ctx, 'تعذر قفل القناة', discordProblem(result));
       }
 
       return;
@@ -68,21 +68,20 @@ export default {
     if (result.already) {
       await info(
         ctx,
-        'Already locked',
+        'مقفلة أصلًا',
         result.external
-          ? `${channel} is already locked, but not by me. ${unlockHint} will open it again.`
-          : `${channel} is already locked. ${unlockHint} will restore it.`,
+          ? `${channel} مقفلة أصلًا، لكن مو مني. ${unlockHint} يفتحها.`
+          : `${channel} مقفلة أصلًا. ${unlockHint} يرجّعها.`,
       );
       return;
     }
 
     await done(
       ctx,
-      'Channel locked',
+      'تم قفل القناة',
       [
-        `${channel} is locked. Members can no longer send messages, react, or start threads.`,
-        '',
-        `Open it again with ${unlockHint}.`,
+        `${channel} انقفلت. الأعضاء ما يقدرون يرسلون أو يتفاعلون أو ينشئون مواضيع.`,
+        `تفتحها بـ ${unlockHint}.`,
       ].join('\n'),
     );
   },

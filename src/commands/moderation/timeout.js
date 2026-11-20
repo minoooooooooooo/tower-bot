@@ -26,25 +26,25 @@ const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
 export default {
   data: new SlashCommandBuilder()
     .setName('timeout')
-    .setDescription('Time a member out (they cannot talk until it ends)')
+    .setDescription('اعطِ عضوًا تايم أوت (ما يقدر يتكلم لين ينتهي)')
     .setContexts(InteractionContextType.Guild)
     .addUserOption((option) =>
-      option.setName('user').setDescription('Member to time out').setRequired(true),
+      option.setName('user').setDescription('العضو المطلوب').setRequired(true),
     )
     .addStringOption((option) =>
       option
         .setName('duration')
-        .setDescription('How long, e.g. 40s, 10m, 2h, 7d (max 28d). Default 10m')
+        .setDescription('المدة، مثل 40s أو 10m أو 2h أو 7d (أقصاها 28 يومًا). الافتراضي 10m')
         .setRequired(false)
         .setMaxLength(20),
     )
     .addStringOption((option) =>
-      option.setName('reason').setDescription('Why they are being timed out').setRequired(false),
+      option.setName('reason').setDescription('سبب التايم أوت').setRequired(false),
     ),
 
   name: 'timeout',
   aliases: ['to'],
-  description: 'Time a member out for a fixed duration (max 28 days)',
+  description: 'اعطِ عضوًا تايم أوت لمدة محددة (أقصاها 28 يومًا)',
   category: 'Moderation',
   usage: 'timeout <@member> [duration] [reason]',
   cooldown: 3,
@@ -57,8 +57,8 @@ export default {
     if (!member) {
       await fail(
         ctx,
-        'Unknown member',
-        `Mention the member or paste their id, for example \`${ctx.isSlash ? '/timeout user:@member duration:10m' : ':-timeout @member 10m spam'}\`.`,
+        'العضو غير موجود',
+        `اذكر العضو أو الصق الآيدي، مثال: \`${ctx.isSlash ? '/timeout user:@member duration:10m' : ':-timeout @member 10m spam'}\`.`,
       );
       return;
     }
@@ -69,7 +69,7 @@ export default {
       botPermissionProblem(ctx.guild, PermissionFlagsBits.ModerateMembers, 'Moderate Members');
 
     if (issue) {
-      await fail(ctx, 'Cannot time that member out', issue);
+      await fail(ctx, 'ما أقدر أعطي هذا العضو تايم أوت', issue);
       return;
     }
 
@@ -83,8 +83,8 @@ export default {
       if (!durationMs) {
         await fail(
           ctx,
-          'Invalid duration',
-          `\`${String(rawDuration).slice(0, 30)}\` is not a duration. Use \`40s\`, \`10m\`, \`2h\` or \`7d\`.`,
+          'مدة غير صحيحة',
+          `\`${String(rawDuration).slice(0, 30)}\` مو مدة. استخدم \`40s\` أو \`10m\` أو \`2h\` أو \`7d\`.`,
         );
         return;
       }
@@ -97,7 +97,7 @@ export default {
     }
 
     if (durationMs > MAX_TIMEOUT_MS) {
-      await fail(ctx, 'Too long', 'Discord caps timeouts at **28 days**. Pick a shorter duration.');
+      await fail(ctx, 'المدة طويلة', 'ديسكورد يحدد التايم أوت بـ **28 يومًا** كحد أقصى. اختر مدة أقصر.');
       return;
     }
 
@@ -107,9 +107,9 @@ export default {
     const wasTimedOut = member.isCommunicationDisabled?.() ?? false;
 
     try {
-      await member.timeout(durationMs, `Timed out by ${ctx.user.tag ?? ctx.user.username}: ${reason}`);
+      await member.timeout(durationMs, `تايم أوت بواسطة ${ctx.user.tag ?? ctx.user.username}: ${reason}`);
     } catch (error) {
-      await fail(ctx, 'Could not time that member out', apiProblem(error));
+      await fail(ctx, 'تعذر التايم أوت', apiProblem(error));
       return;
     }
 
@@ -117,8 +117,8 @@ export default {
 
     await done(
       ctx,
-      'Member timed out',
-      `${member} cannot talk for **${formatDuration(durationMs)}**.\n**Reason:** ${reason}`,
+      'تم التايم أوت',
+      `${member} ما يقدر يتكلم لمدة **${formatDuration(durationMs)}**.\n**السبب:** ${reason}`,
     );
   },
 };

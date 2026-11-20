@@ -15,17 +15,17 @@ import { recordPunishment } from '../../services/profile-store.js';
 export default {
   data: new SlashCommandBuilder()
     .setName('kick')
-    .setDescription('Kick a member from the server')
+    .setDescription('اطرد عضوًا من السيرفر')
     .setContexts(InteractionContextType.Guild)
     .addUserOption((option) =>
-      option.setName('user').setDescription('Member to kick').setRequired(true),
+      option.setName('user').setDescription('العضو المطلوب طرده').setRequired(true),
     )
     .addStringOption((option) =>
-      option.setName('reason').setDescription('Why they are being kicked').setRequired(false),
+      option.setName('reason').setDescription('سبب الطرد').setRequired(false),
     ),
 
   name: 'kick',
-  description: 'Kick a member from the server',
+  description: 'اطرد عضوًا من السيرفر',
   category: 'Moderation',
   usage: 'kick <@member> [reason]',
   cooldown: 3,
@@ -38,8 +38,8 @@ export default {
     if (!member) {
       await fail(
         ctx,
-        'Unknown member',
-        `Mention the member or paste their id, for example \`${ctx.isSlash ? '/kick user:@member' : ':-kick @member spam'}\`.`,
+        'العضو غير موجود',
+        `اذكر العضو أو الصق الآيدي، مثال: \`${ctx.isSlash ? '/kick user:@member' : ':-kick @member spam'}\`.`,
       );
       return;
     }
@@ -50,7 +50,7 @@ export default {
       botPermissionProblem(ctx.guild, PermissionFlagsBits.KickMembers, 'Kick Members');
 
     if (issue) {
-      await fail(ctx, 'Cannot kick that member', issue);
+      await fail(ctx, 'ما أقدر أطرد هذا العضو', issue);
       return;
     }
 
@@ -59,14 +59,14 @@ export default {
     );
 
     try {
-      await member.kick(`Kicked by ${ctx.user.tag ?? ctx.user.username}: ${reason}`);
+      await member.kick(`طرد بواسطة ${ctx.user.tag ?? ctx.user.username}: ${reason}`);
     } catch (error) {
-      await fail(ctx, 'Could not kick that member', apiProblem(error));
+      await fail(ctx, 'تعذر طرد العضو', apiProblem(error));
       return;
     }
 
     recordPunishment(ctx.guildId, member.id, 'kick');
 
-    await done(ctx, 'Member kicked', `${member.user?.tag ?? member.id} was kicked.\n**Reason:** ${reason}`);
+    await done(ctx, 'تم الطرد', `${member.user?.tag ?? member.id} انطرد.\n**السبب:** ${reason}`);
   },
 };

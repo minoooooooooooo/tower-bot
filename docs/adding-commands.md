@@ -100,6 +100,21 @@ await ctx.reply({ content: 'Only you see this.', flags: MessageFlags.Ephemeral }
 
 The prefix path strips that flag automatically, so the same code works for `:-command`.
 
+## Replies
+
+Use the plain-text helpers from `src/lib/replies.js` instead of building an embed:
+
+```js
+import { ephemeral, errorReply, okReply } from '../../lib/replies.js';
+
+await ctx.reply(ephemeral(errorReply('العضو غير موجود', 'اذكر العضو أو الصق الآيدي.')));
+```
+
+- `okReply(title, body)` → `✅ **title**` plus an optional second line.
+- `warnReply` and `errorReply` use ⚠️ and ❌.
+- The text is Arabic. Keep it to one or two lines; join extra lines with `\n`.
+- Keep an embed only for list/table output (`/help`, `/store`, coin logs), where fields carry the layout.
+
 ## Notes
 
 - Files starting with `_` are ignored, so you can keep a template around as `_template.js`.

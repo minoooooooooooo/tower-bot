@@ -6,18 +6,18 @@ import { apiProblem, defaultReason, done, fail, info, slashReason } from './_sha
 export default {
   data: new SlashCommandBuilder()
     .setName('untimeout')
-    .setDescription('End a member’s timeout early')
+    .setDescription('أنهِ تايم أوت عضو قبل وقته')
     .setContexts(InteractionContextType.Guild)
     .addUserOption((option) =>
-      option.setName('user').setDescription('Member whose timeout ends').setRequired(true),
+      option.setName('user').setDescription('العضو المطلوب إنهاء التايم أوت عنه').setRequired(true),
     )
     .addStringOption((option) =>
-      option.setName('reason').setDescription('Why the timeout is ending').setRequired(false),
+      option.setName('reason').setDescription('سبب إنهاء التايم أوت').setRequired(false),
     ),
 
   name: 'untimeout',
   aliases: ['untimedout'],
-  description: 'End a member’s timeout early',
+  description: 'أنهِ تايم أوت عضو قبل وقته',
   category: 'Moderation',
   usage: 'untimeout <@member> [reason]',
   cooldown: 3,
@@ -30,8 +30,8 @@ export default {
     if (!member) {
       await fail(
         ctx,
-        'Unknown member',
-        `Mention the member or paste their id, for example \`${ctx.isSlash ? '/untimeout user:@member' : ':-untimeout @member'}\`.`,
+        'العضو غير موجود',
+        `اذكر العضو أو الصق الآيدي، مثال: \`${ctx.isSlash ? '/untimeout user:@member' : ':-untimeout @member'}\`.`,
       );
       return;
     }
@@ -41,12 +41,12 @@ export default {
       actorProblem(ctx.guild, ctx.member, member);
 
     if (issue) {
-      await fail(ctx, 'Cannot change that timeout', issue);
+      await fail(ctx, 'ما أقدر أعدّل هذا التايم أوت', issue);
       return;
     }
 
     if (!member.isCommunicationDisabled?.()) {
-      await info(ctx, 'Not timed out', `${member} is not currently timed out.`);
+      await info(ctx, 'ما عليه تايم أوت', `${member} ما عليه تايم أوت حاليًا.`);
       return;
     }
 
@@ -55,12 +55,12 @@ export default {
     );
 
     try {
-      await member.timeout(null, `Timeout ended by ${ctx.user.tag ?? ctx.user.username}: ${reason}`);
+      await member.timeout(null, `إنهاء تايم أوت بواسطة ${ctx.user.tag ?? ctx.user.username}: ${reason}`);
     } catch (error) {
-      await fail(ctx, 'Could not end the timeout', apiProblem(error));
+      await fail(ctx, 'تعذر إنهاء التايم أوت', apiProblem(error));
       return;
     }
 
-    await done(ctx, 'Timeout ended', `${member} can talk again.\n**Reason:** ${reason}`);
+    await done(ctx, 'انتهى التايم أوت', `${member} يقدر يتكلم من جديد.\n**السبب:** ${reason}`);
   },
 };

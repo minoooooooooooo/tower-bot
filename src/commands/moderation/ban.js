@@ -24,31 +24,31 @@ import {
 export default {
   data: new SlashCommandBuilder()
     .setName('ban')
-    .setDescription('Ban a user, optionally for a limited time')
+    .setDescription('احظر مستخدمًا، مع خيار الحظر المؤقت')
     .setContexts(InteractionContextType.Guild)
     .addUserOption((option) =>
-      option.setName('user').setDescription('User to ban').setRequired(false),
+      option.setName('user').setDescription('المستخدم المطلوب حظره').setRequired(false),
     )
     .addStringOption((option) =>
       option
         .setName('id')
-        .setDescription('User id, when they are not in the server')
+        .setDescription('آيدي المستخدم، إذا مو موجود في السيرفر')
         .setRequired(false)
         .setMaxLength(20),
     )
     .addStringOption((option) =>
       option
         .setName('duration')
-        .setDescription('Temporary ban, e.g. 40s, 10m, 2h, 7d — leave empty for permanent')
+        .setDescription('حظر مؤقت، مثل 40s أو 10m أو 2h أو 7d — اتركه فاضي للحظر الدائم')
         .setRequired(false)
         .setMaxLength(20),
     )
     .addStringOption((option) =>
-      option.setName('reason').setDescription('Why they are being banned').setRequired(false),
+      option.setName('reason').setDescription('سبب الحظر').setRequired(false),
     ),
 
   name: 'ban',
-  description: 'Ban a user permanently or for a limited time',
+  description: 'احظر مستخدمًا بشكل دائم أو لمدة محددة',
   category: 'Moderation',
   usage: 'ban <@user> [40s|10m|2h|7d] [reason]',
   cooldown: 3,
@@ -64,28 +64,28 @@ export default {
     if (!userId) {
       await fail(
         ctx,
-        'Unknown user',
-        `Mention the user or paste their id, for example \`${ctx.isSlash ? '/ban user:@name 7d raiding' : ':-ban 123456789012345678 7d raiding'}\`.`,
+        'المستخدم غير موجود',
+        `اذكر المستخدم أو الصق الآيدي، مثال: \`${ctx.isSlash ? '/ban user:@name 7d raiding' : ':-ban 123456789012345678 7d raiding'}\`.`,
       );
       return;
     }
 
     if (userId === ctx.user.id) {
-      await fail(ctx, 'Cannot ban yourself', 'Pick another user.');
+      await fail(ctx, 'ما تقدر تحظر نفسك', 'اختر مستخدمًا ثاني.');
       return;
     }
 
     if (userId === ctx.guild.ownerId) {
       await fail(
         ctx,
-        'Cannot ban the owner',
-        'The server owner cannot be banned — the owner bypasses every permission.',
+        'ما يمكن حظر المالك',
+        'مالك السيرفر ما ينحظر — المالك يتجاوز كل الصلاحيات.',
       );
       return;
     }
 
     if (userId === client.user?.id) {
-      await fail(ctx, 'Cannot ban me', 'Pick another user.');
+      await fail(ctx, 'ما تقدر تحظرني', 'اختر مستخدمًا ثاني.');
       return;
     }
 
@@ -99,7 +99,7 @@ export default {
         actorProblem(ctx.guild, ctx.member, member);
 
       if (issue) {
-        await fail(ctx, 'Cannot ban that member', issue);
+        await fail(ctx, 'ما أقدر أحظر هذا العضو', issue);
         return;
       }
     }
@@ -111,7 +111,7 @@ export default {
     );
 
     if (permissionIssue) {
-      await fail(ctx, 'Cannot ban members', permissionIssue);
+      await fail(ctx, 'ما أقدر أحظر', permissionIssue);
       return;
     }
 
@@ -127,8 +127,8 @@ export default {
         if (!durationMs) {
           await fail(
             ctx,
-            'Invalid duration',
-            `\`${String(rawDuration).slice(0, 30)}\` is not a duration. Use \`40s\`, \`10m\`, \`2h\` or \`7d\`.`,
+            'مدة غير صحيحة',
+            `\`${String(rawDuration).slice(0, 30)}\` مو مدة. استخدم \`40s\` أو \`10m\` أو \`2h\` أو \`7d\`.`,
           );
           return;
         }
@@ -152,11 +152,11 @@ export default {
 
     try {
       await ctx.guild.members.ban(userId, {
-        reason: `Banned by ${ctx.user.tag ?? ctx.user.username}: ${reason}`,
+        reason: `حظر بواسطة ${ctx.user.tag ?? ctx.user.username}: ${reason}`,
         deleteMessageSeconds: 0,
       });
     } catch (error) {
-      await fail(ctx, 'Could not ban that user', apiProblem(error));
+      await fail(ctx, 'تعذر الحظر', apiProblem(error));
       return;
     }
 
@@ -176,16 +176,16 @@ export default {
     }
 
     const lines = [
-      `${user?.tag ?? `<@${userId}>`} is banned ${
-        durationMs ? `for **${formatDuration(durationMs)}**` : 'permanently'
+      `${user?.tag ?? `<@${userId}>`} انحظر ${
+        durationMs ? `لمدة **${formatDuration(durationMs)}**` : 'دائمًا'
       }.`,
-      `**Reason:** ${reason}`,
+      `**السبب:** ${reason}`,
     ];
 
     if (durationMs) {
-      lines.push('', '_Temporary bans are lifted by the scheduler within a minute of expiring._');
+      lines.push('الحظر المؤقت ينرفع تلقائيًا خلال دقيقة من انتهائه.');
     }
 
-    await done(ctx, 'User banned', lines.join('\n'));
+    await done(ctx, 'تم الحظر', lines.join('\n'));
   },
 };
