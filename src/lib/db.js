@@ -501,6 +501,19 @@ const SCHEMA = `
   CREATE INDEX IF NOT EXISTS character_reservations_pending
     ON character_reservations (guild_id, status, id);
 
+  -- Channels the bot locked, with the @everyone bits that were in place before
+  -- the lock. Saving the old allow/deny lets /unlock put a channel back exactly
+  -- as it was instead of allowing everyone to talk again.
+  CREATE TABLE IF NOT EXISTS channel_locks (
+    guild_id   TEXT    NOT NULL,
+    channel_id TEXT    NOT NULL,
+    allow      TEXT    NOT NULL,
+    deny       TEXT    NOT NULL,
+    locked_by  TEXT,
+    locked_at  INTEGER NOT NULL,
+    PRIMARY KEY (guild_id, channel_id)
+  );
+
   -- Dry-run counterpart to activity_backfill. It walks the same channels but
   -- only counts what it sees, so the totals can be checked without writing.
   CREATE TABLE IF NOT EXISTS activity_backfill_audit (

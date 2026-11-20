@@ -32,7 +32,7 @@ https://discord.com/oauth2/authorize?client_id=YOUR_CLIENT_ID&scope=bot%20applic
 
 That permission value grants: View Channels, Send Messages, Send Messages in Threads, Embed Links, Read Message History, Add Reactions, Use External Emojis, Manage Roles, Manage Messages.
 
-**Manage Roles** powers the birthday roles **and the exile roles**; **Manage Messages** powers `/clear`. Discord's role hierarchy still prevents the bot from touching any role above its own — so it cannot escalate itself.
+**Manage Roles** powers the birthday roles **and the exile roles**; **Manage Messages** powers `/clear`; **Manage Channels** powers `/lock` and `/unlock`. Discord's role hierarchy still prevents the bot from touching any role above its own — so it cannot escalate itself.
 
 If you already invited the bot with an older link, re-open the invite URL above and authorize again; Discord updates the bot's permissions in place. Alternatively, grant the missing permissions to the bot's role manually.
 
@@ -92,6 +92,8 @@ Both run `src/boot.js`, which checks the Node version before loading the bot and
 | `/welcome <subcommand>` | `:-greet` | Welcome cards for new members: six styles, random or rotating, editable text |
 | `/ticket <subcommand>` | `:-tickets`, `:-ticket-tool`, `:-support` | Named customizable panels with your own buttons, private channels, claiming, closing and HTML transcripts |
 | `/clear <amount> [user]` | `:-purge`, `:-prune` | Delete recent messages, optionally only from one member |
+| `/lock [#channel]` | — | Stop members from talking in a channel (defaults to this one) |
+| `/unlock [#channel]` | — | Put a locked channel back the way it was |
 | `/mute <@member> [duration] [reason]` | `:-mute-member` | Add the Muted role, optionally for a limited time |
 | `/unmute <@member> [reason]` | — | Remove the Muted role |
 | `/timeout <@member> [duration] [reason]` | `:-to` | Discord timeout, default 10m, max 28 days |
@@ -465,6 +467,23 @@ Required Discord permissions: `/mute` and `/unmute` need **Manage Roles**; `/tim
 - Ping the **member**, not a role — a role mention is rejected (`Unknown member`) rather than treated as "everyone".
 - The command's own message is **never counted**: `:-clear 1` removes the message above it, and with a member filter the command is skipped too. For slash commands there is no command message to skip.
 - After a prefix or alias run, the command message and the bot's confirmation are deleted **2 seconds** later, so the channel is left clean. Slash replies are ephemeral and vanish on their own.
+
+## Locking channels
+
+`/lock` closes a channel for normal members; `/unlock` opens it again. Both default to the channel you run them in, and both take an optional channel so one moderator can lock somewhere else:
+
+```
+/lock
+/lock #announcements
+:-lock #announcements
+```
+
+- Locking denies **Send Messages**, **Send Messages in Threads**, **Add Reactions** and thread creation to `@everyone`. Staff roles that are explicitly allowed to talk keep working — an explicit role allow beats the `@everyone` deny. In a **voice** channel it denies **Connect**, **Speak** and **Stream** instead.
+- The `@everyone` permissions from before the lock are saved in SQLite (`channel_locks`), so `/unlock` restores exactly that state. A channel that was already read-only stays read-only afterwards.
+- Locking twice is harmless: the second run reports **Already locked** and keeps the original snapshot, so an unlock never restores a lock.
+- Unlocking a channel the bot never locked clears the lock permissions and says so, because there is no earlier state to replay.
+- Categories are refused (`Unsupported channel`) — lock their channels one at a time. Threads are refused too: lock the parent channel, which the thread inherits.
+- Requires **Manage Channels** for the member (grantable with `/perm`) and for the bot in that channel. Every change is written to the audit log as `Channel locked/unlocked by <moderator>`.
 
 ## Exile (prison)
 
