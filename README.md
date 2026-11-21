@@ -439,7 +439,7 @@ The bot counts **messages** and **voice time** per member and per channel, then 
 
 All moderation commands are ephemeral for the moderator and use the audit-log reason `… by <moderator>: <reason>`.
 
-Moderation replies are short **Arabic plain text** (one or two lines with a ✅/⚠️/❌ marker) instead of embeds. Command names, aliases and usage stay English; slash descriptions are Arabic. Lists that are tables (`/help`, `/store`, `/coin-log`, `/exile-list`, `/perm list`, `/store-config list`) keep their embeds until they are redesigned.
+Moderation replies are short **Arabic plain text** (one or two lines with a ✅/⚠️/❌ marker, or ℹ️ for a neutral status) instead of embeds — including `/nickname`, `/role`, `/perm`, `/profile-edit`, `/coins-config` and `/store-config`. Command names, aliases and usage stay English; slash descriptions are Arabic. Lists that are tables (`/help`, `/store`, `/coin-log`, `/exile-list`, `/perm list`, `/store-config list`) keep their embeds until they are redesigned.
 
 - **Timed actions** accept `40s`, `10m`, `2h`, `7d`, `1w`, or a combination like `1d12h`:
   - `/mute @member 10m spam` adds the **Muted** role for ten minutes.

@@ -3,7 +3,7 @@ import {
   MessageFlags,
   SlashCommandBuilder,
 } from 'discord.js';
-import { COLORS, embed, errorEmbed } from '../../lib/embeds.js';
+import { errorReply, infoReply, okReply } from '../../lib/replies.js';
 import { resolveUser } from '../../lib/resolve.js';
 import { displayNameOf } from '../../lib/targets.js';
 import { linkedPoints } from '../../services/ebot-vex.js';
@@ -51,16 +51,16 @@ function summaryLines(before, after, changes, xpBefore = xpFor(before), xpAfter 
 
   if (changes.title !== undefined) {
     lines.push(
-      `**Title:** ${before.title ?? 'No Title'} → ${after.title ?? 'No Title'}`,
+      `**اللقب:** ${before.title ?? 'بدون لقب'} → ${after.title ?? 'بدون لقب'}`,
     );
   }
 
   if (changes.nightmare) {
-    lines.push(`**Nightmare points:** ${before.nightmare} → ${after.nightmare}`);
+    lines.push(`**نقاط الكابوس:** ${before.nightmare} → ${after.nightmare}`);
   }
 
   if (changes.vex) {
-    lines.push(`**Vex points:** ${before.vex} → ${after.vex}`);
+    lines.push(`**نقاط فيكس:** ${before.vex} → ${after.vex}`);
   }
 
   if (changes.xp) {
@@ -69,19 +69,17 @@ function summaryLines(before, after, changes, xpBefore = xpFor(before), xpAfter 
 
   if (changes.punishMini) {
     lines.push(
-      `**Punishment mini points:** ${before.punishMini} → ${after.punishMini} ` +
-        `(${displayedPunishments(after)} shown)`,
+      `**نقاط العقوبات:** ${before.punishMini} → ${after.punishMini} ` +
+        `(${displayedPunishments(after)} ظاهرة)`,
     );
   }
 
   if (changes.goodBehavior) {
-    lines.push(
-      `**Good behavior:** ${before.goodBehavior} → ${after.goodBehavior}`,
-    );
+    lines.push(`**السلوك الحسن:** ${before.goodBehavior} → ${after.goodBehavior}`);
   }
 
   if (changes.coins) {
-    lines.push(`**Coins:** ${before.coins} → ${after.coins}`);
+    lines.push(`**الكوينز:** ${before.coins} → ${after.coins}`);
   }
 
   return lines;
@@ -91,11 +89,11 @@ function currentBlock(profile) {
   const xp = xpFor(profile);
 
   return [
-    `**Title:** ${profile.title ?? 'No Title'}`,
-    `**Nightmare:** ${profile.nightmare} · **Vex:** ${profile.vex} · **XP:** ${xp} (level ${levelFor(xp)})`,
-    `**Punishments:** ${displayedPunishments(profile)} (${profile.punishMini} mini points)`,
-    `**Good behavior:** ${profile.goodBehavior}`,
-    `**Coins:** ${profile.coins}`,
+    `**اللقب:** ${profile.title ?? 'بدون لقب'}`,
+    `**الكابوس:** ${profile.nightmare} · **فيكس:** ${profile.vex} · **XP:** ${xp} (مستوى ${levelFor(xp)})`,
+    `**العقوبات:** ${displayedPunishments(profile)} (${profile.punishMini} نقطة صغيرة)`,
+    `**السلوك الحسن:** ${profile.goodBehavior}`,
+    `**الكوينز:** ${profile.coins}`,
   ].join('\n');
 }
 
@@ -159,14 +157,14 @@ function prefixChanges(tokens) {
     if (!field) {
       return {
         changes,
-        problem: `\`${tokens[index]}\` is not a field. Use **nightmare**, **vex**, **xp**, **punishment**, **behavior**, **coins**, or **title**.`,
+        problem: `\`${tokens[index]}\` مو حقل معروف. استخدم **nightmare**، **vex**، **xp**، **punishment**، **behavior**، **coins**، أو **title**.`,
       };
     }
 
     if (value === null) {
       return {
         changes,
-        problem: `**${tokens[index]}** needs a number, for example \`+5\` or \`-2\`.`,
+        problem: `**${tokens[index]}** يحتاج رقم، مثل \`+5\` أو \`-2\`.`,
       };
     }
 
@@ -191,58 +189,58 @@ function hasChange(changes) {
 export default {
   data: new SlashCommandBuilder()
     .setName('profile-edit')
-    .setDescription('Edit a member’s profile title, points and XP')
+    .setDescription('عدّل لقب عضو ونقاطه و XP')
     .setContexts(InteractionContextType.Guild)
     .addUserOption((option) =>
-      option.setName('user').setDescription('Member to edit').setRequired(true),
+      option.setName('user').setDescription('العضو اللي تبي تعدّله').setRequired(true),
     )
     .addStringOption((option) =>
       option
         .setName('title')
-        .setDescription(`New title (max ${MAX_TITLE_LENGTH}), or "reset" to clear it`)
+        .setDescription(`اللقب الجديد (حد ${MAX_TITLE_LENGTH} حرف)، أو "reset" يمسحه`)
         .setRequired(false)
         .setMaxLength(MAX_TITLE_LENGTH),
     )
     .addIntegerOption((option) =>
       option
         .setName('nightmare')
-        .setDescription('Add or subtract nightmare points, e.g. 10 or -5')
+        .setDescription('زد أو انقص نقاط الكابوس، مثل 10 أو -5')
         .setRequired(false),
     )
     .addIntegerOption((option) =>
       option
         .setName('vex')
-        .setDescription('Add or subtract vex points, e.g. 10 or -5')
+        .setDescription('زد أو انقص نقاط فيكس، مثل 10 أو -5')
         .setRequired(false),
     )
     .addIntegerOption((option) =>
       option
         .setName('xp')
-        .setDescription('Add or subtract XP directly, e.g. 25 or -10')
+        .setDescription('زد أو انقص XP مباشرة، مثل 25 أو -10')
         .setRequired(false),
     )
     .addIntegerOption((option) =>
       option
         .setName('punishment')
-        .setDescription('Add or subtract punishment mini points (7 = one punishment)')
+        .setDescription('زد أو انقص نقاط العقوبات (7 = عقوبة واحدة)')
         .setRequired(false),
     )
     .addIntegerOption((option) =>
       option
         .setName('behavior')
-        .setDescription('Add or subtract good behavior points')
+        .setDescription('زد أو انقص نقاط السلوك الحسن')
         .setRequired(false),
     )
     .addIntegerOption((option) =>
       option
         .setName('coins')
-        .setDescription('Add or subtract coins, e.g. 25 or -10')
+        .setDescription('زد أو انقص الكوينز، مثل 25 أو -10')
         .setRequired(false),
     ),
 
   name: 'profile-edit',
   aliases: ['editprofile', 'profile-points'],
-  description: 'Edit a member’s profile title, points and XP',
+  description: 'عدّل لقب عضو ونقاطه و XP',
   category: 'Moderation',
   usage:
     'profile-edit <@member> [title <text>] [nightmare <±n>] [vex <±n>] [xp <±n>] [punishment <±n>] [behavior <±n>] [coins <±n>]',
@@ -260,15 +258,13 @@ export default {
     }
 
     if (!user) {
-      await ctx.reply(
-        ephemeral({
-          embeds: [
-            errorEmbed(
-              'Unknown user',
-              `Mention the member or paste their id, for example \`${ctx.isSlash ? '/profile-edit user:@member vex:10' : ':-profile-edit @member vex +10'}\`.`,
-            ),
-          ],
-        }),
+      await ctx.fail(
+        ephemeral(
+          errorReply(
+            'عضو غير معروف',
+            `منشن العضو أو الصق آيدي، مثل \`${ctx.isSlash ? '/profile-edit user:@member vex:10' : ':-profile-edit @member vex +10'}\`.`,
+          ),
+        ),
       );
       return;
     }
@@ -281,7 +277,7 @@ export default {
       const parsed = prefixChanges(ctx.args.slice(1));
 
       if (parsed.problem) {
-        await ctx.reply(ephemeral({ embeds: [errorEmbed('Invalid edit', parsed.problem)] }));
+        await ctx.fail(ephemeral(errorReply('تعديل غير صحيح', parsed.problem)));
         return;
       }
 
@@ -319,16 +315,16 @@ export default {
       );
 
       await ctx.reply(
-        ephemeral({
-          embeds: [
-            embed({
-              title: `${name} · profile points`,
-              description: currentBlock(stats),
-              color: COLORS.primary,
-              footer: `Rank: ${stats.rank ? `#${stats.rank}` : 'none'} · XP: ${stats.xp}`,
-            }),
-          ],
-        }),
+        ephemeral(
+          infoReply(
+            `${name} · نقاط الملف`,
+            [
+              currentBlock(stats),
+              '',
+              `**الترتيب:** ${stats.rank ? `#${stats.rank}` : 'ما فيه'} · **XP:** ${stats.xp}`,
+            ].join('\n'),
+          ),
+        ),
       );
       return;
     }
@@ -374,24 +370,19 @@ export default {
     );
 
     await ctx.reply(
-      ephemeral({
-        embeds: [
-          embed({
-            title: `${name} · profile updated`,
-            description: lines.join('\n'),
-            color: COLORS.success,
-            fields: [
-              {
-                name: 'Now',
-                value: currentBlock(after),
-              },
-            ],
-            footer:
-              `XP: ${stats.xp} · Level ${stats.level} · ${stats.progress} / 100` +
-              ` · Coins ${stats.coins}`,
-          }),
-        ],
-      }),
+      ephemeral(
+        okReply(
+          `${name} · تم التحديث`,
+          [
+            lines.join('\n'),
+            '',
+            '**الحين**',
+            currentBlock(after),
+            '',
+            `**XP:** ${stats.xp} · **المستوى** ${stats.level} · **التقدّم** ${stats.progress} / 100 · **الكوينز** ${stats.coins}`,
+          ].join('\n'),
+        ),
+      ),
     );
   },
 };

@@ -4,8 +4,8 @@ import {
   PermissionFlagsBits,
   SlashCommandBuilder,
 } from 'discord.js';
-import { COLORS, embed, errorEmbed, successEmbed } from '../../lib/embeds.js';
 import { createLogger } from '../../lib/logger.js';
+import { errorReply, okReply, warnReply } from '../../lib/replies.js';
 import { findRoleMatches, parseReference, resolveMember, resolveRole } from '../../lib/resolve.js';
 
 const logger = createLogger('role');
@@ -14,7 +14,6 @@ const logger = createLogger('role');
 // holding the interaction open until it expires; the summary says when it bites.
 const BULK_LIMIT = 500;
 
-const ACTION_LABELS = { add: 'Added', remove: 'Removed', toggle: 'Toggled' };
 const ACTION_WORDS = { add: 'add', '+': 'add', remove: 'remove', '-': 'remove', toggle: 'toggle' };
 const TARGET_WORDS = { all: 'humans', humans: 'humans', bots: 'bots' };
 
@@ -26,12 +25,12 @@ const USAGE = {
     '/role bulk action:add role:@Role target:humans',
   ],
   prefix: [
-    ':-role @Role            toggle it on yourself',
-    ':-role +@Role           add it to yourself',
-    ':-role -@Role           remove it from yourself',
-    ':-role @member +@Role   add it to one member',
-    ':-role all +@Role       add it to every human member',
-    ':-role bots -@Role      remove it from every bot',
+    ':-role @Role            بدّلها على نفسك',
+    ':-role +@Role           ضيفها لنفسك',
+    ':-role -@Role           اشلها من نفسك',
+    ':-role @member +@Role   ضيفها لعضو واحد',
+    ':-role all +@Role       ضيفها لكل الأعضاء',
+    ':-role bots -@Role      اشلها من كل البوتات',
   ],
 };
 
@@ -44,16 +43,16 @@ function ephemeral(payload) {
 }
 
 function reasonFor(ctx) {
-  return `Role command: ${ctx.user.tag ?? ctx.user.username}`.slice(0, 500);
+  return `أمر الرتبة بواسطة ${ctx.user.tag ?? ctx.user.username}`.slice(0, 500);
 }
 
 function usageLines(ctx) {
   const examples = ctx.isSlash ? USAGE.slash : USAGE.prefix;
-  return ['**Usage:**', ...examples.map((line) => `\`${line}\``)].join('\n');
+  return ['**الاستخدام:**', ...examples.map((line) => `\`${line}\``)].join('\n');
 }
 
 function fail(ctx, title, description) {
-  return ctx.fail(ephemeral({ embeds: [errorEmbed(title, description)] }));
+  return ctx.fail(ephemeral(errorReply(title, description)));
 }
 
 function respond(ctx, payload) {
@@ -63,31 +62,39 @@ function respond(ctx, payload) {
   return ctx.reply(body);
 }
 
+function done(ctx, title, description) {
+  return respond(ctx, ephemeral(okReply(title, description)));
+}
+
+function info(ctx, title, description) {
+  return respond(ctx, ephemeral(warnReply(title, description)));
+}
+
 function apiProblem(error) {
   if (error?.code === 50013) {
-    return 'Discord says I do not have permission. Check **Manage Roles** and that my highest role sits above the target and the role.';
+    return 'ديسكورد يقول ما عندي صلاحية. تأكد من **إدارة الرتب** وأن رتبتي فوق رتبة الهدف والرتبة المطلوبة.';
   }
 
   if (error?.code === 50035) {
-    return 'Discord rejected the request as invalid. Double-check the role and the member.';
+    return 'ديسكورد رفض الطلب كأنه غير صالح. راجع الرتبة والعضو.';
   }
 
   if (error?.code === 429 || /rate limit/i.test(String(error?.message))) {
-    return 'Discord is rate limiting role changes. Wait a minute and try again.';
+    return 'ديسكورد يحدّ تغييرات الرتب الآن. انتظر دقيقة وجرّب مرة ثانية.';
   }
 
   return error?.message
-    ? `Discord said: ${String(error.message).slice(0, 300)}`
-    : 'Something went wrong while changing the role.';
+    ? `ديسكورد قال: ${String(error.message).slice(0, 300)}`
+    : 'صار خطأ وأنا أغيّر الرتبة.';
 }
 
 function botProblem(guild) {
   const me = guild.members?.me;
 
-  if (!me) return 'I could not read my own server profile. Try again in a moment.';
+  if (!me) return 'ما قدرت أقرأ ملفي في السيرفر. جرّب بعد لحظة.';
 
   if (!me.permissions?.has(PermissionFlagsBits.ManageRoles)) {
-    return 'I need the **Manage Roles** permission to change roles.';
+    return 'أحتاج صلاحية **إدارة الرتب** عشان أغيّر الرتب.';
   }
 
   return null;
@@ -96,21 +103,21 @@ function botProblem(guild) {
 /** Refuses roles Discord will not let a bot assign by hand. */
 function roleProblem(guild, role) {
   if (!role) {
-    return 'Pick a role — mention it (`@Role`), paste its id, or type its exact name.';
+    return 'حدّد الرتبة — منشنها (`@Role`)، الصق آيديها، أو اكتب اسمها بالضبط.';
   }
 
   if (role.id === guild.id) {
-    return 'The **@everyone** role cannot be added or removed.';
+    return 'رتبة **@everyone** ما تنضاف ولا تنشال.';
   }
 
   if (role.managed) {
-    return `**${role.name}** is managed by an integration and cannot be assigned by hand.`;
+    return `**${role.name}** مرتبطة بتكامل وما تنضاف يدويًا.`;
   }
 
   const botTop = guild.members?.me?.roles?.highest?.position ?? 0;
 
   if ((role.position ?? 0) >= botTop) {
-    return `My highest role must sit **above ${role.name}**. Drag my role up in **Server Settings → Roles**, then try again.`;
+    return `رتبتي لازم تكون **فوق ${role.name}**. ارفع رتبتي في **إعدادات السيرفر → الرتب** وجرّب مرة ثانية.`;
   }
 
   return null;
@@ -118,16 +125,16 @@ function roleProblem(guild, role) {
 
 /** Refuses members the bot cannot outrank. Managing its own roles is allowed. */
 function memberProblem(member, me) {
-  if (!member) return 'Pick a member of this server.';
-  if (!me) return 'I could not read my own server profile. Try again in a moment.';
+  if (!member) return 'حدّد عضو من هذا السيرفر.';
+  if (!me) return 'ما قدرت أقرأ ملفي في السيرفر. جرّب بعد لحظة.';
   if (member.id === me.id) return null;
 
   const botTop = me.roles?.highest?.position ?? 0;
   const memberTop = member.roles?.highest?.position ?? 0;
 
   if (memberTop >= botTop) {
-    const name = member.displayName ?? member.user?.username ?? 'That member';
-    return `**${name}** sits at or above my highest role, so I cannot change their roles. Move my role higher first.`;
+    const name = member.displayName ?? member.user?.username ?? 'هذا العضو';
+    return `**${name}** رتبته أعلى من رتبتي أو نفسها، فما أقدر أغيّر رتبه. ارفع رتبتي أول.`;
   }
 
   return null;
@@ -243,7 +250,7 @@ async function runSingle(ctx, member, role, action) {
   const problem = memberProblem(member, me);
 
   if (problem) {
-    await fail(ctx, 'Cannot change that member', problem);
+    await fail(ctx, 'ما أقدر أغيّر هذا العضو', problem);
     return;
   }
 
@@ -251,36 +258,42 @@ async function runSingle(ctx, member, role, action) {
 
   try {
     const result = await applyRole(member, role, action, reasonFor(ctx));
-    const who = member.id === ctx.user.id ? 'you' : `${member}`;
+    const self = member.id === ctx.user.id;
 
-    const description =
-      result === 'added'
-        ? `Added ${role} to ${who}.`
-        : result === 'removed'
-          ? `Removed ${role} from ${who}.`
-          : action === 'add'
-            ? `${role} is already on ${who}.`
-            : `${role} is not on ${who}.`;
+    if (result === 'added') {
+      await done(
+        ctx,
+        'تمت إضافة الرتبة',
+        self ? `أضفت ${role} لحسابك.` : `أضفت ${role} لـ ${member}.`,
+      );
+      return;
+    }
 
-    const title =
-      result === 'unchanged'
-        ? 'Nothing to change'
-        : result === 'added'
-          ? 'Role added'
-          : 'Role removed';
+    if (result === 'removed') {
+      await done(
+        ctx,
+        'تمت إزالة الرتبة',
+        self ? `أزلت ${role} من حسابك.` : `أزلت ${role} من ${member}.`,
+      );
+      return;
+    }
 
-    await respond(ctx, {
-      embeds: [
-        embed({
-          title,
-          description,
-          color: result === 'unchanged' ? COLORS.muted : COLORS.success,
-        }),
-      ],
-    });
+    const alreadyThere = action === 'add';
+
+    await info(
+      ctx,
+      'ما تغيّر شيء',
+      alreadyThere
+        ? self
+          ? `${role} على حسابك أصلًا.`
+          : `${role} على ${member} أصلًا.`
+        : self
+          ? `${role} مو على حسابك أصلًا.`
+          : `${role} مو على ${member} أصلًا.`,
+    );
   } catch (error) {
     logger.warn(`Role change failed for ${member.id} on ${role.id}: ${error.message}`);
-    await fail(ctx, 'Could not change the role', apiProblem(error));
+    await fail(ctx, 'ما قدرت أغيّر الرتبة', apiProblem(error));
   }
 }
 
@@ -307,25 +320,39 @@ async function runBulk(ctx, target, role, action) {
     }
   }
 
-  const audience = target === 'bots' ? 'bots' : 'human members';
+  const audience = target === 'bots' ? 'البوتات' : 'الأعضاء';
+  const verb = action === 'add' ? 'إضافة' : action === 'remove' ? 'إزالة' : 'تبديل';
+  const okTitle =
+    action === 'add'
+      ? 'تمت إضافة الرتبة'
+      : action === 'remove'
+        ? 'تمت إزالة الرتبة'
+        : 'تم تبديل الرتبة';
+  const warnTitle =
+    action === 'add'
+      ? 'تمت الإضافة مع أخطاء'
+      : action === 'remove'
+        ? 'تمت الإزالة مع أخطاء'
+        : 'تم التبديل مع أخطاء';
+
   const lines = [
-    `${role} — **${ACTION_LABELS[action].toLowerCase()}** for ${audience}.`,
+    `${role} · ${verb} لـ ${audience}`,
     '',
-    `**Added:** ${counts.added}`,
-    `**Removed:** ${counts.removed}`,
-    `**Already correct:** ${counts.unchanged}`,
-    `**Skipped:** ${counts.skipped}${counts.skipped ? ' (higher than my role)' : ''}`,
+    `أُضيفت: **${counts.added}**`,
+    `أُزيلت: **${counts.removed}**`,
+    `ما تغيّرت: **${counts.unchanged}**`,
+    `انخطى: **${counts.skipped}**${counts.skipped ? ' (رتبتهم أعلى من رتبتي)' : ''}`,
   ];
 
   if (counts.failed) {
-    lines.push(`**Failed:** ${counts.failed}`);
+    lines.push(`فشل: **${counts.failed}**`);
     if (firstFailure) lines.push(`> ${firstFailure}`);
   }
 
   if (members.length > BULK_LIMIT) {
     lines.push(
       '',
-      `Only the first **${BULK_LIMIT}** members were processed — run it again for the rest.`,
+      `عالجت أول **${BULK_LIMIT}** عضو فقط — شغّله مرة ثانية للباقي.`,
     );
   }
 
@@ -333,15 +360,13 @@ async function runBulk(ctx, target, role, action) {
     `${ctx.user.tag ?? ctx.user.username} (${ctx.user.id}) ${action} ${role.name} (${role.id}) for ${members.length} ${audience}: +${counts.added} -${counts.removed} =${counts.unchanged} skip${counts.skipped} fail${counts.failed}`,
   );
 
-  await respond(ctx, {
-    embeds: [
-      embed({
-        title: `Bulk ${action}: ${role.name}`,
-        description: lines.join('\n'),
-        color: counts.failed ? COLORS.warning : COLORS.success,
-      }),
-    ],
-  });
+  const payload = ephemeral(
+    counts.failed
+      ? warnReply(warnTitle, lines.join('\n'))
+      : okReply(okTitle, lines.join('\n')),
+  );
+
+  await respond(ctx, payload);
 }
 
 /** Escapes the typed word so bold/italic characters cannot break the reply. */
@@ -354,29 +379,27 @@ function ambiguousRoleDescription(text, matches) {
   const lines = shown.map((role) => `• **${role.name}**`);
 
   if (matches.length > shown.length) {
-    lines.push(`…and **${matches.length - shown.length}** more.`);
+    lines.push(`…و **${matches.length - shown.length}** غيرها.`);
   }
 
   return [
-    `**${display(text)}** matches **${matches.length}** roles:`,
+    `**${display(text)}** يطابق **${matches.length}** رتب:`,
     ...lines,
     '',
-    'Type more of the name, or mention the role.',
+    'اكتب جزء أكثر من الاسم، أو منشن الرتبة.',
   ].join('\n');
 }
 
 async function executePrefix(ctx) {
   if (ctx.args.length === 0) {
-    await ctx.reply(
-      ephemeral({ embeds: [embed({ title: 'Role command', description: usageLines(ctx) })] }),
-    );
+    await respond(ctx, ephemeral(warnReply('أمر الرتبة', usageLines(ctx))));
     return;
   }
 
   const { target, action, text } = await prefixPlan(ctx);
 
   if (!text) {
-    await fail(ctx, 'Which role?', `Give one role.\n\n${usageLines(ctx)}`);
+    await fail(ctx, 'أي رتبة؟', `حدّد رتبة واحدة.\n\n${usageLines(ctx)}`);
     return;
   }
 
@@ -395,16 +418,16 @@ async function executePrefix(ctx) {
 
   if (!role) {
     if (matches.length > 1) {
-      await fail(ctx, 'Ambiguous role', ambiguousRoleDescription(text, matches));
+      await fail(ctx, 'الرتبة غير واضحة', ambiguousRoleDescription(text, matches));
       return;
     }
 
     await fail(
       ctx,
-      'Unknown role',
+      'رتبة غير معروفة',
       ref
-        ? 'Pick a role — mention it (`@Role`), paste its id, or type its exact name.'
-        : `No role name contains **${display(text)}**. Check the spelling, mention the role, or paste its id.`,
+        ? 'حدّد الرتبة — منشنها (`@Role`)، الصق آيديها، أو اكتب اسمها بالضبط.'
+        : `ما فيه رتبة اسمها فيه **${display(text)}**. تأكد من الكتابة، أو منشن الرتبة، أو الصق آيديها.`,
     );
     return;
   }
@@ -412,7 +435,7 @@ async function executePrefix(ctx) {
   const problem = roleProblem(ctx.guild, role);
 
   if (problem) {
-    await fail(ctx, 'Cannot use that role', problem);
+    await fail(ctx, 'ما أقدر أستخدم هذي الرتبة', problem);
     return;
   }
 
@@ -424,7 +447,7 @@ async function executePrefix(ctx) {
   const member = target.kind === 'member' ? target.member : ctx.member;
 
   if (!member) {
-    await fail(ctx, 'Unknown member', 'Mention someone in this server, or paste their id.');
+    await fail(ctx, 'عضو غير معروف', 'منشن عضو من هذا السيرفر أو الصق الآيدي.');
     return;
   }
 
@@ -439,7 +462,7 @@ async function executeSlash(ctx) {
     const problem = roleProblem(ctx.guild, role);
 
     if (problem) {
-      await fail(ctx, role ? 'Cannot use that role' : 'Unknown role', problem);
+      await fail(ctx, role ? 'ما أقدر أستخدم هذي الرتبة' : 'رتبة غير معروفة', problem);
       return;
     }
 
@@ -455,7 +478,7 @@ async function executeSlash(ctx) {
   const problem = roleProblem(ctx.guild, role);
 
   if (problem) {
-    await fail(ctx, role ? 'Cannot use that role' : 'Unknown role', problem);
+    await fail(ctx, role ? 'ما أقدر أستخدم هذي الرتبة' : 'رتبة غير معروفة', problem);
     return;
   }
 
@@ -466,7 +489,7 @@ async function executeSlash(ctx) {
     : ctx.member;
 
   if (!member) {
-    await fail(ctx, 'Unknown member', 'Mention someone in this server, or paste their id.');
+    await fail(ctx, 'عضو غير معروف', 'منشن عضو من هذا السيرفر أو الصق الآيدي.');
     return;
   }
 
@@ -476,84 +499,84 @@ async function executeSlash(ctx) {
 export default {
   data: new SlashCommandBuilder()
     .setName('role')
-    .setDescription('Add, remove or toggle a role for yourself, a member, or everyone')
+    .setDescription('أضف رتبة أو اشلها أو بدّلها لك، لعضو، أو للكل')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles)
     .setContexts(InteractionContextType.Guild)
     .addSubcommand((sub) =>
       sub
         .setName('toggle')
-        .setDescription('Toggle the role: add it when missing, remove it when present')
+        .setDescription('بدّل الرتبة: يضيفها إذا مو موجودة ويشيلها إذا موجودة')
         .addRoleOption((option) =>
-          option.setName('role').setDescription('The role to toggle').setRequired(true),
+          option.setName('role').setDescription('الرتبة اللي تبي تبدّلها').setRequired(true),
         )
         .addUserOption((option) =>
           option
             .setName('user')
-            .setDescription('Member to change (defaults to you)')
+            .setDescription('العضو اللي تبي تغيّره (الافتراضي أنت)')
             .setRequired(false),
         ),
     )
     .addSubcommand((sub) =>
       sub
         .setName('add')
-        .setDescription('Add the role when the member does not have it')
+        .setDescription('أضف الرتبة للعضو إذا ما عنده إياها')
         .addRoleOption((option) =>
-          option.setName('role').setDescription('The role to add').setRequired(true),
+          option.setName('role').setDescription('الرتبة اللي تبي تضيفها').setRequired(true),
         )
         .addUserOption((option) =>
           option
             .setName('user')
-            .setDescription('Member to change (defaults to you)')
+            .setDescription('العضو اللي تبي تغيّره (الافتراضي أنت)')
             .setRequired(false),
         ),
     )
     .addSubcommand((sub) =>
       sub
         .setName('remove')
-        .setDescription('Remove the role when the member has it')
+        .setDescription('اشل الرتبة من العضو إذا عنده إياها')
         .addRoleOption((option) =>
-          option.setName('role').setDescription('The role to remove').setRequired(true),
+          option.setName('role').setDescription('الرتبة اللي تبي تشيلها').setRequired(true),
         )
         .addUserOption((option) =>
           option
             .setName('user')
-            .setDescription('Member to change (defaults to you)')
+            .setDescription('العضو اللي تبي تغيّره (الافتراضي أنت)')
             .setRequired(false),
         ),
     )
     .addSubcommand((sub) =>
       sub
         .setName('bulk')
-        .setDescription('Apply a role to every human member or every bot')
+        .setDescription('طبّق الرتبة على كل الأعضاء أو كل البوتات')
         .addStringOption((option) =>
           option
             .setName('action')
-            .setDescription('What to do with the role')
+            .setDescription('شنو تبي تسوي بالرتبة')
             .setRequired(true)
             .addChoices(
-              { name: 'Add', value: 'add' },
-              { name: 'Remove', value: 'remove' },
-              { name: 'Toggle', value: 'toggle' },
+              { name: 'إضافة', value: 'add' },
+              { name: 'إزالة', value: 'remove' },
+              { name: 'تبديل', value: 'toggle' },
             ),
         )
         .addRoleOption((option) =>
-          option.setName('role').setDescription('The role to change').setRequired(true),
+          option.setName('role').setDescription('الرتبة اللي تبي تغيّرها').setRequired(true),
         )
         .addStringOption((option) =>
           option
             .setName('target')
-            .setDescription('Who to change')
+            .setDescription('من تبي تغيّر')
             .setRequired(true)
             .addChoices(
-              { name: 'Humans', value: 'humans' },
-              { name: 'Bots', value: 'bots' },
+              { name: 'الأعضاء', value: 'humans' },
+              { name: 'البوتات', value: 'bots' },
             ),
         ),
     ),
 
   name: 'role',
   aliases: ['roles'],
-  description: 'Add, remove or toggle a role (Manage Roles)',
+  description: 'أضف رتبة أو اشلها أو بدّلها (إدارة الرتب)',
   category: 'Moderation',
   usage: 'role [all|bots] [@member] [+|-]<@role>',
   cooldown: 10,
@@ -564,7 +587,7 @@ export default {
     const problem = botProblem(ctx.guild);
 
     if (problem) {
-      await fail(ctx, 'Missing permissions', problem);
+      await fail(ctx, 'صلاحيات ناقصة', problem);
       return;
     }
 

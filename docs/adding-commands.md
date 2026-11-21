@@ -112,7 +112,9 @@ await ctx.reply(ephemeral(errorReply('العضو غير موجود', 'اذكر �
 
 - `okReply(title, body)` → `✅ **title**` plus an optional second line.
 - `warnReply` and `errorReply` use ⚠️ and ❌.
+- `infoReply(title, body)` (ℹ️) is for neutral output: current settings, a read-only view, a status. The moderation `_shared.js` exports `note()` for it.
 - The text is Arabic. Keep it to one or two lines; join extra lines with `\n`.
+- Put the useful fact first and the next step second, so a one-line phone preview still answers the question.
 - Keep an embed only for list/table output (`/help`, `/store`, coin logs), where fields carry the layout.
 
 ## Notes

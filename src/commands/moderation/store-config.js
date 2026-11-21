@@ -6,7 +6,8 @@ import {
 } from 'discord.js';
 import { config } from '../../config.js';
 import { formatNumber } from '../../lib/activity-format.js';
-import { COLORS, embed, errorEmbed, successEmbed, warningEmbed } from '../../lib/embeds.js';
+import { COLORS, embed } from '../../lib/embeds.js';
+import { errorReply, okReply, warnReply } from '../../lib/replies.js';
 import { resolveUser } from '../../lib/resolve.js';
 import {
   clearStoreOverride,
@@ -42,12 +43,8 @@ function ephemeral(payload) {
 async function requireManageServer(ctx) {
   if (ctx.member?.permissions?.has(PermissionFlagsBits.ManageGuild)) return true;
 
-  await ctx.reply(
-    ephemeral({
-      embeds: [
-        errorEmbed('Missing permissions', 'You need **Manage Server** to change the store.'),
-      ],
-    }),
+  await ctx.fail(
+    ephemeral(errorReply('صلاحيات ناقصة', 'تحتاج **إدارة السيرفر** عشان تغيّر المتجر.')),
   );
 
   return false;
@@ -82,8 +79,8 @@ function listEmbed(ctx) {
 
   const priceText = (item) =>
     item.price === item.defaultPrice
-      ? `**${formatNumber(item.price)}** coins`
-      : `**${formatNumber(item.price)}** coins (default ${formatNumber(item.defaultPrice)})`;
+      ? `**${formatNumber(item.price)}** كوينز`
+      : `**${formatNumber(item.price)}** كوينز (الأساسي ${formatNumber(item.defaultPrice)})`;
 
   const fields = plain.map((item) => {
     const sold = sales.get(item.key);
@@ -91,17 +88,17 @@ function listEmbed(ctx) {
     return {
       name: `\`${item.key}\` · ${item.name}`,
       value:
-        `${STORE_TYPE_LABELS[item.type] ?? item.type} · ${priceText(item)} · ${item.enabled ? 'on' : '**off**'}` +
-        ` · ${sold ? `${sold.count} sold (${formatNumber(sold.coins)} coins)` : 'never sold'}`,
+        `${STORE_TYPE_LABELS[item.type] ?? item.type} · ${priceText(item)} · ${item.enabled ? 'مفعّل' : '**مقفّل**'}` +
+        ` · ${sold ? `${sold.count} مبيعة (${formatNumber(sold.coins)} كوينز)` : 'ما انباع'}`,
       inline: false,
     };
   });
 
   if (designs.length === 0) {
     fields.push({
-      name: 'Store designs',
+      name: 'تصاميم المتجر',
       value:
-        'None. A design becomes a store item when its entry in the background manifest gets a `price`.',
+        'ما فيه. التصميم يصير صنف في المتجر لما ينضاف له `price` في قائمة الخلفيات.',
       inline: false,
     });
   } else {
@@ -114,14 +111,14 @@ function listEmbed(ctx) {
       const parts = Math.ceil(designs.length / size);
 
       fields.push({
-        name: parts > 1 ? `Store designs (${part}/${parts})` : 'Store designs',
+        name: parts > 1 ? `تصاميم المتجر (${part}/${parts})` : 'تصاميم المتجر',
         value: chunk
           .map((item) => {
             const sold = sales.get(item.key);
             return (
               `\`${item.key}\` · ${formatNumber(item.price)}` +
-              `${item.enabled ? '' : ' · **off**'}` +
-              `${sold ? ` · ${sold.count} sold` : ''}`
+              `${item.enabled ? '' : ' · **مقفّل**'}` +
+              `${sold ? ` · ${sold.count} مبيعة` : ''}`
             );
           })
           .join('\n'),
@@ -131,25 +128,21 @@ function listEmbed(ctx) {
   }
 
   return embed({
-    title: 'Store settings',
+    title: 'إعدادات المتجر',
     description:
-      'Prices and visibility are stored per server. Backgrounds can also be added, edited and ' +
-      'deleted by a **Manage Server** member in the Activity store → Backgrounds.',
+      'الأسعار والظهور محفوظة لكل سيرفر على حدة. الخلفيات تنضاف وتتعدّل وتنحذف من ' +
+      '**إدارة السيرفر** داخل متجر النشاط ← الخلفيات.',
     color: COLORS.primary,
     fields,
-    footer: `Change with ${ctx.isSlash ? '/store-config' : `${config.prefix}store-config`} price|enable|disable|reset`,
+    footer: `تغيّره بـ ${ctx.isSlash ? '/store-config' : `${config.prefix}store-config`} price|enable|disable|reset`,
   });
 }
 
 function unknownItem(ctx, query) {
-  return {
-    embeds: [
-      errorEmbed(
-        'Unknown item',
-        `I could not find \`${query}\`. Use \`${ctx.isSlash ? '/store-config list' : `${config.prefix}store-config list`}\` to see the keys.`,
-      ),
-    ],
-  };
+  return errorReply(
+    'صنف غير معروف',
+    `ما لقيت \`${query}\`. شوف المفاتيح بـ \`${ctx.isSlash ? '/store-config list' : `${config.prefix}store-config list`}\`.`,
+  );
 }
 
 async function handlePrice(ctx) {
@@ -159,20 +152,18 @@ async function handlePrice(ctx) {
   const item = query ? findStoreItem(ctx.guildId, query) : null;
 
   if (!item) {
-    await ctx.reply(ephemeral(unknownItem(ctx, query ?? '')));
+    await ctx.fail(ephemeral(unknownItem(ctx, query ?? '')));
     return;
   }
 
   if (!Number.isSafeInteger(raw) || raw < 0) {
-    await ctx.reply(
-      ephemeral({
-        embeds: [
-          errorEmbed(
-            'Invalid price',
-            `Send a whole number of coins, for example \`${ctx.isSlash ? '/store-config price item:xp-10 price:50' : `${config.prefix}store-config price xp-10 50`}\`.`,
-          ),
-        ],
-      }),
+    await ctx.fail(
+      ephemeral(
+        errorReply(
+          'سعر غير صحيح',
+          `حط عدد كوينز صحيح، مثل \`${ctx.isSlash ? '/store-config price item:xp-10 price:50' : `${config.prefix}store-config price xp-10 50`}\`.`,
+        ),
+      ),
     );
     return;
   }
@@ -180,15 +171,12 @@ async function handlePrice(ctx) {
   const updated = setStoreOverride(ctx.guildId, item.key, { price: raw });
 
   await ctx.reply(
-    ephemeral({
-      embeds: [
-        successEmbed(
-          'Price updated',
-          `**${item.name}** now costs **${formatNumber(updated.price)}** coins ` +
-            `(default ${formatNumber(updated.defaultPrice)}).`,
-        ),
-      ],
-    }),
+    ephemeral(
+      okReply(
+        'تم تغيير السعر',
+        `**${item.name}** الحين بـ **${formatNumber(updated.price)}** كوينز (الأساسي ${formatNumber(updated.defaultPrice)}).`,
+      ),
+    ),
   );
 }
 
@@ -197,23 +185,21 @@ async function handleToggle(ctx, enabled) {
   const item = query ? findStoreItem(ctx.guildId, query) : null;
 
   if (!item) {
-    await ctx.reply(ephemeral(unknownItem(ctx, query ?? '')));
+    await ctx.fail(ephemeral(unknownItem(ctx, query ?? '')));
     return;
   }
 
   setStoreOverride(ctx.guildId, item.key, { enabled });
 
   await ctx.reply(
-    ephemeral({
-      embeds: [
-        successEmbed(
-          enabled ? 'Item is on sale' : 'Item hidden',
-          enabled
-            ? `**${item.name}** is back in the store.`
-            : `**${item.name}** no longer appears in the store. Balances are untouched.`,
-        ),
-      ],
-    }),
+    ephemeral(
+      okReply(
+        enabled ? 'الصنف رجع للمتجر' : 'تم إخفاء الصنف',
+        enabled
+          ? `**${item.name}** رجع يظهر في المتجر.`
+          : `**${item.name}** ما عاد يظهر في المتجر. الأرصدة ما تتغيّر.`,
+      ),
+    ),
   );
 }
 
@@ -222,22 +208,19 @@ async function handleReset(ctx) {
   const item = query ? findStoreItem(ctx.guildId, query) : null;
 
   if (!item) {
-    await ctx.reply(ephemeral(unknownItem(ctx, query ?? '')));
+    await ctx.fail(ephemeral(unknownItem(ctx, query ?? '')));
     return;
   }
 
   const updated = clearStoreOverride(ctx.guildId, item.key);
 
   await ctx.reply(
-    ephemeral({
-      embeds: [
-        successEmbed(
-          'Item reset',
-          `**${item.name}** is back to its default: ${formatNumber(updated.defaultPrice)} coins and ` +
-            `${updated.enabled ? 'on sale' : 'hidden'}.`,
-        ),
-      ],
-    }),
+    ephemeral(
+      okReply(
+        'تمت إعادة الصنف',
+        `**${item.name}** رجع للأساسي: ${formatNumber(updated.defaultPrice)} كوينز و${updated.enabled ? 'معروض' : 'مخفي'}.`,
+      ),
+    ),
   );
 }
 
@@ -254,15 +237,13 @@ async function handleResetUser(ctx, client) {
   const target = await resolveTarget(ctx, client);
 
   if (!target) {
-    await ctx.reply(
-      ephemeral({
-        embeds: [
-          errorEmbed(
-            'Choose a member',
-            `Use \`${ctx.isSlash ? '/store-config reset-user user:@member' : `${config.prefix}store-config reset-user @member`}\`.`,
-          ),
-        ],
-      }),
+    await ctx.fail(
+      ephemeral(
+        errorReply(
+          'حدّد العضو',
+          `استخدم \`${ctx.isSlash ? '/store-config reset-user user:@member' : `${config.prefix}store-config reset-user @member`}\`.`,
+        ),
+      ),
     );
     return;
   }
@@ -274,7 +255,7 @@ async function handleResetUser(ctx, client) {
     const item = findStoreItem(ctx.guildId, keyToken);
 
     if (!item) {
-      await ctx.reply(ephemeral(unknownItem(ctx, keyToken)));
+      await ctx.fail(ephemeral(unknownItem(ctx, keyToken)));
       return;
     }
 
@@ -282,54 +263,55 @@ async function handleResetUser(ctx, client) {
   }
 
   const cleared = voidMemberPurchases(ctx.guildId, target.id, key);
-  const label = key ? `**${key}**` : 'their purchases';
 
   if (cleared === 0) {
     await ctx.reply(
-      ephemeral({
-        embeds: [
-          warningEmbed('Nothing to clear', `<@${target.id}> has no fulfilled purchase for ${label}.`),
-        ],
-      }),
+      ephemeral(
+        warnReply(
+          'ما فيه شي لمسحه',
+          key
+            ? `<@${target.id}> ما عنده شراء مكتمل لـ **${key}**.`
+            : `<@${target.id}> ما عنده مشتريات مكتملة.`,
+        ),
+      ),
     );
     return;
   }
 
   await ctx.reply(
-    ephemeral({
-      embeds: [
-        successEmbed(
-          'Purchases cleared',
-          `Cleared ${cleared} purchase${cleared === 1 ? '' : 's'} for <@${target.id}> ` +
-            `(${label}). They can buy again. Roles and emojis already created are not deleted.`,
-        ),
-      ],
-    }),
+    ephemeral(
+      okReply(
+        'تم مسح المشتريات',
+        `مسحت **${cleared}** من مشتريات <@${target.id}> (${key ? `**${key}**` : 'كل شي'}). يقدر يشتري مرة ثانية. الرتب والإيموجيات اللي انشأت ما تنحذف.`,
+      ),
+    ),
   );
 }
 
 export default {
   data: new SlashCommandBuilder()
     .setName('store-config')
-    .setDescription('Change store prices or hide items')
+    .setDescription('غيّر أسعار المتجر أو اخفِ الأصناف')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .setContexts(InteractionContextType.Guild)
-    .addSubcommand((sub) => sub.setName('list').setDescription('Every item, its price and its sales'))
+    .addSubcommand((sub) =>
+      sub.setName('list').setDescription('كل صنف وسعره ومبيعاته'),
+    )
     .addSubcommand((sub) =>
       sub
         .setName('price')
-        .setDescription('Set what one item costs')
+        .setDescription('حدّد سعر صنف')
         .addStringOption((option) =>
           option
             .setName('item')
-            .setDescription('Item key')
+            .setDescription('مفتاح الصنف')
             .setRequired(true)
             .setAutocomplete(true),
         )
         .addIntegerOption((option) =>
           option
             .setName('price')
-            .setDescription('Coins to charge (0 makes it free)')
+            .setDescription('عدد الكوينز (0 يخليه مجاني)')
             .setMinValue(0)
             .setRequired(true),
         ),
@@ -337,11 +319,11 @@ export default {
     .addSubcommand((sub) =>
       sub
         .setName('enable')
-        .setDescription('Put a hidden item back on sale')
+        .setDescription('رجّع صنف مخفي للمتجر')
         .addStringOption((option) =>
           option
             .setName('item')
-            .setDescription('Item key')
+            .setDescription('مفتاح الصنف')
             .setRequired(true)
             .setAutocomplete(true),
         ),
@@ -349,11 +331,11 @@ export default {
     .addSubcommand((sub) =>
       sub
         .setName('disable')
-        .setDescription('Hide an item without deleting it')
+        .setDescription('اخفِ صنف بدون ما تحذفه')
         .addStringOption((option) =>
           option
             .setName('item')
-            .setDescription('Item key')
+            .setDescription('مفتاح الصنف')
             .setRequired(true)
             .setAutocomplete(true),
         ),
@@ -361,11 +343,11 @@ export default {
     .addSubcommand((sub) =>
       sub
         .setName('reset')
-        .setDescription('Return an item to its default price and visibility')
+        .setDescription('رجّع الصنف لسعره وظهوره الأساسي')
         .addStringOption((option) =>
           option
             .setName('item')
-            .setDescription('Item key')
+            .setDescription('مفتاح الصنف')
             .setRequired(true)
             .setAutocomplete(true),
         ),
@@ -373,14 +355,14 @@ export default {
     .addSubcommand((sub) =>
       sub
         .setName('reset-user')
-        .setDescription('Clear a member’s purchases so they can buy again')
+        .setDescription('امسح مشتريات عضو عشان يقدر يشتري مرة ثانية')
         .addUserOption((option) =>
-          option.setName('user').setDescription('Member').setRequired(true),
+          option.setName('user').setDescription('العضو').setRequired(true),
         )
         .addStringOption((option) =>
           option
             .setName('item')
-            .setDescription('Only this item (default: everything)')
+            .setDescription('هذا الصنف فقط (الافتراضي: كل شي)')
             .setRequired(false)
             .setAutocomplete(true),
         ),
@@ -388,7 +370,7 @@ export default {
 
   name: 'store-config',
   aliases: ['store-admin', 'shop-config'],
-  description: 'Change store prices or hide items',
+  description: 'غيّر أسعار المتجر أو اخفِ الأصناف',
   category: 'Moderation',
   usage: 'store-config [list | price <key> <coins> | enable|disable|reset <key> | reset-user <@member> [key]]',
   cooldown: 3,

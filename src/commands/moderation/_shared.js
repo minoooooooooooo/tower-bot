@@ -2,6 +2,7 @@ import { parseDuration } from '../../lib/durations.js';
 import {
   ephemeral,
   errorReply,
+  infoReply,
   okReply,
   respond,
   warnReply,
@@ -22,6 +23,11 @@ export function done(ctx, title, description) {
 
 export function info(ctx, title, description) {
   return respond(ctx, ephemeral(warnReply(title, description)));
+}
+
+/** Neutral read-only output: current settings, a profile view, a status. */
+export function note(ctx, title, description) {
+  return respond(ctx, ephemeral(infoReply(title, description)));
 }
 
 /** "40s spamming" / "spamming" from prefix arguments after the target. */

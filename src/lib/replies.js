@@ -23,6 +23,11 @@ export function warnReply(title, body = '') {
   return { content: `⚠️ ${format(title, body)}` };
 }
 
+/** Neutral status (a current setting or a read-only view), not a warning. */
+export function infoReply(title, body = '') {
+  return { content: `ℹ️ ${format(title, body)}` };
+}
+
 export function errorReply(title, body = '') {
   return { content: `❌ ${format(title, body)}` };
 }

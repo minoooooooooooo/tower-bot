@@ -4,8 +4,8 @@ import {
   PermissionFlagsBits,
   SlashCommandBuilder,
 } from 'discord.js';
-import { errorEmbed, successEmbed } from '../../lib/embeds.js';
 import { createLogger } from '../../lib/logger.js';
+import { errorReply, okReply } from '../../lib/replies.js';
 import { parseReference, resolveMember } from '../../lib/resolve.js';
 
 const logger = createLogger('nickname');
@@ -24,7 +24,7 @@ function ephemeral(payload) {
 }
 
 function reasonFor(ctx) {
-  return `Nickname command: ${ctx.user.tag ?? ctx.user.username}`.slice(0, 500);
+  return `أمر الاسم بواسطة ${ctx.user.tag ?? ctx.user.username}`.slice(0, 500);
 }
 
 function escapeMarkdown(value) {
@@ -43,7 +43,7 @@ function normalizeNickname(raw) {
 
   if (text.length > MAX_LENGTH) {
     return {
-      problem: `Nicknames are limited to **${MAX_LENGTH}** characters — that one is **${text.length}**.`,
+      problem: `الأسماء محدودة بـ **${MAX_LENGTH}** حرف — الاسم هذا فيه **${text.length}**.`,
     };
   }
 
@@ -83,44 +83,49 @@ async function prefixTarget(ctx) {
 
 function apiProblem(error) {
   if (error?.code === 50013) {
-    return 'Discord refused the change. I need **Manage Nicknames**, and my highest role must sit above the member’s. The server owner cannot be renamed at all.';
+    return 'ديسكورد رفض التغيير. أحتاج **إدارة الأسماء**، ورتبتي لازم تكون فوق رتبة العضو. صاحب السيرفر ما ينفع يتغيّر اسمه أصلًا.';
   }
 
   if (error?.code === 50035) {
-    return 'Discord rejected that nickname. Keep it under 32 characters and avoid control characters.';
+    return 'ديسكورد رفض الاسم. خله أقل من 32 حرف وبدون رموز تحكم.';
   }
 
   if (error?.code === 429 || /rate limit/i.test(String(error?.message))) {
-    return 'Discord is rate limiting nickname changes. Wait a minute and try again.';
+    return 'ديسكورد يحدّ تغييرات الأسماء الآن. انتظر دقيقة وجرّب مرة ثانية.';
   }
 
   return error?.message
-    ? `Discord said: ${String(error.message).slice(0, 300)}`
-    : 'Something went wrong while changing the nickname.';
+    ? `ديسكورد قال: ${String(error.message).slice(0, 300)}`
+    : 'صار خطأ وأنا أغيّر الاسم.';
+}
+
+/** Refusal: ephemeral, one or two readable lines, no embed. */
+function fail(ctx, title, body) {
+  return ctx.fail(ephemeral(errorReply(title, body)));
 }
 
 export default {
   data: new SlashCommandBuilder()
     .setName('nickname')
-    .setDescription('Change your nickname, or someone else’s with Manage Nicknames')
+    .setDescription('غيّر اسمك، أو اسم عضو ثاني إذا عندك إدارة الأسماء')
     .setContexts(InteractionContextType.Guild)
     .addUserOption((option) =>
       option
         .setName('user')
-        .setDescription('Member to rename (defaults to you)')
+        .setDescription('العضو اللي تبي تغيّر اسمه (الافتراضي أنت)')
         .setRequired(false),
     )
     .addStringOption((option) =>
       option
         .setName('nickname')
-        .setDescription('New nickname — leave empty to reset')
+        .setDescription('الاسم الجديد — اتركه فاضي عشان ترجّع الاسم الأصلي')
         .setMaxLength(MAX_LENGTH)
         .setRequired(false),
     ),
 
   name: 'nickname',
   aliases: ['nick'],
-  description: 'Change your nickname, or someone else’s with Manage Nicknames',
+  description: 'غيّر اسمك، أو اسم عضو ثاني إذا عندك إدارة الأسماء',
   category: 'Moderation',
   usage: 'nickname [@member] [name] | nickname [@member] reset',
   cooldown: 3,
@@ -135,15 +140,10 @@ export default {
       : await prefixTarget(ctx);
 
     if (!member) {
-      await ctx.fail(
-        ephemeral({
-          embeds: [
-            errorEmbed(
-              'Unknown member',
-              'Mention someone in this server, or paste their id, for example `:-nickname @member New Name`.',
-            ),
-          ],
-        }),
+      await fail(
+        ctx,
+        'عضو غير معروف',
+        'منشن عضو من هذا السيرفر أو الصق الآيدي، مثل `:-nickname @member اسم جديد`.',
       );
       return;
     }
@@ -151,15 +151,10 @@ export default {
     const self = member.id === ctx.user.id;
 
     if (!self && !ctx.member?.permissions?.has(PermissionFlagsBits.ManageNicknames)) {
-      await ctx.fail(
-        ephemeral({
-          embeds: [
-            errorEmbed(
-              'Missing permissions',
-              'You need **Manage Nicknames** to rename someone else. You can always rename yourself.',
-            ),
-          ],
-        }),
+      await fail(
+        ctx,
+        'صلاحيات ناقصة',
+        'تحتاج **إدارة الأسماء** عشان تغيّر اسم غيرك. اسمك تقدر تغيّره دائمًا.',
       );
       return;
     }
@@ -167,57 +162,29 @@ export default {
     const me = ctx.guild.members?.me;
 
     if (!me) {
-      await ctx.fail(
-        ephemeral({
-          embeds: [
-            errorEmbed(
-              'Cannot rename',
-              'I could not read my own server profile. Try again in a moment.',
-            ),
-          ],
-        }),
-      );
+      await fail(ctx, 'ما أقدر أغيّر الاسم', 'ما قدرت أقرأ ملفي في السيرفر. جرّب بعد لحظة.');
       return;
     }
 
     if (!me.permissions?.has(PermissionFlagsBits.ManageNicknames)) {
-      await ctx.fail(
-        ephemeral({
-          embeds: [
-            errorEmbed(
-              'Missing permissions',
-              'I need **Manage Nicknames** to change nicknames.',
-            ),
-          ],
-        }),
-      );
+      await fail(ctx, 'صلاحيات ناقصة', 'أحتاج **إدارة الأسماء** عشان أغيّر الأسماء.');
       return;
     }
 
     if (member.id === me.id) {
-      await ctx.fail(
-        ephemeral({
-          embeds: [
-            errorEmbed(
-              'That is me',
-              'I cannot rename myself from a command — change my nickname in **Server Settings → Members**.',
-            ),
-          ],
-        }),
+      await fail(
+        ctx,
+        'هذا أنا',
+        'ما أقدر أغيّر اسمي من أمر — غيّره من **إعدادات السيرفر → الأعضاء**.',
       );
       return;
     }
 
     if (member.id === ctx.guild.ownerId) {
-      await ctx.fail(
-        ephemeral({
-          embeds: [
-            errorEmbed(
-              'Server owner',
-              'Discord does not let anyone change the nickname of the server owner.',
-            ),
-          ],
-        }),
+      await fail(
+        ctx,
+        'صاحب السيرفر',
+        'ديسكورد ما يسمح لأحد يغيّر اسم صاحب السيرفر.',
       );
       return;
     }
@@ -227,15 +194,10 @@ export default {
       const memberTop = member.roles?.highest?.position ?? 0;
 
       if (memberTop >= botTop) {
-        await ctx.fail(
-          ephemeral({
-            embeds: [
-              errorEmbed(
-                'Role too high',
-                `${member}'s highest role sits at or above mine, so I cannot rename them. Move my role higher in **Server Settings → Roles**, then try again.`,
-              ),
-            ],
-          }),
+        await fail(
+          ctx,
+          'رتبته أعلى من رتبتي',
+          `${member} رتبته أعلى من رتبتي أو نفسها، فما أقدر أغيّر اسمه. ارفع رتبتي في **إعدادات السيرفر → الرتب** وجرّب مرة ثانية.`,
         );
         return;
       }
@@ -244,9 +206,7 @@ export default {
     const parsed = normalizeNickname(text);
 
     if (parsed.problem) {
-      await ctx.fail(
-        ephemeral({ embeds: [errorEmbed('Nickname too long', parsed.problem)] }),
-      );
+      await fail(ctx, 'الاسم طويل', parsed.problem);
       return;
     }
 
@@ -254,12 +214,7 @@ export default {
       await member.setNickname(parsed.value, reasonFor(ctx));
     } catch (error) {
       logger.warn(`Nickname change failed for ${member.id}: ${error.message}`);
-
-      await ctx.fail(
-        ephemeral({
-          embeds: [errorEmbed('Could not change the nickname', apiProblem(error))],
-        }),
-      );
+      await fail(ctx, 'ما قدرت أغيّر الاسم', apiProblem(error));
       return;
     }
 
@@ -267,17 +222,16 @@ export default {
       `${ctx.user.tag ?? ctx.user.username} (${ctx.user.id}) set nickname of ${member.id} to ${parsed.value ?? 'reset'}`,
     );
 
-    const who = self ? 'Your nickname' : `The nickname of ${member}`;
-    const description = parsed.value
-      ? `${who} is now **${escapeMarkdown(parsed.value)}**.`
-      : `${who} was reset.`;
+    const body = parsed.value
+      ? self
+        ? `اسمك الحين **${escapeMarkdown(parsed.value)}**.`
+        : `اسم ${member} الحين **${escapeMarkdown(parsed.value)}**.`
+      : self
+        ? 'رجعت اسمك الأصلي.'
+        : `رجعت اسم ${member} الأصلي.`;
 
     await ctx.reply(
-      ephemeral({
-        embeds: [
-          successEmbed(parsed.value ? 'Nickname updated' : 'Nickname reset', description),
-        ],
-      }),
+      ephemeral(okReply(parsed.value ? 'تم تغيير الاسم' : 'تمت إعادة الاسم', body)),
     );
   },
 };
