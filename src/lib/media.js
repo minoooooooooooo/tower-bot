@@ -17,20 +17,20 @@ export function isClearValue(value) {
 export function validateImageUrl(raw, label = 'GIF') {
   const value = String(raw ?? '').trim();
 
-  if (!value) return `Paste a direct image/${label} URL, or use \`none\` to remove it.`;
+  if (!value) return `الصق رابط صورة أو ${label} مباشر، أو استخدم \`none\` عشان تشيله.`;
   if (value.length > MAX_IMAGE_URL_LENGTH) {
-    return `The ${label} link must be ${MAX_IMAGE_URL_LENGTH} characters or fewer.`;
+    return `رابط ${label} لازم يكون ${MAX_IMAGE_URL_LENGTH} حرف أو أقل.`;
   }
 
   let parsed;
   try {
     parsed = new URL(value);
   } catch {
-    return 'That is not a valid URL.';
+    return 'هذا مو رابط صحيح.';
   }
 
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    return `The ${label} link must start with http:// or https://.`;
+    return `رابط ${label} لازم يبدأ بـ http:// أو https://.`;
   }
 
   return null;

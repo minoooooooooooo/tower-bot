@@ -1,10 +1,10 @@
 import {
   InteractionContextType,
-  MessageFlags,
   PermissionFlagsBits,
   SlashCommandBuilder,
 } from 'discord.js';
-import { COLORS, embed, errorEmbed, infoEmbed, successEmbed } from '../../lib/embeds.js';
+import { COLORS, embed } from '../../lib/embeds.js';
+import { ephemeral, errorReply, infoReply, okReply } from '../../lib/replies.js';
 import {
   MAX_GLOSSARY_TERMS,
   MAX_MEANING_LENGTH,
@@ -17,30 +17,22 @@ import {
 
 const MAX_LISTED = 40;
 
-function ephemeral(payload) {
-  return { ...payload, flags: MessageFlags.Ephemeral };
-}
-
-async function requireManageGuild(ctx) {
-  if (ctx.member?.permissions?.has(PermissionFlagsBits.ManageGuild)) return true;
-
-  await ctx.reply(
-    ephemeral({
-      embeds: [
-        errorEmbed('Missing permissions', 'You need **Manage Server** to change the glossary.'),
-      ],
-    }),
-  );
-
-  return false;
-}
-
 /** `term | meaning` in one prefix argument pair. */
 function parsePrefixEntry(ctx) {
   const raw = ctx.args.join(' ').trim();
   const [term, ...rest] = raw.split('|');
 
   return { term: term?.trim() ?? '', meaning: rest.join('|').trim() };
+}
+
+async function requireManageGuild(ctx) {
+  if (ctx.member?.permissions?.has(PermissionFlagsBits.ManageGuild)) return true;
+
+  await ctx.fail(
+    ephemeral(errorReply('صلاحيات ناقصة', 'تحتاج **إدارة السيرفر** عشان تغيّر المصطلحات.')),
+  );
+
+  return false;
 }
 
 async function handleAdd(ctx) {
@@ -54,40 +46,34 @@ async function handleAdd(ctx) {
     : parsePrefixEntry(ctx);
 
   if (!entry.term || entry.term.length > MAX_TERM_LENGTH) {
-    await ctx.reply(
-      ephemeral({
-        embeds: [
-          errorEmbed(
-            'Invalid term',
-            `Give a term up to ${MAX_TERM_LENGTH} characters, plus a meaning separated by \`|\`.`,
-          ),
-        ],
-      }),
+    await ctx.fail(
+      ephemeral(
+        errorReply(
+          'مصطلح غير صحيح',
+          `عطني مصطلح حتى ${MAX_TERM_LENGTH} حرف، وبعده المعنى مفصول بـ \`|\`.`,
+        ),
+      ),
     );
     return;
   }
 
   if (!entry.meaning || entry.meaning.length > MAX_MEANING_LENGTH) {
-    await ctx.reply(
-      ephemeral({
-        embeds: [
-          errorEmbed(
-            'Invalid meaning',
-            `Explain the term in up to ${MAX_MEANING_LENGTH} characters, for example \`nap | the new event map\`.`,
-          ),
-        ],
-      }),
+    await ctx.fail(
+      ephemeral(
+        errorReply(
+          'معنى غير صحيح',
+          `اشرح المصطلح في ${MAX_MEANING_LENGTH} حرف كحد أقصى، مثل \`nap | خريطة الحدث الجديدة\`.`,
+        ),
+      ),
     );
     return;
   }
 
   if (listGlossary(ctx.guildId).length >= MAX_GLOSSARY_TERMS) {
-    await ctx.reply(
-      ephemeral({
-        embeds: [
-          errorEmbed('Glossary is full', `Remove a term first (max ${MAX_GLOSSARY_TERMS}).`),
-        ],
-      }),
+    await ctx.fail(
+      ephemeral(
+        errorReply('المصطلحات مليانة', `احذف مصطلح أول (الحد ${MAX_GLOSSARY_TERMS}).`),
+      ),
     );
     return;
   }
@@ -95,14 +81,12 @@ async function handleAdd(ctx) {
   setGlossaryTerm(ctx.guildId, entry.term, entry.meaning);
 
   await ctx.reply(
-    ephemeral({
-      embeds: [
-        successEmbed(
-          'Term saved',
-          `\`${entry.term}\` → ${entry.meaning}\nSummaries will use this meaning from now on.`,
-        ),
-      ],
-    }),
+    ephemeral(
+      okReply(
+        'انحفظ المصطلح',
+        `\`${entry.term}\` ← ${entry.meaning}\nالملخصات بتستخدم هذا المعنى من الحين.`,
+      ),
+    ),
   );
 }
 
@@ -112,20 +96,18 @@ async function handleRemove(ctx) {
   const term = (ctx.isSlash ? ctx.getString('term') : ctx.args.join(' '))?.trim() ?? '';
 
   if (!term) {
-    await ctx.reply(ephemeral({ embeds: [errorEmbed('Which term?', 'Pass the term to remove.')] }));
+    await ctx.fail(ephemeral(errorReply('أي مصطلح؟', 'اذكر المصطلح اللي تبي تحذفه.')));
     return;
   }
 
   const removed = removeGlossaryTerm(ctx.guildId, term);
 
   await ctx.reply(
-    ephemeral({
-      embeds: [
-        removed > 0
-          ? successEmbed('Term removed', `\`${term}\` is no longer in the glossary.`)
-          : infoEmbed('Not found', `\`${term}\` was not in the glossary.`),
-      ],
-    }),
+    ephemeral(
+      removed > 0
+        ? okReply('انحذف المصطلح', `\`${term}\` ما عاد في قائمة المصطلحات.`)
+        : infoReply('ما لقيته', `\`${term}\` ما كان في القائمة.`),
+    ),
   );
 }
 
@@ -135,13 +117,11 @@ async function handleClear(ctx) {
   const removed = clearGlossary(ctx.guildId);
 
   await ctx.reply(
-    ephemeral({
-      embeds: [
-        removed > 0
-          ? successEmbed('Glossary cleared', `Removed ${removed} term${removed === 1 ? '' : 's'}.`)
-          : infoEmbed('Already empty', 'There were no glossary terms.'),
-      ],
-    }),
+    ephemeral(
+      removed > 0
+        ? okReply('انمسحت المصطلحات', `انحذف ${removed} مصطلح.`)
+        : infoReply('فاضية أصلًا', 'ما كان فيه أي مصطلح.'),
+    ),
   );
 }
 
@@ -150,14 +130,12 @@ async function handleList(ctx) {
 
   if (terms.length === 0) {
     await ctx.reply(
-      ephemeral({
-        embeds: [
-          infoEmbed(
-            'No terms yet',
-            'Teach me your jargon with `/glossary add term:nap meaning:the new event map`.\nTerms are only used to help the summarizer understand the server.',
-          ),
-        ],
-      }),
+      ephemeral(
+        infoReply(
+          'ما فيه مصطلحات بعد',
+          'علّمني مصطلحاتكم بـ `/glossary add term:nap meaning:خريطة الحدث الجديدة`.\nالمصطلحات تساعد الملخّص يفهم السيرفر بس.',
+        ),
+      ),
     );
     return;
   }
@@ -165,15 +143,15 @@ async function handleList(ctx) {
   const shown = terms.slice(0, MAX_LISTED);
   const lines = shown.map((entry) => `**${entry.term}** — ${entry.meaning}`);
 
-  if (terms.length > shown.length) lines.push(`…and ${terms.length - shown.length} more`);
+  if (terms.length > shown.length) lines.push(`…و ${terms.length - shown.length} غيرها`);
 
   await ctx.reply(
     ephemeral({
       embeds: [
         embed({
-          title: `Glossary (${terms.length})`,
+          title: `المصطلحات (${terms.length})`,
           description: lines.join('\n').slice(0, 4000),
-          footer: 'Used as context for every summary',
+          footer: 'تنستخدم كسياق في كل ملخص',
           color: COLORS.primary,
         }),
       ],
@@ -184,23 +162,23 @@ async function handleList(ctx) {
 export default {
   data: new SlashCommandBuilder()
     .setName('glossary')
-    .setDescription('Teach the summarizer your server jargon')
+    .setDescription('علّم الملخّص مصطلحات سيرفرك')
     .setContexts(InteractionContextType.Guild)
     .addSubcommand((sub) =>
       sub
         .setName('add')
-        .setDescription('Add or update a term')
+        .setDescription('أضف مصطلح أو حدّثه')
         .addStringOption((option) =>
           option
             .setName('term')
-            .setDescription('The word or acronym')
+            .setDescription('الكلمة أو الاختصار')
             .setRequired(true)
             .setMaxLength(MAX_TERM_LENGTH),
         )
         .addStringOption((option) =>
           option
             .setName('meaning')
-            .setDescription('What it means in this server')
+            .setDescription('معناها في هذا السيرفر')
             .setRequired(true)
             .setMaxLength(MAX_MEANING_LENGTH),
         ),
@@ -208,17 +186,17 @@ export default {
     .addSubcommand((sub) =>
       sub
         .setName('remove')
-        .setDescription('Remove a term')
+        .setDescription('احذف مصطلح')
         .addStringOption((option) =>
-          option.setName('term').setDescription('Term to remove').setRequired(true),
+          option.setName('term').setDescription('المصطلح اللي تبي تحذفه').setRequired(true),
         ),
     )
-    .addSubcommand((sub) => sub.setName('list').setDescription('Show every term'))
-    .addSubcommand((sub) => sub.setName('clear').setDescription('Remove every term')),
+    .addSubcommand((sub) => sub.setName('list').setDescription('اعرض كل المصطلحات'))
+    .addSubcommand((sub) => sub.setName('clear').setDescription('احذف كل المصطلحات')),
 
   name: 'glossary',
   aliases: ['jargon'],
-  description: 'Terms the summarizer should know about this server',
+  description: 'مصطلحات يفهمها الملخّص عن سيرفرك',
   category: 'Community',
   usage: 'glossary add <term> | <meaning> | remove <term> | list | clear',
   cooldown: 3,

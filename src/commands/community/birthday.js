@@ -5,7 +5,6 @@ import {
   ChannelType,
   ComponentType,
   InteractionContextType,
-  MessageFlags,
   PermissionFlagsBits,
   SlashCommandBuilder,
 } from 'discord.js';
@@ -20,7 +19,8 @@ import {
   isValidTimeZone,
   nextOccurrence,
 } from '../../lib/dates.js';
-import { COLORS, embed, errorEmbed, successEmbed } from '../../lib/embeds.js';
+import { COLORS, embed } from '../../lib/embeds.js';
+import { ephemeral, errorReply, infoReply, okReply } from '../../lib/replies.js';
 import * as store from '../../services/birthday-store.js';
 import { removeBirthdayRole } from '../../services/birthday-roles.js';
 import { getProfile, setBirthdayVisible } from '../../services/profile-store.js';
@@ -61,10 +61,6 @@ const SUBCOMMAND_ALIASES = {
 };
 
 const MAX_FIELD_LENGTH = 1000;
-
-function ephemeral(payload) {
-  return { ...payload, flags: MessageFlags.Ephemeral };
-}
 
 function resolveSubcommand(ctx) {
   const raw = ctx.isSlash ? ctx.getSubcommand() : (ctx.args[0] ?? '').toLowerCase();
@@ -188,24 +184,24 @@ function readSetInput(ctx) {
 
 function validateBirthday({ month, day, year }) {
   if (!Number.isInteger(month) || month < 1 || month > 12) {
-    return 'Month must be a whole number from 1 to 12.';
+    return 'الشهر لازم رقم صحيح من 1 إلى 12.';
   }
 
   if (!Number.isInteger(day) || day < 1 || day > 31) {
-    return 'Day must be a whole number from 1 to 31.';
+    return 'اليوم لازم رقم صحيح من 1 إلى 31.';
   }
 
   const currentYear = new Date().getUTCFullYear();
 
   if (year !== null && (!Number.isInteger(year) || year < 1900 || year > currentYear)) {
-    return `Year must be between 1900 and ${currentYear}, or left out.`;
+    return `السنة لازم تكون بين 1900 و${currentYear}، أو تتركها فاضية.`;
   }
 
   // 2000 is a leap year, so Feb 29 is accepted when no year is given.
   const referenceYear = year ?? 2000;
 
   if (day > daysInMonth(referenceYear, month)) {
-    return `${month}/${day} is not a real date.`;
+    return `${month}/${day} مو تاريخ حقيقي.`;
   }
 
   return null;
@@ -217,29 +213,23 @@ async function handleSet(ctx) {
 
   if (target.id !== ctx.user.id && !isAdmin(ctx)) {
     await ctx.reply(
-      ephemeral({
-        embeds: [
-          errorEmbed(
-            'Missing permissions',
-            "Only members with **Manage Server** can set someone else's birthday.",
-          ),
-        ],
-      }),
+      ephemeral(errorReply(
+            'صلاحيات ناقصة',
+            'أصحاب **إدارة السيرفر** فقط يقدرون يحددون عيد ميلاد عضو ثاني.',
+          ),),
     );
     return;
   }
 
   if (target.bot) {
-    await ctx.reply({
-      embeds: [errorEmbed('Invalid member', 'Bots do not have birthdays.')],
-    });
+    await ctx.reply(errorReply('عضو غير صالح', 'البوتات ما عندها أعياد ميلاد.'));
     return;
   }
 
   const problem = validateBirthday(input);
 
   if (problem) {
-    await ctx.reply(ephemeral({ embeds: [errorEmbed('Invalid birthday', problem)] }));
+    await ctx.reply(ephemeral(errorReply('تاريخ ميلاد غير صحيح', problem)));
     return;
   }
 
@@ -251,23 +241,19 @@ async function handleSet(ctx) {
   const days = daysUntil(input.month, input.day, timeZone);
   const when =
     days === 0
-      ? 'That is today, so the role and greeting were applied if configured.'
-      : `That is ${days} day${days === 1 ? '' : 's'} away.`;
+      ? 'هذا اليوم، فالرتبة والتهنئة انطبّقت إذا كانت مضبوطة.'
+      : `باقي ${days} يوم.`;
   const isSelf = target.id === ctx.user.id;
   const who = isSelf ? null : await displayName(ctx.client, ctx.guild, target.id);
-  const zoneLabel = saved?.timezone ? timeZone : `${timeZone} (server default)`;
+  const zoneLabel = saved?.timezone ? timeZone : `${timeZone} (افتراضي السيرفر)`;
 
   await ctx.reply(
-    ephemeral({
-      embeds: [
-        successEmbed(
-          isSelf ? 'Birthday saved' : `Birthday saved for ${who}`,
-          [`**${formatMonthDay(input.month, input.day)}**`, when, `Time zone: ${zoneLabel}`].join(
+    ephemeral(okReply(
+          isSelf ? 'انحفظ عيد الميلاد' : `انحفظ عيد ميلاد ${who}`,
+          [`**${formatMonthDay(input.month, input.day)}**`, when, `المنطقة الزمنية: ${zoneLabel}`].join(
             '\n',
           ),
-        ),
-      ],
-    }),
+        ),),
   );
 }
 
@@ -277,14 +263,10 @@ async function handleRemove(ctx) {
 
   if (!isSelf && !isAdmin(ctx)) {
     await ctx.reply(
-      ephemeral({
-        embeds: [
-          errorEmbed(
-            'Missing permissions',
-            "Only members with **Manage Server** can remove someone else's birthday.",
-          ),
-        ],
-      }),
+      ephemeral(errorReply(
+            'صلاحيات ناقصة',
+            'أصحاب **إدارة السيرفر** فقط يقدرون يحذفون عيد ميلاد عضو ثاني.',
+          ),),
     );
     return;
   }
@@ -294,17 +276,12 @@ async function handleRemove(ctx) {
 
   if (!removed) {
     await ctx.reply(
-      ephemeral({
-        embeds: [
-          embed({
-            title: 'Nothing to remove',
-            description: isSelf
-              ? 'You have not registered a birthday yet.'
-              : `${who} has no birthday saved.`,
-            color: COLORS.muted,
-          }),
-        ],
-      }),
+      ephemeral(
+        infoReply(
+          'ما فيه شي ينحذف',
+          isSelf ? 'ما سجلت عيد ميلاد بعد.' : `${who} ما عنده عيد ميلاد محفوظ.`,
+        ),
+      ),
     );
     return;
   }
@@ -312,14 +289,10 @@ async function handleRemove(ctx) {
   await syncUserBirthday(ctx.guild, target.id);
 
   await ctx.reply(
-    ephemeral({
-      embeds: [
-        successEmbed(
-          isSelf ? 'Birthday removed' : `Birthday removed for ${who}`,
-          isSelf ? 'Your birthday was deleted.' : 'Their saved birthday was deleted.',
-        ),
-      ],
-    }),
+    ephemeral(okReply(
+          isSelf ? 'انحذف عيد الميلاد' : `انحذف عيد ميلاد ${who}`,
+          isSelf ? 'انحذف عيد ميلادك.' : 'انحذف عيد ميلاده المحفوظ.',
+        ),),
   );
 }
 
@@ -359,37 +332,35 @@ async function handleShow(ctx) {
   const hasBirthday = Boolean(store.getBirthday(ctx.guildId, ctx.user.id));
   const lines = [
     visible
-      ? 'Your birthday, age and time zone are shown on your profile card.'
-      : 'Your birthday, age and time zone are hidden from your profile card.',
+      ? 'عيد ميلادك وعمرك ومنطقتك الزمنية تظهر على بطاقة ملفك.'
+      : 'عيد ميلادك وعمرك ومنطقتك الزمنية مخفية من بطاقة ملفك.',
   ];
 
   if (!hasBirthday) {
-    lines.push('You have not registered a birthday yet; this applies when you add one.');
+    lines.push('ما سجلت عيد ميلاد بعد؛ هذا ينطبق أول ما تضيفه.');
   } else if (!visible) {
-    lines.push('Set it with `/birthday show visible:true` whenever you want it back.');
+    lines.push('رجّعه بـ `/birthday show visible:true` وقت ما تبي.');
   }
 
   const title =
     next === undefined
-      ? 'Birthday visibility'
+      ? 'ظهور عيد الميلاد'
       : visible
-        ? 'Birthday block shown'
-        : 'Birthday block hidden';
+        ? 'ظهرت خانة عيد الميلاد'
+        : 'انخفت خانة عيد الميلاد';
 
   await ctx.reply(
-    ephemeral({
-      embeds: [
-        next === undefined
-          ? embed({ title, description: lines.join('\n'), color: COLORS.muted })
-          : successEmbed(title, lines.join('\n')),
-      ],
-    }),
+    ephemeral(
+      next === undefined
+        ? infoReply(title, lines.join('\n'))
+        : okReply(title, lines.join('\n')),
+    ),
   );
 }
 
 const LIST_ORDERS = {
-  nearest: { label: 'Nearest first', button: 'Calendar order', next: 'calendar' },
-  calendar: { label: 'Calendar order (Jan → Dec)', button: 'Nearest first', next: 'nearest' },
+  nearest: { label: 'الأقرب أولًا', button: 'ترتيب التقويم', next: 'calendar' },
+  calendar: { label: 'ترتيب التقويم (يناير ← ديسمبر)', button: 'الأقرب أولًا', next: 'nearest' },
 };
 
 const LIST_TIMEOUT_MS = 5 * 60 * 1000;
@@ -421,11 +392,11 @@ function sortList(entries, order) {
 function missingZoneNotice(missingZone, defaultZone) {
   if (missingZone === 0) return null;
 
-  const fix = `Fix with \`/birthday timezone user:@member zone:<IANA>\`.`;
+  const fix = `صلّحها بـ \`/birthday timezone user:@member zone:<IANA>\`.`;
 
   return missingZone === 1
-    ? `⚠️ 1 member has no time zone and follows **${defaultZone}**. ${fix}`
-    : `⚠️ ${missingZone} members have no time zone and follow **${defaultZone}**. ${fix}`;
+    ? `⚠️ عضو واحد ما عنده منطقة زمنية ويتبع **${defaultZone}**. ${fix}`
+    : `⚠️ ${missingZone} أعضاء ما عندهم منطقة زمنية ويتبعون **${defaultZone}**. ${fix}`;
 }
 
 function listButtonRow(order) {
@@ -472,11 +443,11 @@ function buildListPayload(ctx, order) {
     const isLast = index === chunks.length - 1;
 
     return embed({
-      title: index === 0 ? '🎂 Birthday List' : undefined,
+      title: index === 0 ? '🎂 قائمة أعياد الميلاد' : undefined,
       description: isLast && notice ? `${chunk}\n\n${notice}` : chunk,
       footer:
         index === 0
-          ? `${entries.length} member${entries.length === 1 ? '' : 's'} · ${LIST_ORDERS[order].label} · server default ${defaultZone}`
+          ? `${entries.length} عضو · ${LIST_ORDERS[order].label} · افتراضي السيرفر ${defaultZone}`
           : undefined,
       timestamp: index === 0,
     });
@@ -499,9 +470,9 @@ function attachListCollector({ ctx, message, state }) {
         .reply(
           ephemeral({
             embeds: [
-              errorEmbed(
-                'That list is not yours',
-                'Run `/birthday list` yourself to switch the order.',
+              errorReply(
+                'هذي القائمة مو لك',
+                'شغّل `/birthday list` بنفسك عشان تبدّل الترتيب.',
               ),
             ],
           }),
@@ -523,15 +494,12 @@ function attachListCollector({ ctx, message, state }) {
 
 async function handleList(ctx) {
   if (store.listBirthdays(ctx.guildId).length === 0) {
-    await ctx.reply({
-      embeds: [
-        embed({
-          title: 'No birthdays yet',
-          description: `Nobody has registered a birthday. Use \`/birthday set\` or \`${config.prefix}birthday set <month> <day>\`.`,
-          color: COLORS.muted,
-        }),
-      ],
-    });
+    await ctx.reply(
+      infoReply(
+        'ما فيه أعياد ميلاد بعد',
+        `ما سجّل أحد عيد ميلاده. استخدم \`/birthday set\` أو \`${config.prefix}birthday set <month> <day>\`.`,
+      ),
+    );
     return;
   }
 
@@ -557,8 +525,8 @@ async function handleToday(ctx) {
     await ctx.reply({
       embeds: [
         embed({
-          title: 'No birthdays today',
-          description: 'Nobody is celebrating today in their own time zone.',
+          title: 'ما فيه أعياد ميلاد اليوم',
+          description: 'ما فيه أحد يحتفل اليوم في منطقته الزمنية.',
           color: COLORS.muted,
         }),
       ],
@@ -577,16 +545,16 @@ async function handleToday(ctx) {
 
   if (settings.birthdayRoleId) {
     fields.push({
-      name: 'Birthday role',
-      value: `<@&${settings.birthdayRoleId}> is active today.`,
+      name: 'رتبة عيد الميلاد',
+      value: `<@&${settings.birthdayRoleId}> مفعّلة اليوم.`,
       inline: true,
     });
   }
 
   if (settings.birthdayChannelId) {
     fields.push({
-      name: 'Greetings',
-      value: `Posted in <#${settings.birthdayChannelId}>.`,
+      name: 'التهاني',
+      value: `تنكتب في <#${settings.birthdayChannelId}>.`,
       inline: true,
     });
   }
@@ -595,7 +563,7 @@ async function handleToday(ctx) {
     allowedMentions: { parse: [] },
     embeds: [
       embed({
-        title: 'Birthdays today',
+        title: 'أعياد ميلاد اليوم',
         description: lines.join('\n'),
         fields,
       }),
@@ -611,10 +579,10 @@ async function handleNext(ctx) {
   const row = store.getBirthday(ctx.guildId, target.id);
 
   if (!row) {
-    const who = target.id === ctx.user.id ? 'You have' : `${target.username} has`;
+    const who = target.id === ctx.user.id ? 'ما سجلت' : `${target.username} ما سجل`;
     await ctx.reply({
       embeds: [
-        errorEmbed('No birthday saved', `${who} not registered a birthday in this server.`),
+        errorReply('ما فيه عيد ميلاد محفوظ', `${who} عيد ميلاد في هذا السيرفر.`),
       ],
     });
     return;
@@ -623,13 +591,13 @@ async function handleNext(ctx) {
   const timeZone = row.timezone ?? timezoneForGuild(ctx.guildId);
   const occurrence = nextOccurrence(row.month, row.day, timeZone);
   const title =
-    target.id === ctx.user.id ? 'Your birthday' : `${target.username}'s birthday`;
+    target.id === ctx.user.id ? 'عيد ميلادك' : `عيد ميلاد ${target.username}`;
   const isToday = occurrence.days === 0;
 
   // A Discord timestamp renders as "in 5 months" and shows the exact date on
   // hover/tap, and it stays correct without the message being re-sent.
   const countdown = isToday
-    ? '🎉 **Today** — happy birthday!'
+    ? '🎉 **اليوم** — كل عام وأنت بخير!'
     : `<t:${occurrence.unix}:R>`;
 
   await ctx.reply({
@@ -638,8 +606,8 @@ async function handleNext(ctx) {
         title,
         description: [`**${occurrence.formatted}** · ${occurrence.weekday}`, countdown].join('\n'),
         fields: [
-          { name: 'Full date', value: `<t:${occurrence.unix}:F>`, inline: false },
-          { name: 'Time zone', value: timeZone, inline: false },
+          { name: 'التاريخ الكامل', value: `<t:${occurrence.unix}:F>`, inline: false },
+          { name: 'المنطقة الزمنية', value: timeZone, inline: false },
         ],
       }),
     ],
@@ -649,9 +617,7 @@ async function handleNext(ctx) {
 async function handleRole(ctx) {
   if (!isAdmin(ctx)) {
     await ctx.reply(
-      ephemeral({
-        embeds: [errorEmbed('Missing permissions', 'You need the Manage Server permission.')],
-      }),
+      ephemeral(errorReply('صلاحيات ناقصة', 'تحتاج صلاحية إدارة السيرفر.')),
     );
     return;
   }
@@ -662,15 +628,9 @@ async function handleRole(ctx) {
 
   if (!role) {
     if (!settings.birthdayRoleId) {
-      await ctx.reply({
-        embeds: [
-          embed({
-            title: 'No birthday role',
-            description: 'No birthday role is configured right now.',
-            color: COLORS.muted,
-          }),
-        ],
-      });
+      await ctx.reply(
+        infoReply('ما فيه رتبة عيد ميلاد', 'ما فيه رتبة عيد ميلاد مضبوطة الحين.'),
+      );
       return;
     }
 
@@ -683,51 +643,38 @@ async function handleRole(ctx) {
     store.deleteAssignmentsForRole(guild.id, settings.birthdayRoleId);
     store.setGuildRole(guild.id, null);
 
-    await ctx.reply({
-      embeds: [
-        successEmbed('Birthday role cleared', 'The birthday role was removed from everyone.'),
-      ],
-    });
+    await ctx.reply(
+      okReply('انمسحت رتبة عيد الميلاد', 'انشالت رتبة عيد الميلاد من الكل.'),
+    );
     return;
   }
 
   if (role.id === guild.id) {
-    await ctx.reply({
-      embeds: [errorEmbed('Invalid role', '@everyone cannot be used as the birthday role.')],
-    });
+    await ctx.reply(errorReply('رتبة غير صالحة', '@everyone ما تنفع رتبة عيد ميلاد.'));
     return;
   }
 
   if (role.managed) {
-    await ctx.reply({
-      embeds: [
-        errorEmbed(
-          'Invalid role',
-          'That role is managed by an integration and cannot be assigned manually.',
-        ),
-      ],
-    });
+    await ctx.reply(
+      errorReply('رتبة غير صالحة', 'هذي الرتبة مرتبطة بتكامل وما تنعطى يدويًا.'),
+    );
     return;
   }
 
   const me = guild.members.me;
 
   if (!me.permissions.has(PermissionFlagsBits.ManageRoles)) {
-    await ctx.reply({
-      embeds: [errorEmbed('Missing permissions', 'I need the **Manage Roles** permission.')],
-    });
+    await ctx.reply(errorReply('صلاحيات ناقصة', 'أحتاج صلاحية **إدارة الرتب**.'));
     return;
   }
 
   if (me.roles.highest.position <= role.position) {
-    await ctx.reply({
-      embeds: [
-        errorEmbed(
-          'Role hierarchy problem',
-          `My highest role (${me.roles.highest}) must sit above ${role} in the role list. Move my role higher under Server Settings → Roles.`,
-        ),
-      ],
-    });
+    await ctx.reply(
+      errorReply(
+        'مشكلة في ترتيب الرتب',
+        `أعلى رتبة عندي (${me.roles.highest}) لازم تكون فوق ${role} في قائمة الرتب. ارفع رتبتي من إعدادات السيرفر ← الرتب.`,
+      ),
+    );
     return;
   }
 
@@ -743,14 +690,10 @@ async function handleRole(ctx) {
   store.setGuildRole(guild.id, role.id);
   await reconcileGuild(guild);
 
-  await ctx.reply({
-    embeds: [
-      successEmbed(
-        'Birthday role set',
-        `${role} will be given on a member's birthday and removed the following day.`,
-      ),
-    ],
-  });
+  await ctx.reply(okReply(
+        'انضبطت رتبة عيد الميلاد',
+        `${role} تنعطى في عيد ميلاد العضو وتنشال اليوم اللي بعده.`,
+      ),);
 }
 
 function parseTimezoneInput(ctx) {
@@ -801,14 +744,10 @@ async function handleTimezone(ctx) {
   if (input.useDefault) {
     if (!isAdmin(ctx)) {
       await ctx.reply(
-        ephemeral({
-          embeds: [
-            errorEmbed(
-              'Missing permissions',
-              'Only members with **Manage Server** can change the server default.',
-            ),
-          ],
-        }),
+        ephemeral(errorReply(
+              'صلاحيات ناقصة',
+              'أصحاب **إدارة السيرفر** فقط يقدرون يغيّرون افتراضي السيرفر.',
+            ),),
       );
       return;
     }
@@ -817,40 +756,28 @@ async function handleTimezone(ctx) {
       store.setGuildTimezone(guild.id, null);
       await reconcileGuild(guild);
 
-      await ctx.reply({
-        embeds: [
-          successEmbed(
-            'Server default reset',
-            `Members without their own time zone now use **${config.timezone}**.`,
-          ),
-        ],
-      });
+      await ctx.reply(okReply(
+            'انصفّر افتراضي السيرفر',
+            `الأعضاء اللي ما عندهم منطقة زمنية صاروا يستخدمون **${config.timezone}**.`,
+          ),);
       return;
     }
 
     if (!isValidTimeZone(input.zone)) {
-      await ctx.reply({
-        embeds: [
-          errorEmbed(
-            'Invalid time zone',
-            `"${input.zone}" is not a valid IANA time zone. Try something like \`Europe/Berlin\` or \`America/New_York\`.`,
-          ),
-        ],
-      });
+      await ctx.reply(errorReply(
+            'منطقة زمنية غير صحيحة',
+            `"${input.zone}" مو منطقة IANA صحيحة. جرّب شي مثل \`Europe/Berlin\` أو \`America/New_York\`.`,
+          ),);
       return;
     }
 
     store.setGuildTimezone(guild.id, input.zone);
     await reconcileGuild(guild);
 
-    await ctx.reply({
-      embeds: [
-        successEmbed(
-          'Server default updated',
-          `Members without their own time zone now use **${input.zone}**.\nCurrent time there: ${describeNow(input.zone)}.`,
-        ),
-      ],
-    });
+    await ctx.reply(okReply(
+          'تحدّث افتراضي السيرفر',
+          `الأعضاء اللي ما عندهم منطقة زمنية صاروا يستخدمون **${input.zone}**.\nالوقت هناك الحين: ${describeNow(input.zone)}.`,
+        ),);
     return;
   }
 
@@ -860,37 +787,27 @@ async function handleTimezone(ctx) {
 
   if (!isSelf && !isAdmin(ctx)) {
     await ctx.reply(
-      ephemeral({
-        embeds: [
-          errorEmbed(
-            'Missing permissions',
-            "Only members with **Manage Server** can change someone else's time zone.",
-          ),
-        ],
-      }),
+      ephemeral(errorReply(
+            'صلاحيات ناقصة',
+            'أصحاب **إدارة السيرفر** فقط يقدرون يغيّرون منطقة عضو ثاني الزمنية.',
+          ),),
     );
     return;
   }
 
   if (target.bot) {
-    await ctx.reply({
-      embeds: [errorEmbed('Invalid member', 'Bots do not have birthdays.')],
-    });
+    await ctx.reply(errorReply('عضو غير صالح', 'البوتات ما عندها أعياد ميلاد.'));
     return;
   }
 
   const birthday = store.getBirthday(guild.id, target.id);
 
   if (!birthday) {
-    const subject = isSelf ? 'You have' : `${who} has`;
-    await ctx.reply({
-      embeds: [
-        errorEmbed(
-          'No birthday saved',
-          `${subject} not registered a birthday yet. Set it with \`/birthday set\` first.`,
-        ),
-      ],
-    });
+    const subject = isSelf ? 'ما سجلت' : `${who} ما سجل`;
+    await ctx.reply(errorReply(
+          'ما فيه عيد ميلاد محفوظ',
+          `${subject} عيد ميلاد بعد. حدده بـ \`/birthday set\` أول.`,
+        ),);
     return;
   }
 
@@ -900,43 +817,31 @@ async function handleTimezone(ctx) {
 
     const fallback = timezoneForGuild(guild.id);
 
-    await ctx.reply({
-      embeds: [
-        successEmbed(
-          isSelf ? 'Time zone reset' : `Time zone reset for ${who}`,
-          `Now using the server default: **${fallback}**.`,
-        ),
-      ],
-    });
+    await ctx.reply(okReply(
+          isSelf ? 'انصفّرت المنطقة الزمنية' : `انصفّرت المنطقة الزمنية لـ ${who}`,
+          `الحين يستخدم افتراضي السيرفر: **${fallback}**.`,
+        ),);
     return;
   }
 
   if (!isValidTimeZone(input.zone)) {
-    await ctx.reply({
-      embeds: [
-        errorEmbed(
+    await ctx.reply(errorReply(
           'Invalid time zone',
           `"${input.zone}" is not a valid IANA time zone. Try something like \`Europe/Berlin\` or \`America/New_York\`.`,
-        ),
-      ],
-    });
+        ),);
     return;
   }
 
   store.setBirthdayTimezone(guild.id, target.id, input.zone);
   await reconcileGuild(guild);
 
-  await ctx.reply({
-    embeds: [
-      successEmbed(
-        isSelf ? 'Time zone updated' : `Time zone updated for ${who}`,
+  await ctx.reply(okReply(
+        isSelf ? 'تحدّثت المنطقة الزمنية' : `تحدّثت المنطقة الزمنية لـ ${who}`,
         [
-          `Birthdays roll over at midnight in **${input.zone}**.`,
-          `Current time there: ${describeNow(input.zone)}.`,
+          `أعياد الميلاد تتبدّل منتصف الليل بـ **${input.zone}**.`,
+          `الوقت هناك الحين: ${describeNow(input.zone)}.`,
         ].join('\n'),
-      ),
-    ],
-  });
+      ),);
 }
 
 async function resolveChannelArg(ctx) {
@@ -958,9 +863,7 @@ async function resolveChannelArg(ctx) {
 async function handleChannel(ctx) {
   if (!isAdmin(ctx)) {
     await ctx.reply(
-      ephemeral({
-        embeds: [errorEmbed('Missing permissions', 'You need the Manage Server permission.')],
-      }),
+      ephemeral(errorReply('صلاحيات ناقصة', 'تحتاج صلاحية إدارة السيرفر.')),
     );
     return;
   }
@@ -974,23 +877,17 @@ async function handleChannel(ctx) {
 
   if (wantsClear) {
     if (!settings.birthdayChannelId) {
-      await ctx.reply({
-        embeds: [
-          embed({
-            title: 'No birthday channel',
-            description: 'No greeting channel is configured right now.',
-            color: COLORS.muted,
-          }),
-        ],
-      });
+      await ctx.reply(
+        infoReply('ما فيه قناة عيد ميلاد', 'ما فيه قناة تهنئة مضبوطة الحين.'),
+      );
       return;
     }
 
     store.setGuildChannel(guild.id, null);
 
-    await ctx.reply({
-      embeds: [successEmbed('Birthday channel cleared', 'Greetings will no longer be posted.')],
-    });
+    await ctx.reply(
+      okReply('انمسحت قناة عيد الميلاد', 'ما عاد تنكتب تهنئة.'),
+    );
     return;
   }
 
@@ -998,22 +895,16 @@ async function handleChannel(ctx) {
 
   if (!channel) {
     await ctx.reply(
-      ephemeral({
-        embeds: [
-          errorEmbed(
-            'Channel not found',
-            `Mention a text channel, for example \`${config.prefix}birthday channel #general\`.`,
-          ),
-        ],
-      }),
+      ephemeral(errorReply(
+            'القناة غير موجودة',
+            `منشن قناة نصية، مثل \`${config.prefix}birthday channel #general\`.`,
+          ),),
     );
     return;
   }
 
   if (!channel.isTextBased?.() || typeof channel.send !== 'function') {
-    await ctx.reply({
-      embeds: [errorEmbed('Invalid channel', 'Pick a text or announcement channel.')],
-    });
+    await ctx.reply(errorReply('قناة غير صالحة', 'اختر قناة نصية أو إعلانات.'));
     return;
   }
 
@@ -1025,14 +916,10 @@ async function handleChannel(ctx) {
     (!permissions.has(PermissionFlagsBits.SendMessages) ||
       !permissions.has(PermissionFlagsBits.EmbedLinks))
   ) {
-    await ctx.reply({
-      embeds: [
-        errorEmbed(
-          'Missing channel permissions',
-          `I cannot post in ${channel}. Grant me **View Channel**, **Send Messages**, and **Embed Links** there.`,
-        ),
-      ],
-    });
+    await ctx.reply(errorReply(
+          'صلاحيات القناة ناقصة',
+          `ما أقدر أنشر في ${channel}. أعطني **عرض القنوات** و**إرسال الرسائل** و**إرفاق الروابط** هناك.`,
+        ),);
     return;
   }
 
@@ -1044,26 +931,26 @@ async function handleChannel(ctx) {
 
   if (result.sent > 0) {
     fields.push({
-      name: 'Today',
-      value: `Sent ${result.sent} greeting${result.sent === 1 ? '' : 's'} for today's birthdays.`,
+      name: 'اليوم',
+      value: `انرسلت ${result.sent} تهنئة لأعياد ميلاد اليوم.`,
     });
   }
 
   if (result.error) {
     fields.push({
-      name: 'Note',
-      value: "Saved, but today's greeting could not be posted. Check my permissions in that channel.",
+      name: 'ملاحظة',
+      value: 'انحفظ، لكن تهنئة اليوم ما انكتبت. تأكد من صلاحياتي في القناة.',
     });
   }
 
   await ctx.reply({
     embeds: [
       embed({
-        title: 'Birthday channel set',
+        title: 'انضبطت قناة عيد الميلاد',
         description: [
-          `Greetings will be posted in ${channel}.`,
-          `Time zone: **${updated.timezone ?? config.timezone}**.`,
-          `Use \`/birthday message\` to customise the text and GIF.`,
+          `التهاني بتنكتب في ${channel}.`,
+          `المنطقة الزمنية: **${updated.timezone ?? config.timezone}**.`,
+          `خصّص النص والـ GIF بـ \`/birthday message\`.`,
         ].join('\n'),
         color: COLORS.success,
         fields,
@@ -1113,26 +1000,26 @@ function messageConfigEmbed(ctx, { template, gifUrl, timeZone, title, footer, wa
 
   if (title) builder.setTitle(title);
   if (!builder.data.description) {
-    builder.setDescription('_Nothing is left after the placeholders are filled in._');
+    builder.setDescription('_ما بقي شي بعد ما تنعبّى المتغيرات._');
   }
 
   const rawTemplate =
     template.length > 1000 ? `${template.slice(0, 999)}\u2026` : template;
 
   builder.addFields(
-    { name: 'Template', value: rawTemplate },
+    { name: 'القالب', value: rawTemplate },
     {
-      name: 'Placeholders',
+      name: 'المتغيرات',
       value: PLACEHOLDERS.map(
         (placeholder) => `\`{${placeholder.key}}\` ${placeholder.description}`,
       ).join('\n'),
     },
   );
 
-  if (warning) builder.addFields({ name: 'Warning', value: warning });
+  if (warning) builder.addFields({ name: 'تحذير', value: warning });
 
   builder.setFooter({
-    text: footer ?? `Preview uses your profile · Time zone: ${timeZone}`,
+    text: footer ?? `المعاينة تستخدم ملفك · المنطقة الزمنية: ${timeZone}`,
   });
 
   return builder;
@@ -1141,9 +1028,7 @@ function messageConfigEmbed(ctx, { template, gifUrl, timeZone, title, footer, wa
 async function handleMessage(ctx) {
   if (!isAdmin(ctx)) {
     await ctx.reply(
-      ephemeral({
-        embeds: [errorEmbed('Missing permissions', 'You need the Manage Server permission.')],
-      }),
+      ephemeral(errorReply('صلاحيات ناقصة', 'تحتاج صلاحية إدارة السيرفر.')),
     );
     return;
   }
@@ -1165,8 +1050,8 @@ async function handleMessage(ctx) {
             template: currentTemplate,
             gifUrl: currentGif,
             timeZone,
-            title: 'Birthday message',
-            footer: `Change it with ${config.prefix}birthday message <text> | <gif> · Time zone: ${timeZone}`,
+            title: 'رسالة عيد الميلاد',
+            footer: `غيّرها بـ ${config.prefix}birthday message <text> | <gif> · المنطقة الزمنية: ${timeZone}`,
           }),
         ],
       }),
@@ -1185,8 +1070,8 @@ async function handleMessage(ctx) {
             template: DEFAULT_MESSAGE,
             gifUrl: null,
             timeZone,
-            title: 'Birthday message reset',
-            footer: `Default text restored and the GIF removed · Time zone: ${timeZone}`,
+            title: 'انصفّرت رسالة عيد الميلاد',
+            footer: `رجع النص الافتراضي وانشال الـ GIF · المنطقة الزمنية: ${timeZone}`,
           }),
         ],
       }),
@@ -1215,7 +1100,7 @@ async function handleMessage(ctx) {
   }
 
   if (problems.length > 0) {
-    await ctx.reply(ephemeral({ embeds: [errorEmbed('Invalid message', problems.join('\n'))] }));
+    await ctx.reply(ephemeral(errorReply('رسالة غير صحيحة', problems.join('\n'))));
     return;
   }
 
@@ -1230,7 +1115,7 @@ async function handleMessage(ctx) {
   const unknown = unknownPlaceholders(nextTemplate);
   const warning =
     unknown.length > 0
-      ? `Unknown placeholders will appear literally: ${unknown
+      ? `المتغيرات غير المعروفة بتطلع كما هي: ${unknown
           .map((key) => `\`{${key}}\``)
           .join(', ')}`
       : undefined;
@@ -1242,8 +1127,8 @@ async function handleMessage(ctx) {
           template: nextTemplate,
           gifUrl: nextGif,
           timeZone,
-          title: 'Birthday message updated',
-          footer: `Applies from the next greeting · Time zone: ${timeZone}`,
+          title: 'تحدّثت رسالة عيد الميلاد',
+          footer: `تنطبق من التهنئة الجاية · المنطقة الزمنية: ${timeZone}`,
           warning,
         }),
       ],
@@ -1254,9 +1139,7 @@ async function handleMessage(ctx) {
 async function handleSend(ctx) {
   if (!isAdmin(ctx)) {
     await ctx.reply(
-      ephemeral({
-        embeds: [errorEmbed('Missing permissions', 'You need the Manage Server permission.')],
-      }),
+      ephemeral(errorReply('صلاحيات ناقصة', 'تحتاج صلاحية إدارة السيرفر.')),
     );
     return;
   }
@@ -1266,14 +1149,10 @@ async function handleSend(ctx) {
 
   if (!settings.birthdayChannelId) {
     await ctx.reply(
-      ephemeral({
-        embeds: [
-          errorEmbed(
-            'No birthday channel',
-            'Set one first with `/birthday channel #channel`, then try again.',
-          ),
-        ],
-      }),
+      ephemeral(errorReply(
+            'ما فيه قناة عيد ميلاد',
+            'اضبطها أول بـ `/birthday channel #channel`، وبعدها جرّب.',
+          ),),
     );
     return;
   }
@@ -1286,39 +1165,31 @@ async function handleSend(ctx) {
 
   if (!result.ok) {
     const reasons = {
-      'channel-missing': 'The configured channel no longer exists. Set it again with `/birthday channel`.',
-      'missing-permissions': 'I need **Send Messages** and **Embed Links** in that channel.',
-      'member-missing': 'That member is not in this server.',
-      'send-failed': 'Discord rejected the message. Check my permissions in the channel.',
-      'no-channel': 'No birthday channel is configured.',
+      'channel-missing': 'القناة المضبوطة ما عادت موجودة. اضبطها مرة ثانية بـ `/birthday channel`.',
+      'missing-permissions': 'أحتاج **إرسال الرسائل** و**إرفاق الروابط** في هذي القناة.',
+      'member-missing': 'هذا العضو مو في السيرفر.',
+      'send-failed': 'ديسكورد رفض الرسالة. تأكد من صلاحياتي في القناة.',
+      'no-channel': 'ما فيه قناة عيد ميلاد مضبوطة.',
     };
 
     await ctx.reply(
-      ephemeral({
-        embeds: [
-          errorEmbed(
-            'Could not send greeting',
-            reasons[result.error] ?? 'Something went wrong while posting the greeting.',
-          ),
-        ],
-      }),
+      ephemeral(errorReply(
+            'ما قدرت أرسل التهنئة',
+            reasons[result.error] ?? 'صار خطأ وأنا أنشر التهنئة.',
+          ),),
     );
     return;
   }
 
   const ping = result.pingSuppressed
-    ? '⚠️ I do not have **Mention Everyone** in that channel, so no ping was sent.'
-    : 'Everyone was pinged.';
+    ? '⚠️ ما عندي **منشن الجميع** في هذي القناة، فما انرسل منشن.'
+    : 'انرسل منشن للجميع.';
 
   await ctx.reply(
-    ephemeral({
-      embeds: [
-        successEmbed(
-          'Greeting sent',
-          `Posted the current template in ${result.channel} for ${target}. ${ping}`,
-        ),
-      ],
-    }),
+    ephemeral(okReply(
+          'انرسلت التهنئة',
+          `انكتب القالب الحالي في ${result.channel} لـ ${target}. ${ping}`,
+        ),),
   );
 }
 
@@ -1327,35 +1198,35 @@ function overviewEmbed(ctx) {
   const timeZone = settings.timezone ?? config.timezone;
 
   return embed({
-    title: 'Birthday commands',
+    title: 'أوامر عيد الميلاد',
     description: [
-      '`/birthday set <month> <day> [year] [user]` — save a birthday (admins: others)',
-      '`/birthday remove [user]` - delete a birthday (admins: others)',
-      '`/birthday show [visible]` — show or hide the birthday block on your card',
-      '`/birthday list` - everyone, nearest first or January to December',
-      '`/birthday today` — who is celebrating today',
-      '`/birthday next [user]` — countdown for you or someone else',
-      '`/birthday role [role]` — admin: choose the birthday role',
-      '`/birthday channel [#channel]` — admin: where greetings are posted',
-      '`/birthday message [text] [gif]` — admin: greeting text, placeholders, GIF',
-      '`/birthday send [user]` - admin: post the greeting now (pings @everyone)',
-      '`/birthday timezone [zone] [user]` — per-member time zone (admins: others)',
-      '`/birthday timezone default:true [zone]` — admin: server-wide fallback',
+      '`/birthday set <month> <day> [year] [user]` — احفظ عيد ميلاد (المشرفون: لغيرهم)',
+      '`/birthday remove [user]` — احذف عيد ميلاد (المشرفون: لغيرهم)',
+      '`/birthday show [visible]` — اظهر أو اخفِ خانة عيد الميلاد على بطاقتك',
+      '`/birthday list` — الكل، الأقرب أولًا أو من يناير إلى ديسمبر',
+      '`/birthday today` — مين عيد ميلاده اليوم',
+      '`/birthday next [user]` — العدّ التنازلي لك أو لغيرك',
+      '`/birthday role [role]` — مشرف: اختر رتبة عيد الميلاد',
+      '`/birthday channel [#channel]` — مشرف: وين تنكتب التهاني',
+      '`/birthday message [text] [gif]` — مشرف: نص التهنئة والمتغيرات والـ GIF',
+      '`/birthday send [user]` — مشرف: انشر التهنئة الحين (منشن @everyone)',
+      '`/birthday timezone [zone] [user]` — منطقة العضو الزمنية (المشرفون: لغيرهم)',
+      '`/birthday timezone default:true [zone]` — مشرف: افتراضي السيرفر',
       '',
-      `Prefix works too: \`${config.prefix}birthday set 5 14\`.`,
+      `البادئة تشتغل بعد: \`${config.prefix}birthday set 5 14\`.`,
     ].join('\n'),
     fields: [
       {
-        name: 'Birthday role',
-        value: settings.birthdayRoleId ? `<@&${settings.birthdayRoleId}>` : 'Not configured',
+        name: 'رتبة عيد الميلاد',
+        value: settings.birthdayRoleId ? `<@&${settings.birthdayRoleId}>` : 'ما انضبطت',
         inline: true,
       },
       {
-        name: 'Greeting channel',
-        value: settings.birthdayChannelId ? `<#${settings.birthdayChannelId}>` : 'Not configured',
+        name: 'قناة التهاني',
+        value: settings.birthdayChannelId ? `<#${settings.birthdayChannelId}>` : 'ما انضبطت',
         inline: true,
       },
-      { name: 'Default time zone', value: timeZone, inline: true },
+      { name: 'المنطقة الزمنية الافتراضية', value: timeZone, inline: true },
     ],
   });
 }
@@ -1363,16 +1234,16 @@ function overviewEmbed(ctx) {
 export default {
   data: new SlashCommandBuilder()
     .setName('birthday')
-    .setDescription('Birthday registry, countdowns, automatic role and greetings')
+    .setDescription('سجل أعياد الميلاد والعدّ التنازلي والرتبة والتهاني')
     .setContexts(InteractionContextType.Guild)
     .addSubcommand((sub) =>
       sub
         .setName('set')
-        .setDescription('Save or update a birthday')
+        .setDescription('احفظ أو حدّث عيد ميلاد')
         .addIntegerOption((option) =>
           option
             .setName('month')
-            .setDescription('Month (1-12)')
+            .setDescription('الشهر (1-12)')
             .setRequired(true)
             .setMinValue(1)
             .setMaxValue(12),
@@ -1380,7 +1251,7 @@ export default {
         .addIntegerOption((option) =>
           option
             .setName('day')
-            .setDescription('Day (1-31)')
+            .setDescription('اليوم (1-31)')
             .setRequired(true)
             .setMinValue(1)
             .setMaxValue(31),
@@ -1388,7 +1259,7 @@ export default {
         .addIntegerOption((option) =>
           option
             .setName('year')
-            .setDescription('Birth year (optional)')
+            .setDescription('سنة الميلاد (اختياري)')
             .setRequired(false)
             .setMinValue(1900)
             .setMaxValue(new Date().getUTCFullYear()),
@@ -1396,62 +1267,62 @@ export default {
         .addUserOption((option) =>
           option
             .setName('user')
-            .setDescription("Admin: set someone else's birthday (Manage Server)")
+            .setDescription('مشرف: حدّد عيد ميلاد عضو ثاني (إدارة السيرفر)')
             .setRequired(false),
         ),
     )
     .addSubcommand((sub) =>
       sub
         .setName('remove')
-        .setDescription('Delete a saved birthday (admins can target someone else)')
+        .setDescription('احذف عيد ميلاد محفوظ (المشرفون يقدرون لعضو ثاني)')
         .addUserOption((option) =>
           option
             .setName('user')
-            .setDescription("Admin: remove someone else's birthday (Manage Server)")
+            .setDescription('مشرف: احذف عيد ميلاد عضو ثاني (إدارة السيرفر)')
             .setRequired(false),
         ),
     )
     .addSubcommand((sub) =>
       sub
         .setName('show')
-        .setDescription('Show or hide your birthday, age and time zone on your profile card')
+        .setDescription('اظهر أو اخفِ عيد ميلادك وعمرك ومنطقتك الزمنية على بطاقتك')
         .addBooleanOption((option) =>
           option
             .setName('visible')
-            .setDescription('Show the block on your card (leave empty to see the current setting)')
+            .setDescription('أظهر الخانة على بطاقتك (اتركها فاضية تشوف الإعداد الحالي)')
             .setRequired(false),
         ),
     )
     .addSubcommand((sub) =>
       sub
         .setName('list')
-        .setDescription('List every birthday (nearest first, or calendar order)'),
+        .setDescription('اعرض كل أعياد الميلاد (الأقرب أولًا أو ترتيب التقويم)'),
     )
-    .addSubcommand((sub) => sub.setName('today').setDescription("Show whose birthday is today"))
+    .addSubcommand((sub) => sub.setName('today').setDescription('اعرض مين عيد ميلاده اليوم'))
     .addSubcommand((sub) =>
       sub
         .setName('next')
-        .setDescription("Countdown to your birthday or someone else's")
+        .setDescription('العدّ التنازلي لعيد ميلادك أو عيد ميلاد غيرك')
         .addUserOption((option) =>
-          option.setName('user').setDescription('Whose birthday to check').setRequired(false),
+          option.setName('user').setDescription('عيد ميلاد مين تبي تشوف').setRequired(false),
         ),
     )
     .addSubcommand((sub) =>
       sub
         .setName('role')
-        .setDescription('Admin: set the birthday role (leave empty to clear)')
+        .setDescription('مشرف: اضبط رتبة عيد الميلاد (اتركها فاضية تمسحها)')
         .addRoleOption((option) =>
-          option.setName('role').setDescription('Role to assign').setRequired(false),
+          option.setName('role').setDescription('الرتبة اللي تنعطى').setRequired(false),
         ),
     )
     .addSubcommand((sub) =>
       sub
         .setName('channel')
-        .setDescription('Admin: channel for birthday greetings (leave empty to clear)')
+        .setDescription('مشرف: قناة تهاني عيد الميلاد (اتركها فاضية تمسحها)')
         .addChannelOption((option) =>
           option
             .setName('channel')
-            .setDescription('Where greetings are posted')
+            .setDescription('وين تنكتب التهاني')
             .setRequired(false)
             .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement),
         ),
@@ -1459,67 +1330,67 @@ export default {
     .addSubcommand((sub) =>
       sub
         .setName('message')
-        .setDescription('Admin: customise the greeting text and GIF')
+        .setDescription('مشرف: خصّص نص التهنئة والـ GIF')
         .addStringOption((option) =>
           option
             .setName('text')
-            .setDescription('Text with placeholders: {user} {name} {age} {server} {date}')
+            .setDescription('النص مع المتغيرات: {user} {name} {age} {server} {date}')
             .setRequired(false)
             .setMaxLength(2000),
         )
         .addStringOption((option) =>
           option
             .setName('gif')
-            .setDescription('Direct GIF/image URL, or "none" to remove it')
+            .setDescription('رابط GIF أو صورة مباشر، أو "none" لإزالته')
             .setRequired(false)
             .setMaxLength(1000),
         )
         .addBooleanOption((option) =>
           option
             .setName('reset')
-            .setDescription('Restore the default text and remove the GIF')
+            .setDescription('ارجع النص الافتراضي واشل الـ GIF')
             .setRequired(false),
         ),
     )
     .addSubcommand((sub) =>
       sub
         .setName('send')
-        .setDescription('Admin: post the greeting in the configured channel now')
+        .setDescription('مشرف: انشر التهنئة في القناة المضبوطة الحين')
         .addUserOption((option) =>
           option
             .setName('user')
-            .setDescription('Who to greet (defaults to you)')
+            .setDescription('منو تهنّي (الافتراضي: أنت)')
             .setRequired(false),
         ),
     )
     .addSubcommand((sub) =>
       sub
         .setName('timezone')
-        .setDescription('Set a member time zone (leave empty to use the default)')
+        .setDescription('حدّد منطقة عضو الزمنية (اتركها فاضية للافتراضي)')
         .addStringOption((option) =>
           option
             .setName('zone')
-            .setDescription('IANA time zone, e.g. Europe/Berlin')
+            .setDescription('منطقة IANA الزمنية، مثل Europe/Berlin')
             .setRequired(false)
             .setAutocomplete(true),
         )
         .addUserOption((option) =>
           option
             .setName('user')
-            .setDescription("Admin: change someone else's time zone")
+            .setDescription('مشرف: غيّر منطقة عضو ثاني الزمنية')
             .setRequired(false),
         )
         .addBooleanOption((option) =>
           option
             .setName('default')
-            .setDescription('Admin: change the server-wide fallback instead')
+            .setDescription('مشرف: غيّر افتراضي السيرفر بدال عضو')
             .setRequired(false),
         ),
     ),
 
   name: 'birthday',
   aliases: ['bd', 'bday', 'birthdays'],
-  description: 'Birthday registry, countdowns, automatic role and greetings',
+  description: 'سجل أعياد الميلاد والعدّ التنازلي والرتبة والتهاني',
   category: 'Community',
   usage: 'birthday <set|remove|list|today|next|role|channel|message|send|timezone>',
   cooldown: 3,

@@ -26,7 +26,7 @@ function warnThrottled(key, message) {
   logger.warn(message);
 }
 
-export const DEFAULT_MESSAGE = '🎉 Happy birthday, {user}! Wishing you a fantastic day.';
+export const DEFAULT_MESSAGE = '🎉 كل عام وأنت بخير، {user}! نتمنى لك يوم رائع.';
 export const MAX_MESSAGE_LENGTH = 2000;
 export const MAX_GIF_URL_LENGTH = MAX_IMAGE_URL_LENGTH;
 
@@ -37,11 +37,11 @@ export { isClearValue, validateImageUrl as validateGifUrl } from '../lib/media.j
  * the member did not save a birth year, so a template never reads oddly blank.
  */
 export const PLACEHOLDERS = [
-  { key: 'user', description: 'Mentions the birthday member' },
-  { key: 'name', description: 'Their display name' },
-  { key: 'age', description: 'Age they turn (0 without a birth year)' },
-  { key: 'server', description: 'Server name' },
-  { key: 'date', description: 'Date, like "May 14"' },
+  { key: 'user', description: 'منشن صاحب عيد الميلاد' },
+  { key: 'name', description: 'اسمه الظاهر' },
+  { key: 'age', description: 'العمر اللي يكمله (0 بدون سنة ميلاد)' },
+  { key: 'server', description: 'اسم السيرفر' },
+  { key: 'date', description: 'التاريخ، مثل "14 مايو"' },
 ];
 
 const PLACEHOLDER_KEYS = new Set(PLACEHOLDERS.map((placeholder) => placeholder.key));
@@ -55,9 +55,9 @@ export function unknownPlaceholders(template) {
 export function validateMessage(template) {
   const text = template.trim();
 
-  if (!text) return 'The greeting message cannot be empty.';
+  if (!text) return 'رسالة التهنئة ما تكون فاضية.';
   if (text.length > MAX_MESSAGE_LENGTH) {
-    return `The greeting message must be ${MAX_MESSAGE_LENGTH} characters or fewer.`;
+    return `رسالة التهنئة لازم تكون ${MAX_MESSAGE_LENGTH} حرف أو أقل.`;
   }
 
   return null;
