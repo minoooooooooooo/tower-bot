@@ -1,4 +1,5 @@
 import { PermissionFlagsBits } from 'discord.js';
+import { formatDurationArabic } from '../lib/durations.js';
 import { COLORS, embed } from '../lib/embeds.js';
 import { createLogger } from '../lib/logger.js';
 import {
@@ -43,28 +44,28 @@ function auditReason(text) {
  * managed flag or the role hierarchy.
  */
 export function manageableRoleProblem(guild, role) {
-  if (!role) return 'Pick an exile role.';
+  if (!role) return 'حدّد رتبة عزل.';
 
   if (role.id === guild.id) {
-    return 'The @everyone role cannot be used as an exile role.';
+    return 'رتبة @everyone ما تنفع رتبة عزل.';
   }
 
   if (role.managed) {
-    return `**${role.name}** is managed by an integration and cannot be assigned by hand.`;
+    return `**${role.name}** مرتبطة بتكامل وما تنضاف يدويًا.`;
   }
 
   const me = guild.members?.me;
 
-  if (!me) return 'I could not read my own server profile. Try again in a moment.';
+  if (!me) return 'ما قدرت أقرأ ملفي في السيرفر. جرّب بعد لحظة.';
 
   if (!me.permissions?.has(PermissionFlagsBits.ManageRoles)) {
-    return 'I need the **Manage Roles** permission to edit channel permissions for that role.';
+    return 'أحتاج **إدارة الرتب** عشان أعدّل صلاحيات القنوات لهذي الرتبة.';
   }
 
   const botTop = me.roles?.highest?.position ?? 0;
 
   if (role.position >= botTop) {
-    return `My highest role must sit **above ${role.name}**. Drag my role up in Server Settings → Roles, then try again.`;
+    return `رتبتي لازم تكون **فوق ${role.name}**. ارفع رتبتي في إعدادات السيرفر → الرتب وجرّب مرة ثانية.`;
   }
 
   return null;
@@ -81,7 +82,7 @@ export function roleProblem(guild, role) {
   if (base) return base;
 
   if (role.permissions?.has(PermissionFlagsBits.Administrator)) {
-    return `**${role.name}** has **Administrator**, which bypasses every channel permission. Remove it from the role first.`;
+    return `**${role.name}** عندها **مسؤول**، وهذا يتجاوز كل صلاحيات القنوات. شلها منها أول.`;
   }
 
   return null;
@@ -97,28 +98,28 @@ export async function resolveAccessRole(guild) {
 
 /** Refuses targets the bot cannot meaningfully punish or outrank. */
 export function memberProblem(guild, member) {
-  if (!member) return 'Pick a member to exile.';
+  if (!member) return 'حدّد عضو تعزله.';
 
-  if (member.user?.bot) return 'Bots cannot be exiled.';
+  if (member.user?.bot) return 'البوتات ما تنعزل.';
 
   if (member.id === guild.ownerId) {
-    return 'The server owner cannot be exiled — the owner bypasses every permission.';
+    return 'صاحب السيرفر ما ينعزل — يتجاوز كل الصلاحيات.';
   }
 
   const me = guild.members?.me;
 
-  if (!me) return 'I could not read my own server profile. Try again in a moment.';
+  if (!me) return 'ما قدرت أقرأ ملفي في السيرفر. جرّب بعد لحظة.';
 
-  if (member.id === me.id) return 'I cannot exile myself.';
+  if (member.id === me.id) return 'ما أقدر أعزل نفسي.';
 
   if (member.permissions?.has(PermissionFlagsBits.Administrator)) {
-    return 'That member has **Administrator**, which bypasses every channel permission. Remove it first.';
+    return 'هذا العضو عنده **مسؤول**، وهذا يتجاوز كل صلاحيات القنوات. شلها أول.';
   }
 
   const botTop = me.roles?.highest?.position ?? 0;
 
   if ((member.roles?.highest?.position ?? 0) >= botTop) {
-    return `That member's highest role sits at or above mine, so I cannot change their roles. Move my role higher first.`;
+    return 'أعلى رتبة عند هذا العضو أعلى من رتبتي أو نفسها، فما أقدر أغيّر رتبه. ارفع رتبتي أول.';
   }
 
   return null;
@@ -236,7 +237,7 @@ export async function reconcileRole(guild, role, exceptionIds, { reason } = {}) 
     if (exceptions.has(channel.id) && channel.parentId) parents.add(channel.parentId);
   }
 
-  const label = reason ?? `Exile setup: ${role.name}`;
+  const label = reason ?? `إعداد العزل: ${role.name}`;
   let updated = 0;
   let skipped = 0;
   const failed = [];
@@ -283,7 +284,7 @@ export async function applyCreationRules(channel) {
 
       const exceptions = new Set(listExceptionIds(guild.id, roleId));
       const state = exceptions.has(channel.id) ? 'allow' : 'deny';
-      const reason = `Exile setup: new channel for ${role.name}`;
+      const reason = `إعداد العزل: قناة جديدة لـ ${role.name}`;
 
       if (await editOverwrite(channel, role, state, reason)) updated += 1;
 
@@ -368,19 +369,22 @@ export async function removeExileRoles(member, extraRoleId, reason) {
 
 function auditFields({ userId, actorId, level, roleId, reason, at, releasedAt }) {
   const fields = [
-    { name: 'Member', value: `<@${userId}>`, inline: true },
-    { name: 'Level', value: levelLabel(level), inline: true },
-    { name: 'Role', value: `<@&${roleId}>`, inline: true },
-    { name: 'By', value: `<@${actorId}>`, inline: true },
+    { name: 'العضو', value: `<@${userId}>`, inline: true },
+    { name: 'المستوى', value: levelLabel(level), inline: true },
+    { name: 'الرتبة', value: `<@&${roleId}>`, inline: true },
+    { name: 'بواسطة', value: `<@${actorId}>`, inline: true },
   ];
 
   if (releasedAt) {
-    const seconds = Math.max(0, Math.round((releasedAt - at) / 1000));
-    fields.push({ name: 'Held for', value: `${Math.floor(seconds / 60)}m`, inline: true });
+    fields.push({
+      name: 'محجوز لمدة',
+      value: formatDurationArabic(releasedAt - at),
+      inline: true,
+    });
   }
 
   fields.push({
-    name: 'Reason',
+    name: 'السبب',
     value: reason?.trim() ? reason.trim().slice(0, 300) : '—',
     inline: false,
   });
@@ -434,9 +438,9 @@ export async function sendExileLog(guild, entry) {
   }
 
   const titles = {
-    exile: 'Member exiled',
-    level: 'Exile level changed',
-    release: 'Member released',
+    exile: 'تم عزل عضو',
+    level: 'تغيّر مستوى العزل',
+    release: 'تم فك العزل',
   };
   const colors = {
     exile: COLORS.danger,
@@ -449,7 +453,7 @@ export async function sendExileLog(guild, entry) {
       allowedMentions: { parse: [] },
       embeds: [
         embed({
-          title: titles[entry.type] ?? 'Exile update',
+          title: titles[entry.type] ?? 'تحديث عزل',
           fields: auditFields(entry),
           color: colors[entry.type] ?? COLORS.primary,
           footer: entry.footer,

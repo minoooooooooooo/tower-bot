@@ -1,10 +1,9 @@
 import {
   InteractionContextType,
-  MessageFlags,
   PermissionFlagsBits,
   SlashCommandBuilder,
 } from 'discord.js';
-import { errorEmbed, infoEmbed, successEmbed } from '../../lib/embeds.js';
+import { formatDurationArabic } from '../../lib/durations.js';
 import { resolveMember } from '../../lib/resolve.js';
 import {
   EXILE_ACCESS_ROLE_ID,
@@ -20,30 +19,14 @@ import {
   levelLabel,
   releaseActiveExile,
 } from '../../services/exile-store.js';
-
-function ephemeral(payload) {
-  return { ...payload, flags: MessageFlags.Ephemeral };
-}
+import { done, fail, info } from './_shared.js';
 
 async function requireManageServer(ctx) {
   if (ctx.member?.permissions?.has(PermissionFlagsBits.ManageGuild)) return true;
 
-  await ctx.reply(
-    ephemeral({
-      embeds: [errorEmbed('Missing permissions', 'You need **Manage Server** to release members.')],
-    }),
-  );
+  await fail(ctx, 'صلاحيات ناقصة', 'تحتاج **إدارة السيرفر** عشان تفك العزل.');
 
   return false;
-}
-
-function formatHeld(ms) {
-  const minutes = Math.max(0, Math.round(ms / 60_000));
-
-  if (minutes < 60) return `${minutes}m`;
-  if (minutes < 60 * 24) return `${Math.floor(minutes / 60)}h`;
-
-  return `${Math.floor(minutes / (60 * 24))}d`;
 }
 
 /**
@@ -66,7 +49,7 @@ async function restoreAccessRole(guild, member, actor) {
   if (issue) return { restored: false, failed: issue };
 
   try {
-    await member.roles.add(role.id, `Exile released by ${actor}`);
+    await member.roles.add(role.id, `فك العزل بواسطة ${actor}`);
     return { restored: true, failed: null };
   } catch (error) {
     return { restored: false, failed: error.message };
@@ -76,23 +59,23 @@ async function restoreAccessRole(guild, member, actor) {
 export default {
   data: new SlashCommandBuilder()
     .setName('exile-release')
-    .setDescription('Remove a member’s exile role and let them see the server again')
+    .setDescription('اشل رتبة العزل عن عضو وخلّه يشوف السيرفر من جديد')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .setContexts(InteractionContextType.Guild)
     .addUserOption((option) =>
-      option.setName('user').setDescription('Member to release').setRequired(true),
+      option.setName('user').setDescription('العضو اللي تبي تفك عزله').setRequired(true),
     )
     .addStringOption((option) =>
       option
         .setName('reason')
-        .setDescription('Why they are being released (shown in the log)')
+        .setDescription('سبب فك العزل (ينكتب في السجل)')
         .setRequired(false)
         .setMaxLength(MAX_REASON_LENGTH),
     ),
 
   name: 'exile-release',
   aliases: ['unjail', 'unexile'],
-  description: 'Remove a member’s exile role and let them see the server again',
+  description: 'اشل رتبة العزل عن عضو وخلّه يشوف السيرفر من جديد',
   category: 'Moderation',
   usage: 'exile-release <@member> [reason]',
   cooldown: 3,
@@ -121,15 +104,10 @@ export default {
     }
 
     if (!member) {
-      await ctx.reply(
-        ephemeral({
-          embeds: [
-            errorEmbed(
-              'Unknown member',
-              `Mention the member or paste their id, for example \`${ctx.isSlash ? '/exile-release user:@member' : ':-exile-release @member appeal accepted'}\`.`,
-            ),
-          ],
-        }),
+      await fail(
+        ctx,
+        'عضو غير معروف',
+        `منشن العضو أو الصق الآيدي، مثل \`${ctx.isSlash ? '/exile-release user:@member' : ':-exile-release @member قبلت الاستئناف'}\`.`,
       );
       return;
     }
@@ -141,14 +119,10 @@ export default {
     const active = getActiveExile(ctx.guildId, member.id);
 
     if (!active) {
-      const cleanup = await removeExileRoles(member, null, `Exile cleanup by ${ctx.user.tag ?? ctx.user.username}`);
+      const cleanup = await removeExileRoles(member, null, `تنظيف عزل بواسطة ${ctx.user.tag ?? ctx.user.username}`);
 
       if (cleanup.removed.length === 0) {
-        await ctx.reply(
-          ephemeral({
-            embeds: [infoEmbed('Not exiled', `${member} does not have an active exile.`)],
-          }),
-        );
+        await info(ctx, 'مو معزول', `${member} ما عنده عزل شغّال.`);
         return;
       }
 
@@ -158,17 +132,15 @@ export default {
         ctx.user.tag ?? ctx.user.username,
       );
       const lines = [
-        `${member} had an exile role but no active record. I removed ${cleanup.removed.length} role${cleanup.removed.length === 1 ? '' : 's'}; they can see the server again.`,
+        `${member} كان عنده رتبة عزل بدون سجل. شلت **${cleanup.removed.length}** من رتب العزل؛ الحين يقدر يشوف السيرفر.`,
       ];
 
-      if (access.restored) lines.push(`Restored <@&${EXILE_ACCESS_ROLE_ID}>.`);
+      if (access.restored) lines.push(`رجّعت <@&${EXILE_ACCESS_ROLE_ID}>.`);
       if (access.failed) {
-        lines.push('', `⚠️ I could not restore <@&${EXILE_ACCESS_ROLE_ID}>: ${access.failed}`);
+        lines.push('', `⚠️ ما قدرت أرجّع <@&${EXILE_ACCESS_ROLE_ID}>: ${access.failed}`);
       }
 
-      await ctx.reply(
-        ephemeral({ embeds: [successEmbed('Stale exile role removed', lines.join('\n'))] }),
-      );
+      await done(ctx, 'شلت رتبة عزل قديمة', lines.join('\n'));
       return;
     }
 
@@ -178,18 +150,13 @@ export default {
       result = await removeExileRoles(
         member,
         active.roleId,
-        `Exile released by ${ctx.user.tag ?? ctx.user.username}`,
+        `فك العزل بواسطة ${ctx.user.tag ?? ctx.user.username}`,
       );
     } catch (error) {
-      await ctx.reply(
-        ephemeral({
-          embeds: [
-            errorEmbed(
-              'Could not remove the role',
-              `Discord refused the change: ${error.message}. Check that my role is above the exile role.`,
-            ),
-          ],
-        }),
+      await fail(
+        ctx,
+        'ما قدرت أشيل الرتبة',
+        `ديسكورد رفض التغيير: ${error.message}. تأكد أن رتبتي فوق رتبة العزل.`,
       );
       return;
     }
@@ -197,15 +164,10 @@ export default {
     // The active role must be gone before the record is marked released,
     // otherwise the list would claim a member is free while still restricted.
     if (member.roles.cache.has(active.roleId)) {
-      await ctx.reply(
-        ephemeral({
-          embeds: [
-            errorEmbed(
-              'Exile role is still applied',
-              `I could not remove <@&${active.roleId}>. Move my role above it and try again; the exile stays active until then.`,
-            ),
-          ],
-        }),
+      await fail(
+        ctx,
+        'رتبة العزل لسا موجودة',
+        `ما قدرت أشيل <@&${active.roleId}>. ارفع رتبتي فوقها وجرّب؛ العزل يبقى شغّال لين تنجح.`,
       );
       return;
     }
@@ -220,7 +182,7 @@ export default {
       guildId: ctx.guildId,
       userId: member.id,
       releasedBy: ctx.user.id,
-      reason: reason || 'Released',
+      reason: reason || 'بدون سبب',
     });
 
     await sendExileLog(ctx.guild, {
@@ -229,30 +191,30 @@ export default {
       actorId: ctx.user.id,
       level: active.level,
       roleId: active.roleId,
-      reason: reason || 'Released',
+      reason: reason || 'بدون سبب',
       at: active.createdAt,
       releasedAt: Date.now(),
-      footer: `Held for ${formatHeld(Date.now() - active.createdAt)}`,
+      footer: `محجوز لمدة ${formatDurationArabic(Date.now() - active.createdAt)}`,
     });
 
     const lines = [
-      `${member} is free again — <@&${active.roleId}> was removed.`,
-      `They were at **${levelLabel(active.level)}** for **${formatHeld(Date.now() - active.createdAt)}**.`,
-      `Reason: ${reason || 'Released'}`,
+      `${member} صار حر — شلت <@&${active.roleId}>.`,
+      `كان في **${levelLabel(active.level)}** لمدة **${formatDurationArabic(Date.now() - active.createdAt)}**.`,
+      `السبب: ${reason || 'بدون سبب'}`,
     ];
 
-    if (access.restored) lines.push(`Restored <@&${EXILE_ACCESS_ROLE_ID}>.`);
+    if (access.restored) lines.push(`رجّعت <@&${EXILE_ACCESS_ROLE_ID}>.`);
     if (access.failed) {
-      lines.push('', `⚠️ I could not restore <@&${EXILE_ACCESS_ROLE_ID}>: ${access.failed}`);
+      lines.push('', `⚠️ ما قدرت أرجّع <@&${EXILE_ACCESS_ROLE_ID}>: ${access.failed}`);
     }
 
     if (result.failed.length > 0) {
       lines.push(
         '',
-        `⚠️ ${result.failed.length} other exile role${result.failed.length === 1 ? '' : 's'} could not be removed. Check my role position.`,
+        `⚠️ **${result.failed.length}** من رتب العزل الثانية ما انشالت. راجع ترتيب رتبتي.`,
       );
     }
 
-    await ctx.reply(ephemeral({ embeds: [successEmbed('Member released', lines.join('\n'))] }));
+    await done(ctx, 'تم فك العزل', lines.join('\n'));
   },
 };

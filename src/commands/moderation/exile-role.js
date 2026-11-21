@@ -4,7 +4,7 @@ import {
   PermissionFlagsBits,
   SlashCommandBuilder,
 } from 'discord.js';
-import { COLORS, embed, errorEmbed, infoEmbed, successEmbed, warningEmbed } from '../../lib/embeds.js';
+import { COLORS, embed } from '../../lib/embeds.js';
 import { resolveRole } from '../../lib/resolve.js';
 import { roleProblem } from '../../services/exile.js';
 import {
@@ -16,6 +16,7 @@ import {
   normalizeLevel,
   setRoleMapping,
 } from '../../services/exile-store.js';
+import { done, fail, info } from './_shared.js';
 
 function ephemeral(payload) {
   return { ...payload, flags: MessageFlags.Ephemeral };
@@ -24,13 +25,7 @@ function ephemeral(payload) {
 async function requireManageServer(ctx) {
   if (ctx.member?.permissions?.has(PermissionFlagsBits.ManageGuild)) return true;
 
-  await ctx.reply(
-    ephemeral({
-      embeds: [
-        errorEmbed('Missing permissions', 'You need **Manage Server** to map exile levels.'),
-      ],
-    }),
-  );
+  await fail(ctx, 'صلاحيات ناقصة', 'تحتاج **إدارة السيرفر** عشان تربط مستويات العزل.');
 
   return false;
 }
@@ -42,15 +37,10 @@ async function handleSet(ctx) {
   const level = normalizeLevel(rawLevel);
 
   if (!level) {
-    await ctx.reply(
-      ephemeral({
-        embeds: [
-          errorEmbed(
-            'Invalid level',
-            `Use \`main\` or a number from 1 to 10, for example \`${ctx.isSlash ? '/exile-role set level:3 role:@Exile 3' : ':-exile-role set 3 @Exile 3'}\`.`,
-          ),
-        ],
-      }),
+    await fail(
+      ctx,
+      'مستوى غير صحيح',
+      `استخدم \`main\` أو رقم من 1 إلى 10، مثل \`${ctx.isSlash ? '/exile-role set level:3 role:@Exile 3' : ':-exile-role set 3 @Exile 3'}\`.`,
     );
     return;
   }
@@ -60,15 +50,10 @@ async function handleSet(ctx) {
     : await resolveRole(ctx.guild, ctx.args[2]).catch(() => null);
 
   if (!role) {
-    await ctx.reply(
-      ephemeral({
-        embeds: [
-          errorEmbed(
-            'Unknown role',
-            'Mention the exile role or paste its id, for example `:-exile-role set 3 @Exile3`.',
-          ),
-        ],
-      }),
+    await fail(
+      ctx,
+      'رتبة غير معروفة',
+      'منشن رتبة العزل أو الصق آيديها، مثل `:-exile-role set 3 @Exile3`.',
     );
     return;
   }
@@ -76,7 +61,7 @@ async function handleSet(ctx) {
   const problem = roleProblem(ctx.guild, role);
 
   if (problem) {
-    await ctx.reply(ephemeral({ embeds: [errorEmbed('Cannot use that role', problem)] }));
+    await fail(ctx, 'ما أقدر أستخدم هذي الرتبة', problem);
     return;
   }
 
@@ -86,27 +71,24 @@ async function handleSet(ctx) {
   const lines = [`**${levelLabel(level)}** → ${role}`];
 
   if (previous && previous !== role.id) {
-    lines.push(`This level previously used <@&${previous}>.`);
+    lines.push(`هذا المستوى كان يستخدم <@&${previous}>.`);
   }
 
   if (previousLevel && previousLevel !== level) {
-    lines.push(`${role} was mapped to **${levelLabel(previousLevel)}** and has been moved.`);
+    lines.push(`${role} كان مربوط بـ **${levelLabel(previousLevel)}** ونقلته.`);
   }
 
   if (!setUp) {
     lines.push(
       '',
-      `⚠️ This role has **not been set up** yet. Run \`/exile-setup role:${role.name}\` before using it — otherwise no channel is hidden.`,
+      `⚠️ هذي الرتبة **ما انضبطت** بعد. شغّل \`/exile-setup role:${role.name}\` قبل تستخدمها — بدونها ما تنخفي أي قناة.`,
     );
+
+    await info(ctx, 'تم حفظ مستوى العزل', lines.join('\n'));
+    return;
   }
 
-  await ctx.reply(
-    ephemeral({
-      embeds: [
-        (setUp ? successEmbed : warningEmbed)('Exile level saved', lines.join('\n')),
-      ],
-    }),
-  );
+  await done(ctx, 'تم حفظ مستوى العزل', lines.join('\n'));
 }
 
 async function handleClear(ctx) {
@@ -114,30 +96,22 @@ async function handleClear(ctx) {
   const level = normalizeLevel(rawLevel);
 
   if (!level) {
-    await ctx.reply(
-      ephemeral({
-        embeds: [
-          errorEmbed('Invalid level', 'Use `main` or a number from 1 to 10.'),
-        ],
-      }),
-    );
+    await fail(ctx, 'مستوى غير صحيح', 'استخدم `main` أو رقم من 1 إلى 10.');
     return;
   }
 
   const removed = clearRoleMapping(ctx.guildId, level);
 
-  await ctx.reply(
-    ephemeral({
-      embeds: [
-        removed > 0
-          ? successEmbed(
-              'Exile level cleared',
-              `**${levelLabel(level)}** no longer has a role. The role itself and its channel rules are untouched.`,
-            )
-          : infoEmbed('Nothing to clear', `**${levelLabel(level)}** was not mapped to a role.`),
-      ],
-    }),
-  );
+  if (removed > 0) {
+    await done(
+      ctx,
+      'تم مسح مستوى العزل',
+      `**${levelLabel(level)}** ما عاد له رتبة. الرتبة نفسها وقواعد قنواتها ما تتغيّر.`,
+    );
+    return;
+  }
+
+  await info(ctx, 'ما فيه شي لمسحه', `**${levelLabel(level)}** ما كان مربوط برتبة.`);
 }
 
 function listPayload(ctx) {
@@ -148,63 +122,63 @@ function listPayload(ctx) {
   const lines = EXILE_LEVELS.map((level) => {
     const roleId = mappings.get(level);
 
-    if (!roleId) return `**${levelLabel(level)}** — *not set*`;
+    if (!roleId) return `**${levelLabel(level)}** — *غير مربوط*`;
 
     const role = ctx.guild.roles.cache.get(roleId);
-    const name = role ? role.toString() : `<@&${roleId}> (deleted)`;
+    const name = role ? role.toString() : `<@&${roleId}> (محذوفة)`;
     const ready = isRoleSetUp(ctx.guildId, roleId);
 
-    return `**${levelLabel(level)}** — ${name}${ready ? '' : ' ⚠️ not set up'}`;
+    return `**${levelLabel(level)}** — ${name}${ready ? '' : ' ⚠️ ما انضبطت'}`;
   });
 
   const configured = mappings.size;
 
   return embed({
-    title: `Exile levels (${configured}/${EXILE_LEVELS.length})`,
+    title: `مستويات العزل (${configured}/${EXILE_LEVELS.length})`,
     description: lines.join('\n'),
     color: configured === EXILE_LEVELS.length ? COLORS.primary : COLORS.warning,
     footer:
-      'Map with /exile-role set · hide channels with /exile-setup · use /exile user:@member level:<n>',
+      'اربط بـ /exile-role set · اخفِ القنوات بـ /exile-setup · استخدم /exile user:@member level:<n>',
   });
 }
 
 export default {
   data: new SlashCommandBuilder()
     .setName('exile-role')
-    .setDescription('Map each exile level to one of your exile roles')
+    .setDescription('اربط كل مستوى عزل بإحدى رتب العزل')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .setContexts(InteractionContextType.Guild)
     .addSubcommand((sub) =>
       sub
         .setName('set')
-        .setDescription('Choose the role used for a level')
+        .setDescription('اختر الرتبة المستخدمة لمستوى')
         .addStringOption((option) =>
           option
             .setName('level')
-            .setDescription('Main or 1–10')
+            .setDescription('الرئيسي أو 1–10')
             .setRequired(true)
             .addChoices(...LEVEL_CHOICES),
         )
         .addRoleOption((option) =>
-          option.setName('role').setDescription('The exile role').setRequired(true),
+          option.setName('role').setDescription('رتبة العزل').setRequired(true),
         ),
     )
     .addSubcommand((sub) =>
       sub
         .setName('clear')
-        .setDescription('Forget the role mapped to a level')
+        .setDescription('انسَ الرتبة المربوطة بمستوى')
         .addStringOption((option) =>
           option
             .setName('level')
-            .setDescription('Main or 1–10')
+            .setDescription('الرئيسي أو 1–10')
             .setRequired(true)
             .addChoices(...LEVEL_CHOICES),
         ),
     )
-    .addSubcommand((sub) => sub.setName('list').setDescription('Show every level and its role')),
+    .addSubcommand((sub) => sub.setName('list').setDescription('اعرض كل مستوى ورتبته')),
 
   name: 'exile-role',
-  description: 'Map each exile level to one of your exile roles',
+  description: 'اربط كل مستوى عزل بإحدى رتب العزل',
   category: 'Moderation',
   usage: 'exile-role set <main|1-10> <@role> | clear <main|1-10> | list',
   cooldown: 3,

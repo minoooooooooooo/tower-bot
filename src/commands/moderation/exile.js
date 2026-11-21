@@ -1,10 +1,8 @@
 import {
   InteractionContextType,
-  MessageFlags,
   PermissionFlagsBits,
   SlashCommandBuilder,
 } from 'discord.js';
-import { errorEmbed, infoEmbed, successEmbed } from '../../lib/embeds.js';
 import { resolveMember } from '../../lib/resolve.js';
 import {
   EXILE_ACCESS_ROLE_ID,
@@ -28,19 +26,12 @@ import {
   updateActiveExile,
 } from '../../services/exile-store.js';
 import { ensureExileBackfill, recordExilePoints } from '../../services/profile-store.js';
-
-function ephemeral(payload) {
-  return { ...payload, flags: MessageFlags.Ephemeral };
-}
+import { done, fail, info } from './_shared.js';
 
 async function requireManageServer(ctx) {
   if (ctx.member?.permissions?.has(PermissionFlagsBits.ManageGuild)) return true;
 
-  await ctx.reply(
-    ephemeral({
-      embeds: [errorEmbed('Missing permissions', 'You need **Manage Server** to exile members.')],
-    }),
-  );
+  await fail(ctx, 'صلاحيات ناقصة', 'تحتاج **إدارة السيرفر** عشان تعزل الأعضاء.');
 
   return false;
 }
@@ -72,7 +63,7 @@ async function parsePrefix(ctx) {
       const parsed = normalizeLevel(token);
 
       if (!parsed) {
-        problem = `**${token}** is not a level. Use \`main\` or 1–10.`;
+        problem = `**${token}** مو مستوى. استخدم \`main\` أو من 1 إلى 10.`;
         break;
       }
 
@@ -96,30 +87,30 @@ async function parsePrefix(ctx) {
 export default {
   data: new SlashCommandBuilder()
     .setName('exile')
-    .setDescription('Give a member an exile role and hide the server from them')
+    .setDescription('أعطِ عضوًا رتبة عزل واخفِ السيرفر عنه')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .setContexts(InteractionContextType.Guild)
     .addUserOption((option) =>
-      option.setName('user').setDescription('Member to exile').setRequired(true),
+      option.setName('user').setDescription('العضو اللي تبي تعزله').setRequired(true),
     )
     .addStringOption((option) =>
       option
         .setName('level')
-        .setDescription('Main exile or a severity level 1–10 (default: main)')
+        .setDescription('العزل الرئيسي أو مستوى شدة من 1 إلى 10 (الافتراضي: الرئيسي)')
         .setRequired(false)
         .addChoices(...LEVEL_CHOICES),
     )
     .addStringOption((option) =>
       option
         .setName('reason')
-        .setDescription('Why this member is being exiled (shown in the log)')
+        .setDescription('سبب العزل (ينكتب في السجل)')
         .setRequired(false)
         .setMaxLength(MAX_REASON_LENGTH),
     ),
 
   name: 'exile',
   aliases: ['jail', 'prison'],
-  description: 'Give a member an exile role and hide the server from them',
+  description: 'أعطِ عضوًا رتبة عزل واخفِ السيرفر عنه',
   category: 'Moderation',
   usage: 'exile <@member> [main|1-10] [reason]',
   cooldown: 3,
@@ -160,7 +151,7 @@ export default {
       const parsed = await parsePrefix(ctx);
 
       if (parsed.problem) {
-        await ctx.reply(ephemeral({ embeds: [errorEmbed('Invalid level', parsed.problem)] }));
+        await fail(ctx, 'مستوى غير صحيح', parsed.problem);
         return;
       }
 
@@ -170,15 +161,10 @@ export default {
     }
 
     if (!member) {
-      await ctx.reply(
-        ephemeral({
-          embeds: [
-            errorEmbed(
-              'Unknown member',
-              `Mention the member or paste their id, for example \`${ctx.isSlash ? '/exile user:@member level:1' : ':-exile @member 1 spam'}\`.`,
-            ),
-          ],
-        }),
+      await fail(
+        ctx,
+        'عضو غير معروف',
+        `منشن العضو أو الصق الآيدي، مثل \`${ctx.isSlash ? '/exile user:@member level:1' : ':-exile @member 1 spam'}\`.`,
       );
       return;
     }
@@ -186,27 +172,22 @@ export default {
     const targetProblem = memberProblem(ctx.guild, member);
 
     if (targetProblem) {
-      await ctx.reply(ephemeral({ embeds: [errorEmbed('Cannot exile that member', targetProblem)] }));
+      await fail(ctx, 'ما أقدر أعزل هذا العضو', targetProblem);
       return;
     }
 
     if (!level) {
-      await ctx.reply(ephemeral({ embeds: [errorEmbed('Invalid level', 'Use `main` or 1–10.')] }));
+      await fail(ctx, 'مستوى غير صحيح', 'استخدم `main` أو رقم من 1 إلى 10.');
       return;
     }
 
     const roleId = getRoleForLevel(ctx.guildId, level);
 
     if (!roleId) {
-      await ctx.reply(
-        ephemeral({
-          embeds: [
-            errorEmbed(
-              `${levelLabel(level)} has no role`,
-              `Run \`/exile-role set level:${level} role:@YourRole\` first.`,
-            ),
-          ],
-        }),
+      await fail(
+        ctx,
+        `${levelLabel(level)} ما له رتبة`,
+        `شغّل \`/exile-role set level:${level} role:@رتبتك\` أول.`,
       );
       return;
     }
@@ -216,15 +197,10 @@ export default {
       (await ctx.guild.roles.fetch(roleId).catch(() => null));
 
     if (!role) {
-      await ctx.reply(
-        ephemeral({
-          embeds: [
-            errorEmbed(
-              'The mapped role is gone',
-              `The role for **${levelLabel(level)}** no longer exists. Map another one with \`/exile-role set level:${level} role:@YourRole\`.`,
-            ),
-          ],
-        }),
+      await fail(
+        ctx,
+        'الرتبة المربوطة انحذفت',
+        `رتبة **${levelLabel(level)}** ما عادت موجودة. اربط غيرها بـ \`/exile-role set level:${level} role:@رتبتك\`.`,
       );
       return;
     }
@@ -232,20 +208,15 @@ export default {
     const roleIssue = roleProblem(ctx.guild, role);
 
     if (roleIssue) {
-      await ctx.reply(ephemeral({ embeds: [errorEmbed('Cannot use that role', roleIssue)] }));
+      await fail(ctx, 'ما أقدر أستخدم هذي الرتبة', roleIssue);
       return;
     }
 
     if (!isRoleSetUp(ctx.guildId, role.id)) {
-      await ctx.reply(
-        ephemeral({
-          embeds: [
-            errorEmbed(
-              'That role was never set up',
-              `Without \`/exile-setup role:${role.name}\` the role hides nothing, so the member would keep seeing every channel. Run setup first.`,
-            ),
-          ],
-        }),
+      await fail(
+        ctx,
+        'هذي الرتبة ما انضبطت',
+        `بدون \`/exile-setup role:${role.name}\` الرتبة ما تخفي شي، والعضو بيظل يشوف كل القنوات. شغّل الإعداد أول.`,
       );
       return;
     }
@@ -261,15 +232,10 @@ export default {
       const accessIssue = manageableRoleProblem(ctx.guild, accessRole);
 
       if (accessIssue) {
-        await ctx.reply(
-          ephemeral({
-            embeds: [
-              errorEmbed(
-                'Cannot remove the all-access role',
-                `I must take ${accessRole} off the member before exiling them, but ${accessIssue}`,
-              ),
-            ],
-          }),
+        await fail(
+          ctx,
+          'ما أقدر أشيل رتبة الوصول الكامل',
+          `لازم أشيل ${accessRole} من العضو قبل أعزله، لكن ${accessIssue}`,
         );
         return;
       }
@@ -278,19 +244,14 @@ export default {
         try {
           await member.roles.remove(
             accessRole.id,
-            `Exile ${levelLabel(level)} by ${ctx.user.tag ?? ctx.user.username}`,
+            `عزل ${levelLabel(level)} بواسطة ${ctx.user.tag ?? ctx.user.username}`,
           );
           accessRemovedNow = true;
         } catch (error) {
-          await ctx.reply(
-            ephemeral({
-              embeds: [
-                errorEmbed(
-                  'Could not remove the all-access role',
-                  `Discord refused to remove ${accessRole}: ${error.message}. The member was not exiled.`,
-                ),
-              ],
-            }),
+          await fail(
+            ctx,
+            'ما قدرت أشيل رتبة الوصول الكامل',
+            `ديسكورد رفض يشيل ${accessRole}: ${error.message}. العضو ما انعزل.`,
           );
           return;
         }
@@ -307,26 +268,21 @@ export default {
       assigned = await assignExileRole(
         member,
         role.id,
-        `Exile ${levelLabel(level)} by ${ctx.user.tag ?? ctx.user.username}`,
+        `عزل ${levelLabel(level)} بواسطة ${ctx.user.tag ?? ctx.user.username}`,
       );
     } catch (error) {
       // Do not leave a member without their all-access role when the exile
       // itself failed. Nothing was recorded, so this must be undone.
       if (accessRemovedNow && accessRole && !member.roles.cache.has(accessRole.id)) {
         await member.roles
-          .add(accessRole.id, 'Restore after a failed exile')
+          .add(accessRole.id, 'إرجاع بعد عزل فاشل')
           .catch(() => null);
       }
 
-      await ctx.reply(
-        ephemeral({
-          embeds: [
-            errorEmbed(
-              'Could not assign the role',
-              `Discord refused the change: ${error.message}. Check that my role is above ${role} and that I still have **Manage Roles**.`,
-            ),
-          ],
-        }),
+      await fail(
+        ctx,
+        'ما قدرت أعطي الرتبة',
+        `ديسكورد رفض التغيير: ${error.message}. تأكد أن رتبتي فوق ${role} وعندي **إدارة الرتب**.`,
       );
       return;
     }
@@ -367,36 +323,39 @@ export default {
         roleId: role.id,
         reason: auditReason,
         at: active?.createdAt ?? Date.now(),
-        footer: active ? `Previous level: ${levelLabel(active.level)}` : undefined,
+        footer: active ? `المستوى السابق: ${levelLabel(active.level)}` : undefined,
       });
     }
 
+    if (sameLevel) {
+      await info(
+        ctx,
+        'معزول أصلًا',
+        `${member} عنده **${levelLabel(level)}** من قبل.` +
+          (auditReason ? `\nالسبب: ${auditReason}` : ''),
+      );
+      return;
+    }
+
     const lines = [
-      `${member} is now at **${levelLabel(level)}** with the ${role} role.`,
+      `${member} الحين في **${levelLabel(level)}** برتبة ${role}.`,
       active
-        ? `Previous level: **${levelLabel(active.level)}**.`
-        : 'Every channel except this level’s exceptions is hidden from them.',
-      `Reason: ${auditReason || '—'}`,
+        ? `المستوى السابق: **${levelLabel(active.level)}**.`
+        : 'كل القنوات مخفية عنه إلا استثناءات هذا المستوى.',
+      `السبب: ${auditReason || '—'}`,
     ];
 
     if (assigned.failed.length > 0) {
       lines.push(
         '',
-        `⚠️ I could not remove ${assigned.failed.length} older exile role${assigned.failed.length === 1 ? '' : 's'}; check my role position.`,
+        `⚠️ ما قدرت أشيل **${assigned.failed.length}** من رتب العزل القديمة؛ راجع ترتيب رتبتي.`,
       );
     }
 
-    await ctx.reply(
-      ephemeral({
-        embeds: [
-          sameLevel
-            ? infoEmbed(
-                'Already exiled',
-                `${member} already holds **${levelLabel(level)}**. ${auditReason ? `Reason: ${auditReason}` : ''}`.trim(),
-              )
-            : successEmbed(active ? 'Exile level changed' : 'Member exiled', lines.join('\n')),
-        ],
-      }),
+    await done(
+      ctx,
+      active ? 'تغيّر مستوى العزل' : 'تم عزل العضو',
+      lines.join('\n'),
     );
   },
 };

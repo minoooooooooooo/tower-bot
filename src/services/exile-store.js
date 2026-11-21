@@ -26,7 +26,7 @@ export function normalizeLevel(input) {
 }
 
 export function levelLabel(level) {
-  return level === 'main' ? 'Main' : `Level ${level}`;
+  return level === 'main' ? 'الرئيسي' : `المستوى ${level}`;
 }
 
 /** Unknown levels are refused rather than silently coerced to main. */
