@@ -1,12 +1,12 @@
 import {
   InteractionContextType,
-  MessageFlags,
   PermissionFlagsBits,
   SlashCommandBuilder,
 } from 'discord.js';
 import { createLogger } from '../../lib/logger.js';
 import { config } from '../../config.js';
-import { COLORS, embed, errorEmbed, infoEmbed, successEmbed } from '../../lib/embeds.js';
+import { COLORS, embed } from '../../lib/embeds.js';
+import { ephemeral, errorReply, infoReply, okReply } from '../../lib/replies.js';
 import { resolveUser } from '../../lib/resolve.js';
 import { linkedPoints } from '../../services/ebot-vex.js';
 import {
@@ -57,8 +57,18 @@ const SUBCOMMAND_ALIASES = {
 const DEFAULT_WORDS = new Set(['default', 'classic', 'original', 'none', 'off']);
 const CUSTOM_WORDS = new Set(['custom', 'wallpaper', 'own', 'upload']);
 
-function ephemeral(payload) {
-  return { ...payload, flags: MessageFlags.Ephemeral };
+/** Arabic wording for the upload failures; the service keeps its English text. */
+const WALLPAPER_PROBLEMS = {
+  missing: 'ارفق صورة مع الأمر، أو ارفعها في نفس الرسالة.',
+  'too-large': 'الصورة كبيرة. الحد 8 ميجابايت.',
+  type: 'الملف لازم يكون PNG أو JPEG أو WebP أو GIF.',
+  download: 'ما قدرت أنزّل الصورة من ديسكورد. جرّب ترفعها مرة ثانية.',
+  decode: 'الملف ما انقرأ كصورة. جرّب صورة ثانية.',
+  path: 'ما أقدر أستخدم هذي الصورة كخلفية.',
+};
+
+function wallpaperProblem(error) {
+  return WALLPAPER_PROBLEMS[error.code] ?? error.message;
 }
 
 /** Personal settings read better as a private slash reply; prefix stays public. */
@@ -130,6 +140,10 @@ function selectionState(ctx, stored, level, hasCustom, owned) {
   return { selected, lockedTier, customMissing };
 }
 
+function designLabel(background) {
+  return background?.name ?? background?.id ?? '';
+}
+
 function listEmbed(ctx, level, stored, hasCustom, owned, manager = false) {
   const { selected, lockedTier, customMissing } = selectionState(ctx, stored, level, hasCustom, owned);
   const unlocked = new Set(unlockedBackgrounds(level, owned).map((background) => background.id));
@@ -142,69 +156,69 @@ function listEmbed(ctx, level, stored, hasCustom, owned, manager = false) {
       stored.background === background.id || (!stored.background && background.id === 'default');
     const mark = current ? '➡️' : unlocked.has(background.id) ? '✅' : '🔒';
     const levelText =
-      background.id === 'default' ? 'always' : `level ${background.level}`;
+      background.id === 'default' ? 'دائمًا' : `المستوى ${background.level}`;
     const lock =
       unlocked.has(background.id) || background.id === 'default'
         ? ''
-        : ` · ${formatPoints(pointsForLevel(background.level))} points`;
+        : ` · ${formatPoints(pointsForLevel(background.level))} نقطة`;
 
-    return `${mark} **${background.name}** — ${levelText}${lock}`;
+    return `${mark} **${designLabel(background)}** — ${levelText}${lock}`;
   });
 
-  const ownedNames = paidOwned.slice(0, 6).map((background) => background.name).join(', ');
+  const ownedNames = paidOwned.slice(0, 6).map((background) => background.name).join('، ');
   const paidLine =
-    `${paidOwned.length} of ${paid.length} owned` +
+    `${paidOwned.length} من ${paid.length} مملوكة` +
     (ownedNames ? ` · ${ownedNames}${paidOwned.length > 6 ? '…' : ''}` : '') +
-    `\nBrowse and buy them in \`${ctx.isSlash ? '/store' : `${config.prefix}store`}\` → **Backgrounds**.`;
+    `\nتصفّحها وتشتريها من \`${ctx.isSlash ? '/store' : `${config.prefix}store`}\` ← **الخلفيات**.`;
 
   const customMark =
     stored.background === CUSTOM_ID ? '➡️' : hasCustom || level >= CUSTOM_LEVEL || manager ? '✅' : '🔒';
   const customText = hasCustom
-    ? 'set — attach a new image to replace it'
+    ? 'مضبوطة — ارفق صورة جديدة عشان تبدّلها'
     : level >= CUSTOM_LEVEL || manager
-      ? `unlocked — upload one with \`${ctx.isSlash ? '/background custom' : ':-background custom'}\``
-      : `level ${CUSTOM_LEVEL} · ${formatPoints(pointsForLevel(CUSTOM_LEVEL))} points`;
+      ? `مفتوحة — ارفعها بـ \`${ctx.isSlash ? '/background custom' : ':-background custom'}\``
+      : `المستوى ${CUSTOM_LEVEL} · ${formatPoints(pointsForLevel(CUSTOM_LEVEL))} نقطة`;
 
-  lines.push(`${customMark} **Custom wallpaper** — ${customText}`);
+  lines.push(`${customMark} **خلفية خاصة** — ${customText}`);
 
-  const shown = selected.id === CUSTOM_ID ? 'Custom wallpaper' : selected.name;
+  const shown = selected.id === CUSTOM_ID ? 'خلفية خاصة' : designLabel(selected);
   const selectedNote = lockedTier
-    ? `\nYour saved pick **${lockedTier.name}** is locked at level ${level}, so the Classic card is shown until you level up.`
+    ? `\nاختيارك المحفوظ **${designLabel(lockedTier)}** مقفول عند المستوى ${level}، فالبطاقة الكلاسيكية تظهر لين ترفع مستواك.`
     : customMissing
-      ? '\nYour custom wallpaper file is missing, so the Classic card is shown.'
+      ? '\nملف خلفيتك الخاصة مو موجود، فالبطاقة الكلاسيكية تظهر.'
       : '';
 
   const next = nextBackground(level);
 
   return embed({
-    title: 'Profile backgrounds',
+    title: 'خلفيات الملف',
     description:
-      `You are **level ${level}**. The newest free design equips automatically, and you can switch to any unlocked design. The classic card is always available.` +
+      `أنت في **المستوى ${level}**. أحدث تصميم مجاني يتفعّل تلقائيًا، وتقدر تختار أي تصميم مفتوح. البطاقة الكلاسيكية متاحة دائمًا.` +
       (manager
-        ? '\nYou have **Manage Server**, so custom wallpapers are open at any level, for you or another member.'
+        ? '\nعندك **إدارة السيرفر**، فرفع الخلفيات الخاصة مفتوح في أي مستوى، لك أو لأي عضو.'
         : '') +
       selectedNote,
     color: COLORS.primary,
     fields: [
-      { name: 'Selected', value: `**${shown}**`, inline: true },
+      { name: 'المختار', value: `**${shown}**`, inline: true },
       {
-        name: 'Designs',
-        value: `${unlocked.size} of ${BACKGROUNDS.length} unlocked`,
+        name: 'التصاميم',
+        value: `${unlocked.size} من ${BACKGROUNDS.length} مفتوحة`,
         inline: true,
       },
       {
-        name: 'Next design',
+        name: 'التصميم التالي',
         value: next
-          ? `**${next.name}** at level ${next.level} · ${formatPoints(pointsForLevel(next.level))} points`
+          ? `**${next.name}** عند المستوى ${next.level} · ${formatPoints(pointsForLevel(next.level))} نقطة`
           : level >= CUSTOM_LEVEL
-            ? 'Everything is unlocked.'
-            : `**Custom wallpaper** at level ${CUSTOM_LEVEL} · ${formatPoints(pointsForLevel(CUSTOM_LEVEL))} points`,
+            ? 'كل شي مفتوح.'
+            : `**خلفية خاصة** عند المستوى ${CUSTOM_LEVEL} · ${formatPoints(pointsForLevel(CUSTOM_LEVEL))} نقطة`,
         inline: false,
       },
-      { name: 'Store designs', value: paidLine, inline: false },
-      { name: 'Ladder', value: lines.join('\n'), inline: false },
+      { name: 'تصاميم المتجر', value: paidLine, inline: false },
+      { name: 'السلّم', value: lines.join('\n'), inline: false },
     ],
-    footer: `Choose with ${ctx.isSlash ? '/background set design:' : ':-background set '}<name or level>`,
+    footer: `اختر بـ ${ctx.isSlash ? '/background set design:' : ':-background set '}<name or level>`,
   });
 }
 
@@ -228,14 +242,13 @@ async function handleSet(ctx, client, query) {
   const owned = ownedBackgroundIds(ctx.guildId, ctx.user.id);
 
   if (!raw) {
-    await respond(ctx, {
-      embeds: [
-        errorEmbed(
-          'Choose a design',
-          `Use \`${ctx.isSlash ? '/background set design:' : ':-background set '}<name or level>\`, for example \`15\`, \`Tide\`, \`default\` or \`custom\`.`,
-        ),
-      ],
-    });
+    await respond(
+      ctx,
+      errorReply(
+        'اختر تصميم',
+        `استخدم \`${ctx.isSlash ? '/background set design:' : ':-background set '}<name or level>\`، مثل \`15\` أو \`Tide\` أو \`default\` أو \`custom\`.`,
+      ),
+    );
     return;
   }
 
@@ -245,82 +258,73 @@ async function handleSet(ctx, client, query) {
     // Store `default` rather than clearing the column: an explicit Classic
     // choice must not be overwritten by the next automatic unlock.
     setProfileBackground(ctx.guildId, ctx.user.id, 'default');
-    await respond(ctx, {
-      embeds: [successEmbed('Background changed', 'Your card is back to **Classic**.')],
-    });
+    await respond(ctx, okReply('تغيّرت الخلفية', 'رجعت بطاقتك إلى **الكلاسيكية**.'));
     return;
   }
 
   if (CUSTOM_WORDS.has(word)) {
     if (!hasCustomWallpaper(ctx.guildId, ctx.user.id)) {
-      await respond(ctx, {
-        embeds: [
-          errorEmbed(
-            'No custom wallpaper yet',
-            `Upload one first with \`${ctx.isSlash ? '/background custom image:<file>' : ':-background custom'}\` (level ${CUSTOM_LEVEL}+, or Manage Server).`,
-          ),
-        ],
-      });
+      await respond(
+        ctx,
+        errorReply(
+          'ما عندك خلفية خاصة بعد',
+          `ارفعها أول بـ \`${ctx.isSlash ? '/background custom image:<file>' : ':-background custom'}\` (المستوى ${CUSTOM_LEVEL} أو أعلى، أو إدارة السيرفر).`,
+        ),
+      );
       return;
     }
 
     setProfileBackground(ctx.guildId, ctx.user.id, CUSTOM_ID);
-    await respond(ctx, {
-      embeds: [successEmbed('Background changed', 'Your custom wallpaper is now on your card.')],
-    });
+    await respond(ctx, okReply('تغيّرت الخلفية', 'خلفيتك الخاصة الحين على بطاقتك.'));
     return;
   }
 
   const background = findBackground(raw);
 
   if (!background) {
-    await respond(ctx, {
-      embeds: [
-        errorEmbed(
-          'Unknown design',
-          `Run \`${ctx.isSlash ? '/background' : ':-background'}\` to see the ladder. You can type a name or a level.`,
-        ),
-      ],
-    });
+    await respond(
+      ctx,
+      errorReply(
+        'تصميم غير معروف',
+        `شغّل \`${ctx.isSlash ? '/background' : ':-background'}\` عشان تشوف السلّم. تقدر تكتب الاسم أو المستوى.`,
+      ),
+    );
     return;
   }
 
   if (!isBackgroundUnlocked(background, level, owned)) {
     if (background.price > 0) {
       const cost = effectivePrice(ctx.guildId, background);
-      await respond(ctx, {
-        embeds: [
-          errorEmbed(
-            'Not unlocked yet',
-            `**${background.name}** is a store design and costs **${formatPoints(cost)}** coins. ` +
-              `Buy it with \`${ctx.isSlash ? '/store buy item:' : `${config.prefix}store buy `}design:${background.id}\`.`,
-          ),
-        ],
-      });
+      await respond(
+        ctx,
+        errorReply(
+          'ما انفتح بعد',
+          `**${background.name}** تصميم من المتجر وسعره **${formatPoints(cost)}** عملة. ` +
+            `اشتره بـ \`${ctx.isSlash ? '/store buy item:' : `${config.prefix}store buy `}design:${background.id}\`.`,
+        ),
+      );
       return;
     }
 
-    await respond(ctx, {
-      embeds: [
-        errorEmbed(
-          'Still locked',
-          `**${background.name}** unlocks at level **${background.level}** ` +
-            `(${formatPoints(pointsForLevel(background.level))} points). You are level ${level}.`,
-        ),
-      ],
-    });
+    await respond(
+      ctx,
+      errorReply(
+        'لسا مقفول',
+        `**${background.name}** ينفتح عند المستوى **${background.level}** ` +
+          `(${formatPoints(pointsForLevel(background.level))} نقطة). أنت في المستوى ${level}.`,
+      ),
+    );
     return;
   }
 
   setProfileBackground(ctx.guildId, ctx.user.id, background.id);
-  await respond(ctx, {
-    embeds: [
-      successEmbed(
-        'Background changed',
-        `**${background.name}** is now on your card. Use \`${ctx.isSlash ? '/profile' : ':-profile'}\` to see it.`,
-      ),
-    ],
-  });
+  await respond(
+    ctx,
+    okReply(
+      'تغيّرت الخلفية',
+      `**${background.name}** الحين على بطاقتك. شغّل \`${ctx.isSlash ? '/profile' : ':-profile'}\` عشان تشوفها.`,
+    ),
+  );
 }
 
 /**
@@ -339,10 +343,10 @@ async function targetOf(ctx, client) {
 
 function lockedCustomMessage(level, self) {
   return (
-    `Custom wallpapers unlock at level **${CUSTOM_LEVEL}** ` +
-    `(${formatPoints(pointsForLevel(CUSTOM_LEVEL))} points). ` +
-    (self ? `You are level ${level}.` : `That member is level ${level}.`) +
-    ' Members with **Manage Server** can set one at any level.'
+    `الخلفيات الخاصة تنفتح عند المستوى **${CUSTOM_LEVEL}** ` +
+    `(${formatPoints(pointsForLevel(CUSTOM_LEVEL))} نقطة). ` +
+    (self ? `أنت في المستوى ${level}.` : `هذا العضو في المستوى ${level}.`) +
+    ' وأصحاب **إدارة السيرفر** يرفعونها في أي مستوى.'
   );
 }
 
@@ -350,9 +354,7 @@ async function handleCustom(ctx, client, attachment) {
   const { target, unknown } = await targetOf(ctx, client);
 
   if (unknown) {
-    await respond(ctx, {
-      embeds: [errorEmbed('Unknown member', 'Mention the member or paste their id.')],
-    });
+    await respond(ctx, errorReply('عضو غير معروف', 'منشن العضو أو الصق الآيدي.'));
     return;
   }
 
@@ -360,14 +362,13 @@ async function handleCustom(ctx, client, attachment) {
   const manager = canManageGuild(ctx);
 
   if (!self && !manager) {
-    await respond(ctx, {
-      embeds: [
-        errorEmbed(
-          'Not allowed',
-          'Only members with **Manage Server** can set someone else’s background.',
-        ),
-      ],
-    });
+    await respond(
+      ctx,
+      errorReply(
+        'ما مسموح',
+        'أصحاب **إدارة السيرفر** فقط يقدرون يغيّرون خلفية عضو ثاني.',
+      ),
+    );
     return;
   }
 
@@ -379,23 +380,20 @@ async function handleCustom(ctx, client, attachment) {
 
   if (!attachment) {
     const hint = hasCustom
-      ? `Attach a new image to replace ${self ? 'your' : 'their'} wallpaper. It is cropped to the card size automatically, and a GIF stays animated.`
-      : `Attach a PNG, JPEG, WebP or GIF image${self ? '' : ` for <@${target.id}>`}. It is cropped to the card size automatically, and a GIF stays animated.`;
+      ? `ارفق صورة جديدة عشان تبدّل ${self ? 'خلفيتك' : 'خلفيته'}. تنقص تلقائيًا على مقاس البطاقة، والـ GIF يظل متحرك.`
+      : `ارفق صورة PNG أو JPEG أو WebP أو GIF${self ? '' : ` لـ <@${target.id}>`}. تنقص تلقائيًا على مقاس البطاقة، والـ GIF يظل متحرك.`;
 
-    await respond(ctx, {
-      embeds: [
-        unlocked
-          ? infoEmbed('Custom wallpaper', hint)
-          : errorEmbed('Still locked', lockedCustomMessage(level, self)),
-      ],
-    });
+    await respond(
+      ctx,
+      unlocked
+        ? infoReply('خلفية خاصة', hint)
+        : errorReply('لسا مقفول', lockedCustomMessage(level, self)),
+    );
     return;
   }
 
   if (!unlocked) {
-    await respond(ctx, {
-      embeds: [errorEmbed('Still locked', lockedCustomMessage(level, self))],
-    });
+    await respond(ctx, errorReply('لسا مقفول', lockedCustomMessage(level, self)));
     return;
   }
 
@@ -408,37 +406,31 @@ async function handleCustom(ctx, client, attachment) {
     const saved = await saveCustomWallpaper(ctx.guildId, target.id, attachment);
     setProfileBackground(ctx.guildId, target.id, CUSTOM_ID);
 
-    const payload = {
-      embeds: [
-        successEmbed(
-          'Custom wallpaper set',
-          `Stored at ${saved.sourceWidth}x${saved.sourceHeight}, cropped to the card. ` +
-            (saved.animated
-              ? `It is animated (${saved.frames} frames). `
-              : saved.wasGif
-                ? 'The GIF could not be animated (too large or too long), so the first frame was saved. '
-                : '') +
-            (self
-              ? `Run \`${ctx.isSlash ? '/profile' : ':-profile'}\` to see it.`
-              : `It is now on <@${target.id}>’s profile.`),
-        ),
-      ],
-    };
+    const payload = okReply(
+      'ضبطت الخلفية الخاصة',
+      `محفوظة بمقاس ${saved.sourceWidth}x${saved.sourceHeight} ومقصوصة على البطاقة. ` +
+        (saved.animated
+          ? `متحركة (${saved.frames} إطار). `
+          : saved.wasGif
+            ? 'الـ GIF ما انحرك (كبير أو طويل)، فانحفظ أول إطار. '
+            : '') +
+        (self
+          ? `شغّل \`${ctx.isSlash ? '/profile' : ':-profile'}\` عشان تشوفها.`
+          : `الحين هي على ملف <@${target.id}>.`),
+    );
 
     if (ctx.isSlash) await ctx.editReply(payload);
     else await ctx.reply(payload);
   } catch (error) {
     if (error instanceof WallpaperError) {
-      await ctx.fail({ embeds: [errorEmbed('Could not use that image', error.message)] });
+      await ctx.fail(errorReply('ما قدرت أستخدم هذي الصورة', wallpaperProblem(error)));
       return;
     }
 
     logger.error(`Could not save the wallpaper for ${target.id}`, error);
-    await ctx.fail({
-      embeds: [
-        errorEmbed('Could not save the wallpaper', 'The image could not be stored. Try again in a moment.'),
-      ],
-    });
+    await ctx.fail(
+      errorReply('ما قدرت أحفظ الخلفية', 'الصورة ما انحفظت. جرّب بعد لحظة.'),
+    );
   }
 }
 
@@ -446,18 +438,15 @@ async function handleReset(ctx, client) {
   const { target } = await targetOf(ctx, client);
 
   if (!target) {
-    await respond(ctx, {
-      embeds: [errorEmbed('Unknown member', 'Mention the member or paste their id.')],
-    });
+    await respond(ctx, errorReply('عضو غير معروف', 'منشن العضو أو الصق الآيدي.'));
     return;
   }
 
   if (target.id !== ctx.user.id && !canManageGuild(ctx)) {
-    await respond(ctx, {
-      embeds: [
-        errorEmbed('Not allowed', 'Only members with **Manage Server** can reset someone else’s background.'),
-      ],
-    });
+    await respond(
+      ctx,
+      errorReply('ما مسموح', 'أصحاب **إدارة السيرفر** فقط يقدرون يصفّرون خلفية عضو ثاني.'),
+    );
     return;
   }
 
@@ -465,34 +454,33 @@ async function handleReset(ctx, client) {
   setProfileBackground(ctx.guildId, target.id, 'default');
   await deleteCustomWallpaper(ctx.guildId, target.id);
 
-  await respond(ctx, {
-    embeds: [
-      successEmbed(
-        'Background reset',
-        target.id === ctx.user.id
-          ? 'Your card is back to **Classic** and your custom wallpaper was removed.'
-          : `<@${target.id}>’s card is back to **Classic** and their custom wallpaper was removed.`,
-      ),
-    ],
-  });
+  await respond(
+    ctx,
+    okReply(
+      'انصفّرت الخلفية',
+      target.id === ctx.user.id
+        ? 'رجعت بطاقتك إلى **الكلاسيكية** وانحذفت خلفيتك الخاصة.'
+        : `رجعت بطاقة <@${target.id}> إلى **الكلاسيكية** وانحذفت خلفيته الخاصة.`,
+    ),
+  );
 }
 
 export default {
   data: new SlashCommandBuilder()
     .setName('background')
-    .setDescription('Choose or upload your profile-card background')
+    .setDescription('اختر أو ارفع خلفية بطاقة ملفك')
     .setContexts(InteractionContextType.Guild)
     .addSubcommand((sub) =>
-      sub.setName('list').setDescription('Show every design, your level and the next unlock'),
+      sub.setName('list').setDescription('اعرض كل التصاميم ومستواك والفتح القادم'),
     )
     .addSubcommand((sub) =>
       sub
         .setName('set')
-        .setDescription('Use a design you have unlocked')
+        .setDescription('استخدم تصميم مفتوح عندك')
         .addStringOption((option) =>
           option
             .setName('design')
-            .setDescription('Name or level: 15, Tide, default, custom')
+            .setDescription('الاسم أو المستوى: 15، Tide، default، custom')
             .setRequired(true)
             .setMaxLength(40),
         ),
@@ -500,35 +488,35 @@ export default {
     .addSubcommand((sub) =>
       sub
         .setName('custom')
-        .setDescription(`Upload a wallpaper (level ${CUSTOM_LEVEL}+, or Manage Server for anyone)`)
+        .setDescription(`ارفع خلفية (المستوى ${CUSTOM_LEVEL} أو أعلى، أو إدارة السيرفر لأي عضو)`)
         .addAttachmentOption((option) =>
           option
             .setName('image')
-            .setDescription('PNG, JPEG, WebP or GIF. Cropped to the card; GIFs animate.')
+            .setDescription('PNG أو JPEG أو WebP أو GIF. تنقص على البطاقة، والـ GIF يتحرك.')
             .setRequired(false),
         )
         .addUserOption((option) =>
           option
             .setName('user')
-            .setDescription('Manage Server: set it for this member instead')
+            .setDescription('إدارة السيرفر: اضبطها لهذا العضو بدل نفسك')
             .setRequired(false),
         ),
     )
     .addSubcommand((sub) =>
       sub
         .setName('reset')
-        .setDescription('Return to the classic card and delete a custom wallpaper')
+        .setDescription('ارجع للبطاقة الكلاسيكية واحذف الخلفية الخاصة')
         .addUserOption((option) =>
           option
             .setName('user')
-            .setDescription('Admin: reset someone else (Manage Server)')
+            .setDescription('مشرف: صفّر خلفية عضو ثاني (إدارة السيرفر)')
             .setRequired(false),
         ),
     ),
 
   name: 'background',
   aliases: ['bg', 'theme', 'wallpaper'],
-  description: 'Choose or upload your profile-card background',
+  description: 'اختر أو ارفع خلفية بطاقة ملفك',
   category: 'General',
   usage: 'background [list | set <design> | custom [user] | reset [user]]',
   cooldown: 4,
@@ -551,4 +539,3 @@ export default {
     }
   },
 };
-

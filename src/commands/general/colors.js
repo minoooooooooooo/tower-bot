@@ -4,12 +4,12 @@ import { colorListEmbed } from '../../lib/color-palette.js';
 export default {
   data: new SlashCommandBuilder()
     .setName('colors')
-    .setDescription('List every color name the bot understands, in Arabic and English')
+    .setDescription('اعرض كل أسماء الألوان اللي يفهمها البوت، بالعربية والإنجليزية')
     .setContexts(InteractionContextType.Guild),
 
   name: 'colors',
   aliases: ['colours', 'palette'],
-  description: 'List every color name the bot understands, in Arabic and English',
+  description: 'اعرض كل أسماء الألوان اللي يفهمها البوت، بالعربية والإنجليزية',
   category: 'General',
   usage: 'colors',
   cooldown: 3,

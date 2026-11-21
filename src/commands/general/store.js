@@ -9,7 +9,8 @@ import {
 } from 'discord.js';
 import { config } from '../../config.js';
 import { formatNumber } from '../../lib/activity-format.js';
-import { COLORS, embed, errorEmbed, successEmbed, warningEmbed } from '../../lib/embeds.js';
+import { COLORS, embed } from '../../lib/embeds.js';
+import { errorReply, okReply, warnReply } from '../../lib/replies.js';
 import { resolveUser } from '../../lib/resolve.js';
 import { backgroundById } from '../../services/profile-backgrounds.js';
 import {
@@ -45,29 +46,29 @@ function subcommandOf(ctx) {
 }
 
 function hint(ctx, text) {
-  return `${text}\n\nUse \`${ctx.isSlash ? '/store' : `${config.prefix}store`}\` to see the catalogue.`;
+  return `${text}\n\nشوف الكتالوج بـ \`${ctx.isSlash ? '/store' : `${config.prefix}store`}\`.`;
 }
 
 function needsText(item) {
   const needs = item.needs ?? [];
   const parts = [];
 
-  if (needs.includes('name')) parts.push(item.type === 'title' ? 'title text' : 'a name');
-  if (needs.includes('color')) parts.push('an optional colour');
-  if (needs.includes('image')) parts.push('an image');
+  if (needs.includes('name')) parts.push(item.type === 'title' ? 'نص اللقب' : 'اسم');
+  if (needs.includes('color')) parts.push('لون اختياري');
+  if (needs.includes('image')) parts.push('صورة');
 
-  return parts.length ? ` · needs ${parts.join(' + ')}` : '';
+  return parts.length ? ` · يحتاج ${parts.join(' + ')}` : '';
 }
 
 function itemLine(item, owned) {
   const bought = item.type === 'background' && owned?.has(item.backgroundId);
   const mark = bought ? '✅' : '•';
-  const limit = item.limit > 0 ? ` · max ${item.limit}` : '';
-  const stack = item.stackable ? ' each' : '';
+  const limit = item.limit > 0 ? ` · أقصى ${item.limit}` : '';
+  const stack = item.stackable ? ' لكل وحدة' : '';
 
   return (
-    `${mark} \`${item.key}\` — **${item.name}** · ${formatNumber(item.price)} coins${stack}${limit}` +
-    `${bought ? ' · owned' : ''}${needsText(item)}`
+    `${mark} \`${item.key}\` — **${item.name}** · ${formatNumber(item.price)} عملة${stack}${limit}` +
+    `${bought ? ' · مملوك' : ''}${needsText(item)}`
   );
 }
 
@@ -90,8 +91,8 @@ function browseEmbed(ctx, items, balance, owned) {
         {
           name: label,
           value:
-            'No paid designs yet. A design appears here once its entry in ' +
-            '`assets/profile/backgrounds/backgrounds.json` has a `price`.',
+            'ما فيه تصاميم مدفوعة بعد. التصميم يطلع هنا أول ما يصير له `price` في ' +
+            '`assets/profile/backgrounds/backgrounds.json`.',
           inline: false,
         },
       ];
@@ -125,16 +126,16 @@ function browseEmbed(ctx, items, balance, owned) {
     ];
   });
 
-  fields.unshift({ name: 'Your balance', value: `**${formatNumber(balance)}** coins`, inline: true });
+  fields.unshift({ name: 'رصيدك', value: `**${formatNumber(balance)}** عملة`, inline: true });
 
   return embed({
-    title: 'Store',
+    title: 'المتجر',
     description:
-      'Spend coins on profile and server upgrades. Coins are earned with levels and can be ' +
-      'sent to you by other members.',
+      'اصرف عملات على ترقيات ملفك وسيرفرك. العملات تجيك من المستويات، ' +
+      'ويقدر الأعضاء يحوّلون لك منها.',
     color: COLORS.primary,
     fields,
-    footer: `Buy with ${ctx.isSlash ? '/store buy item:' : `${config.prefix}store buy `}<key or name>`,
+    footer: `اشترِ بـ ${ctx.isSlash ? '/store buy item:' : `${config.prefix}store buy `}<key or name>`,
   });
 }
 
@@ -151,7 +152,7 @@ async function handleBrowse(ctx) {
         new ActionRowBuilder().addComponents(
           new ButtonBuilder()
             .setCustomId('store:launch')
-            .setLabel('Open store')
+            .setLabel('افتح المتجر')
             .setEmoji('🛍️')
             .setStyle(ButtonStyle.Primary),
         ),
@@ -172,7 +173,7 @@ function detailLine(item, detail) {
   }
   if (item?.type === 'title' && detail.title) return ` — “${detail.title}”`;
   if (item?.type === 'xp' && detail.xp) return ` — +${formatNumber(detail.xp)} XP`;
-  if (item?.type === 'behavior' && detail.points) return ` — +${formatNumber(detail.points)} points`;
+  if (item?.type === 'behavior' && detail.points) return ` — +${formatNumber(detail.points)} نقطة`;
 
   return '';
 }
@@ -186,19 +187,16 @@ async function handleOwned(ctx, client) {
     target = await resolveUser(client, ctx.args[1], ctx.message);
 
     if (!target) {
-      await respond(ctx, {
-        embeds: [errorEmbed('Unknown member', 'Mention the member or paste their id.')],
-      });
+      await respond(ctx, errorReply('عضو غير معروف', 'منشن العضو أو الصق الآيدي.'));
       return;
     }
   }
 
   if (target.id !== ctx.user.id && !ctx.member?.permissions?.has(PermissionFlagsBits.ManageGuild)) {
-    await respond(ctx, {
-      embeds: [
-        errorEmbed('Missing permissions', 'You need **Manage Server** to view another member’s purchases.'),
-      ],
-    });
+    await respond(
+      ctx,
+      errorReply('صلاحيات ناقصة', 'تحتاج **إدارة السيرفر** عشان تشوف مشتريات عضو ثاني.'),
+    );
     return;
   }
 
@@ -209,10 +207,10 @@ async function handleOwned(ctx, client) {
     .slice(0, 20)
     .map((row) => {
       const item = catalog.get(row.item_key);
-      return `• **${item?.name ?? row.item_key}** — ${formatNumber(row.price)} coins${detailLine(item, row.detail)}`;
+      return `• **${item?.name ?? row.item_key}** — ${formatNumber(row.price)} عملة${detailLine(item, row.detail)}`;
     });
 
-  const title = target.id === ctx.user.id ? 'Your purchases' : `<@${target.id}> · purchases`;
+  const title = target.id === ctx.user.id ? 'مشترياتك' : `<@${target.id}> · المشتريات`;
 
   await respond(ctx, {
     embeds: [
@@ -221,11 +219,11 @@ async function handleOwned(ctx, client) {
         description:
           lines.length > 0
             ? lines.join('\n')
-            : `Nothing bought yet. Use \`${ctx.isSlash ? '/store' : `${config.prefix}store`}\` to see what is for sale.`,
+            : `ما اشتريت شي بعد. شوف المعروض بـ \`${ctx.isSlash ? '/store' : `${config.prefix}store`}\`.`,
         color: COLORS.primary,
         footer:
           purchases.length > 0
-            ? `${purchases.length} purchase${purchases.length === 1 ? '' : 's'} · ${formatNumber(spent)} coins spent`
+            ? `${purchases.length} مشترى · ${formatNumber(spent)} عملة مصروفة`
             : undefined,
       }),
     ],
@@ -255,112 +253,93 @@ function successText(result, ctx) {
 
   switch (item.type) {
     case 'xp':
-      return {
-        title: 'XP added',
-        description:
-          `**+${formatNumber(detail.xp ?? item.amount)} XP** is on your card. ` +
-          'Existing punishments still tax new XP.',
-      };
+      return okReply(
+        'انضافت الخبرة',
+        `**+${formatNumber(detail.xp ?? item.amount)} XP** على بطاقتك. ` +
+          'العقوبات الشغّالة لسا تنقص من الخبرة الجديدة.',
+      );
     case 'behavior': {
       const points = detail.points ?? item.amount;
-      return {
-        title: 'Good behaviour added',
-        description: `**+${formatNumber(points)} good behaviour ${
-          points === 1 ? 'point' : 'points'
-        }** are on your card.`,
-      };
+      return okReply(
+        'انضاف السلوك الحسن',
+        `**+${formatNumber(points)} نقطة سلوك حسن** على بطاقتك.`,
+      );
     }
     case 'title':
-      return {
-        title: 'Title updated',
-        description: `Your card now says **${detail.title}**.`,
-      };
+      return okReply('تحدّث اللقب', `بطاقتك الحين تقول **${detail.title}**.`);
     case 'background': {
       const design = backgroundById(detail.backgroundId);
-      return {
-        title: 'Background unlocked',
-        description:
-          `**${design?.name ?? detail.backgroundId}** is yours. Equip it with ` +
+      return okReply(
+        'انفتحت الخلفية',
+        `**${design?.name ?? detail.backgroundId}** صارت لك. فعّلها بـ ` +
           `\`${ctx.isSlash ? '/background set design:' : `${config.prefix}background set `}${design?.name ?? detail.backgroundId}\`.`,
-      };
+      );
     }
     case 'role':
-      return {
-        title: 'Custom role created',
-        description: `<@&${detail.roleId}> is yours${detail.color ? ` (${detail.color})` : ''}.`,
-      };
+      return okReply(
+        'انصنعت الرتبة',
+        `<@&${detail.roleId}> صارت لك${detail.color ? ` (${detail.color})` : ''}.`,
+      );
     case 'emoji':
-      return {
-        title: 'Emoji added',
-        description: `\`:${detail.name}:\` is now available in this server.`,
-      };
+      return okReply('انضاف الإيموجي', `\`:${detail.name}:\` الحين متاح في هذا السيرفر.`);
     default:
-      return { title: 'Purchase complete', description: item.name };
+      return okReply('تم الشراء', item.name);
   }
 }
 
 const FAILURES = {
-  unknown: (result, ctx) => ({
-    title: 'Unknown item',
-    description: hint(ctx, `I could not find \`${result.query}\`.`),
-  }),
-  disabled: (result) => ({
-    title: 'Not for sale',
-    description: `**${result.item.name}** is turned off in this server.`,
-  }),
-  unpriced: (result) => ({
-    title: 'Not for sale',
-    description: `**${result.item.name}** has no price yet. An admin can set one.`,
-  }),
-  limit: (result) => ({
-    title: 'Limit reached',
-    description: `You already own the maximum of **${result.limit}** for **${result.item.name}**.`,
-  }),
-  funds: (result) => ({
-    title: 'Not enough coins',
-    description:
-      `**${result.item.name}**${result.quantity > 1 ? ` × ${result.quantity}` : ''} costs ` +
-      `**${formatNumber(result.totalPrice ?? result.item.price)}** coins and you have ` +
-      `**${formatNumber(result.balance)}**.`,
-  }),
-  name: (result) => ({ title: 'Need a name', description: result.message }),
-  color: (result) => ({ title: 'Unknown colour', description: result.message }),
-  image: (result) => ({ title: 'Need an image', description: result.message }),
-  size: (result) => ({ title: 'Image too large', description: result.message }),
-  slots: (result) => ({ title: 'No free emoji slots', description: result.message }),
-  permission: (result) => ({ title: 'Missing permission', description: result.message }),
-  guild: () => ({ title: 'Not in a server', description: 'The store only works inside a server.' }),
-  database: (result) => ({
-    title: 'Could not complete the purchase',
-    description: `Nothing was charged. Try buying **${result.item.name}** again.`,
-  }),
-  delivery: (result) => ({
-    title: 'Purchase refunded',
-    description: result.message ?? 'The delivery failed and your coins were returned.',
-  }),
+  unknown: (result, ctx) =>
+    errorReply('منتج غير معروف', hint(ctx, `ما لقيت \`${result.query}\`.`)),
+  disabled: (result) =>
+    warnReply('مو للبيع', `**${result.item.name}** مقفّل في هذا السيرفر.`),
+  unpriced: (result) =>
+    warnReply('مو للبيع', `**${result.item.name}** ما له سعر بعد. مشرف يقدر يحدده.`),
+  limit: (result) =>
+    warnReply(
+      'وصلت الحد',
+      `تملك الحد الأقصى **${result.limit}** من **${result.item.name}** من قبل.`,
+    ),
+  funds: (result) =>
+    warnReply(
+      'ما عندك عملات كافية',
+      `**${result.item.name}**${result.quantity > 1 ? ` × ${result.quantity}` : ''} سعره ` +
+        `**${formatNumber(result.totalPrice ?? result.item.price)}** عملة وعندك ` +
+        `**${formatNumber(result.balance)}**.`,
+    ),
+  name: (result) => errorReply('محتاج اسم', result.message),
+  color: (result) => errorReply('لون غير معروف', result.message),
+  image: (result) => errorReply('محتاج صورة', result.message),
+  size: (result) => errorReply('الصورة كبيرة', result.message),
+  slots: (result) => errorReply('ما فيه خانات إيموجي فاضية', result.message),
+  permission: (result) => errorReply('صلاحية ناقصة', result.message),
+  guild: () => errorReply('مو في سيرفر', 'المتجر يشتغل داخل السيرفر بس.'),
+  database: (result) =>
+    errorReply(
+      'ما كملت عملية الشراء',
+      `ما انخصم شي. جرّب تشتري **${result.item.name}** مرة ثانية.`,
+    ),
+  delivery: (result) =>
+    warnReply('انسترجع المبلغ', result.message ?? 'التسليم فشل ورجعت عملاتك.'),
 };
 
 async function handleBuy(ctx, client) {
   const key = ctx.isSlash ? ctx.getString('item') : ctx.args[1];
 
   if (!key) {
-    await respond(ctx, {
-      embeds: [
-        errorEmbed(
-          'Choose an item',
-          hint(ctx, `Use \`${ctx.isSlash ? '/store buy item:' : `${config.prefix}store buy `}<key>\`.`),
-        ),
-      ],
-    });
+    await respond(
+      ctx,
+      errorReply(
+        'اختر منتج',
+        hint(ctx, `استخدم \`${ctx.isSlash ? '/store buy item:' : `${config.prefix}store buy `}<key>\`.`),
+      ),
+    );
     return;
   }
 
   const item = findStoreItem(ctx.guildId, key);
 
   if (!item) {
-    await respond(ctx, {
-      embeds: [errorEmbed('Unknown item', hint(ctx, `I could not find \`${key}\`.`))],
-    });
+    await respond(ctx, errorReply('منتج غير معروف', hint(ctx, `ما لقيت \`${key}\`.`)));
     return;
   }
 
@@ -412,34 +391,24 @@ async function handleBuy(ctx, client) {
       quantity,
     });
   } catch (error) {
-    await ctx.fail({
-      embeds: [
-        errorEmbed('Could not reach the store', 'The purchase was not charged. Try again in a moment.'),
-      ],
-    });
+    await ctx.fail(
+      errorReply('ما وصلت للمتجر', 'ما انخصم شي. جرّب بعد لحظة.'),
+    );
     return;
   }
 
   if (!result.ok) {
-    const build = FAILURES[result.reason] ?? (() => ({
-      title: 'Purchase failed',
-      description: hint(ctx, 'That did not work. Try again.'),
-    }));
-    const text = build(result, ctx);
+    const build = FAILURES[result.reason] ?? (() =>
+      errorReply('فشل الشراء', hint(ctx, 'ما ضبط. جرّب مرة ثانية.')));
 
-    await ctx.fail({ embeds: [warningEmbed(text.title, text.description)] });
+    await ctx.fail(build(result, ctx));
     return;
   }
 
   const text = successText(result, ctx);
 
   await ctx.editReply({
-    embeds: [
-      successEmbed(
-        text.title,
-        `${text.description}\n\nBalance: **${formatNumber(result.balance)}** coins.`,
-      ),
-    ],
+    content: `${text.content}\n\nالرصيد: **${formatNumber(result.balance)}** عملة.`,
     allowedMentions: { parse: [] },
   });
 }
@@ -447,24 +416,24 @@ async function handleBuy(ctx, client) {
 export default {
   data: new SlashCommandBuilder()
     .setName('store')
-    .setDescription('Spend coins on profile and server upgrades')
+    .setDescription('اصرف عملات على ترقيات ملفك وسيرفرك')
     .setContexts(InteractionContextType.Guild)
-    .addSubcommand((sub) => sub.setName('browse').setDescription('Show the catalogue and your balance'))
+    .addSubcommand((sub) => sub.setName('browse').setDescription('اعرض الكتالوج ورصيدك'))
     .addSubcommand((sub) =>
       sub
         .setName('buy')
-        .setDescription('Buy an item from the catalogue')
+        .setDescription('اشترِ منتج من الكتالوج')
         .addStringOption((option) =>
           option
             .setName('item')
-            .setDescription('Item key, for example xp-10 or design:tier-20')
+            .setDescription('مفتاح المنتج، مثل xp-10 أو design:tier-20')
             .setRequired(true)
             .setAutocomplete(true),
         )
         .addIntegerOption((option) =>
           option
             .setName('quantity')
-            .setDescription('Stackable items only, like good behaviour points (default 1)')
+            .setDescription('للمنتجات المتعددة بس، مثل نقاط السلوك (الافتراضي 1)')
             .setRequired(false)
             .setMinValue(1)
             .setMaxValue(100),
@@ -472,39 +441,39 @@ export default {
         .addStringOption((option) =>
           option
             .setName('name')
-            .setDescription('Role or emoji name, or the title to set')
+            .setDescription('اسم الرتبة أو الإيموجي، أو اللقب اللي تبي تحطه')
             .setRequired(false)
             .setMaxLength(64),
         )
         .addStringOption((option) =>
           option
             .setName('color')
-            .setDescription('Role colour: #ff8800, red or أحمر')
+            .setDescription('لون الرتبة: #ff8800، red، أو أحمر')
             .setRequired(false)
             .setMaxLength(32),
         )
         .addAttachmentOption((option) =>
           option
             .setName('image')
-            .setDescription('Emoji image: PNG, JPEG, WebP or GIF up to 256 KB')
+            .setDescription('صورة الإيموجي: PNG أو JPEG أو WebP أو GIF حتى 256 كيلوبايت')
             .setRequired(false),
         ),
     )
     .addSubcommand((sub) =>
       sub
         .setName('owned')
-        .setDescription('Show what you have bought')
+        .setDescription('اعرض اللي اشتريته')
         .addUserOption((option) =>
           option
             .setName('user')
-            .setDescription('Admin: view another member (Manage Server)')
+            .setDescription('مشرف: اعرض عضو ثاني (إدارة السيرفر)')
             .setRequired(false),
         ),
     ),
 
   name: 'store',
   aliases: ['shop'],
-  description: 'Spend coins on profile and server upgrades',
+  description: 'اصرف عملات على ترقيات ملفك وسيرفرك',
   category: 'Profile',
   usage: 'store [browse | buy <key> [name] [colour] [quantity] | owned [@member]]',
   cooldown: 3,
@@ -527,7 +496,7 @@ export default {
 
     await interaction.respond(
       items.map((item) => ({
-        name: `${item.name} · ${formatNumber(item.price)} coins`.slice(0, 100),
+        name: `${item.name} · ${formatNumber(item.price)} عملة`.slice(0, 100),
         value: item.key,
       })),
     );

@@ -1,23 +1,20 @@
-import { InteractionContextType, MessageFlags, SlashCommandBuilder } from 'discord.js';
-import { embed, errorEmbed } from '../../lib/embeds.js';
+import { InteractionContextType, SlashCommandBuilder } from 'discord.js';
+import { embed } from '../../lib/embeds.js';
+import { ephemeral, errorReply } from '../../lib/replies.js';
 import { displayNameOf, targetUser } from '../../lib/targets.js';
-
-function ephemeral(payload) {
-  return { ...payload, flags: MessageFlags.Ephemeral };
-}
 
 export default {
   data: new SlashCommandBuilder()
     .setName('avatar')
-    .setDescription('Show a member’s avatar, including their per-server picture')
+    .setDescription('اعرض صورة عضو، بما فيها صورته الخاصة بالسيرفر')
     .setContexts(InteractionContextType.Guild)
     .addUserOption((option) =>
-      option.setName('user').setDescription('Member to look up (defaults to you)').setRequired(false),
+      option.setName('user').setDescription('العضو المطلوب (الافتراضي: أنت)').setRequired(false),
     ),
 
   name: 'avatar',
   aliases: ['av', 'pfp'],
-  description: 'Show a member’s avatar, including their per-server picture',
+  description: 'اعرض صورة عضو، بما فيها صورته الخاصة بالسيرفر',
   category: 'General',
   usage: 'avatar [@member]',
   cooldown: 3,
@@ -27,15 +24,13 @@ export default {
     const user = await targetUser(ctx, client);
 
     if (!user) {
-      await ctx.reply(
-        ephemeral({
-          embeds: [
-            errorEmbed(
-              'Unknown user',
-              `Mention the member or paste their id, for example \`${ctx.isSlash ? '/avatar user:@member' : ':-avatar @member'}\`.`,
-            ),
-          ],
-        }),
+      await ctx.fail(
+        ephemeral(
+          errorReply(
+            'عضو غير معروف',
+            `منشن العضو أو الصق الآيدي، مثل \`${ctx.isSlash ? '/avatar user:@member' : ':-avatar @member'}\`.`,
+          ),
+        ),
       );
       return;
     }
@@ -46,17 +41,17 @@ export default {
 
     const globalAvatar = user.displayAvatarURL({ size: 4096 });
     const serverAvatar = member?.avatarURL?.({ size: 4096 }) ?? null;
-    const links = [`[Global avatar](${globalAvatar})`];
+    const links = [`[الصورة العامة](${globalAvatar})`];
 
-    if (serverAvatar) links.push(`[Server avatar](${serverAvatar})`);
+    if (serverAvatar) links.push(`[صورة السيرفر](${serverAvatar})`);
 
     await ctx.reply({
       embeds: [
         embed({
-          title: `${displayNameOf(user, member)}’s avatar`,
+          title: `صورة ${displayNameOf(user, member)}`,
           description: links.join(' · '),
           image: serverAvatar ?? globalAvatar,
-          footer: `User ID: ${user.id}`,
+          footer: `آيدي العضو: ${user.id}`,
         }),
       ],
     });

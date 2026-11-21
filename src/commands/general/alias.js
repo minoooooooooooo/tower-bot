@@ -5,7 +5,8 @@ import {
   SlashCommandBuilder,
 } from 'discord.js';
 import { config } from '../../config.js';
-import { COLORS, embed, errorEmbed, successEmbed } from '../../lib/embeds.js';
+import { COLORS, embed } from '../../lib/embeds.js';
+import { errorReply, okReply, warnReply } from '../../lib/replies.js';
 import { resolveChannel } from '../../lib/resolve.js';
 import {
   MAX_ALIASES,
@@ -45,10 +46,8 @@ function ephemeral(payload) {
 async function requireManageGuild(ctx) {
   if (ctx.member?.permissions?.has(PermissionFlagsBits.ManageGuild)) return true;
 
-  await ctx.reply(
-    ephemeral({
-      embeds: [errorEmbed('Missing permissions', 'You need **Manage Server** to change aliases.')],
-    }),
+  await ctx.fail(
+    ephemeral(errorReply('صلاحيات ناقصة', 'تحتاج **إدارة السيرفر** عشان تغيّر الأسماء البديلة.')),
   );
 
   return false;
@@ -71,26 +70,26 @@ function validateTrigger(value, client) {
   const label = String(value ?? '').trim();
 
   if (!label) {
-    return { error: 'Give the word you want to type, for example `مسح`.' };
+    return { error: 'اكتب الكلمة اللي تبي تنطقها، مثل `مسح`.' };
   }
 
   if (label.length > MAX_TRIGGER_LENGTH) {
-    return { error: `Keep the word under ${MAX_TRIGGER_LENGTH} characters.` };
+    return { error: `خلّ الكلمة أقل من ${MAX_TRIGGER_LENGTH} حرف.` };
   }
 
   if (/\s/.test(label)) {
-    return { error: 'An alias is one word — everything after it becomes the command arguments.' };
+    return { error: 'الاسم البديل كلمة وحدة — وكل اللي بعدها يصير وسائط الأمر.' };
   }
 
   if (!TRIGGER_PATTERN.test(label)) {
-    return { error: 'Use letters, numbers, `_` or `-` only — no emoji, mentions or punctuation.' };
+    return { error: 'حروف وأرقام و`_` و`-` بس — بدون إيموجي أو منشن أو علامات ترقيم.' };
   }
 
   const name = label.toLowerCase();
 
   if (client.commands.has(name) || client.aliases.has(name)) {
     return {
-      error: `\`${label}\` is already a command name. Run it as \`${config.prefix}${label}\` instead.`,
+      error: `\`${label}\` اسم أمر أصلًا. شغّله كـ \`${config.prefix}${label}\` بدال.`,
     };
   }
 
@@ -118,28 +117,29 @@ function channelName(guild, channelId) {
 
 /** "only #general, #bot-spam" / "everywhere except #general". */
 function ruleSummary(alias, guild) {
-  if (!alias?.channelMode || !alias.channels?.length) return 'everywhere';
+  if (!alias?.channelMode || !alias.channels?.length) return 'في كل القنوات';
 
-  const names = alias.channels.map((id) => channelName(guild, id)).join(', ');
-  return alias.channelMode === 'allow' ? `only in ${names}` : `everywhere except ${names}`;
+  const names = alias.channels.map((id) => channelName(guild, id)).join('، ');
+  return alias.channelMode === 'allow' ? `فقط في ${names}` : `في كل القنوات إلا ${names}`;
 }
 
 function describeAdd({ alias, command, updated }) {
   const lines = [
-    `Typing **${alias.label}** now runs \`${command.name}\`.`,
-    `Usage: \`${usageFor(alias.label, command)}\``,
-    `Only members who can already use \`${command.name}\` will trigger it — everyone else is ignored.`,
+    `الحين كتابة **${alias.label}** تشغّل \`${command.name}\`.`,
+    `الاستخدام: \`${usageFor(alias.label, command)}\``,
+    `بس الأعضاء اللي يقدرون يستخدمون \`${command.name}\` بيشغّلونه — غيرهم ينطبق عليه السكوت.`,
   ];
 
   if (COMMON_WORDS.has(normalizeTrigger(alias.label))) {
-    lines.push(
-      '',
-      `⚠️ **${alias.label}** is a very common word, so any message that starts with it runs the command. ` +
-        'A distinctive word is safer.',
+    const text = lines.join('\n');
+
+    return warnReply(
+      updated ? 'تم تحديث الاسم البديل' : 'تم حفظ الاسم البديل',
+      `${text}\n\n⚠️ **${alias.label}** كلمة شائعة جدًا، فأي رسالة تبدأ بها تشغّل الأمر. كلمة أغرب أأمن.`,
     );
   }
 
-  return successEmbed(updated ? 'Alias updated' : 'Alias saved', lines.join('\n'));
+  return okReply(updated ? 'تم تحديث الاسم البديل' : 'تم حفظ الاسم البديل', lines.join('\n'));
 }
 
 async function handleAdd(ctx, client) {
@@ -149,15 +149,13 @@ async function handleAdd(ctx, client) {
   const commandInput = ctx.isSlash ? ctx.getString('command') : ctx.args[2];
 
   if (!ctx.isSlash && ctx.args.length > 3) {
-    await ctx.reply(
-      ephemeral({
-        embeds: [
-          errorEmbed(
-            'One word only',
-            `Usage: \`${config.prefix}alias add <word> <command>\` — for example \`${config.prefix}alias add مسح clear\`.`,
-          ),
-        ],
-      }),
+    await ctx.fail(
+      ephemeral(
+        errorReply(
+          'كلمة وحدة بس',
+          `الاستخدام: \`${config.prefix}alias add <word> <command>\` — مثل \`${config.prefix}alias add مسح clear\`.`,
+        ),
+      ),
     );
     return;
   }
@@ -165,52 +163,46 @@ async function handleAdd(ctx, client) {
   const trigger = validateTrigger(triggerInput, client);
 
   if (trigger.error) {
-    await ctx.reply(ephemeral({ embeds: [errorEmbed('Invalid word', trigger.error)] }));
+    await ctx.fail(ephemeral(errorReply('كلمة غير صحيحة', trigger.error)));
     return;
   }
 
   const command = resolveCommand(client, commandInput);
 
   if (!command) {
-    await ctx.reply(
-      ephemeral({
-        embeds: [
-          errorEmbed(
-            'Unknown command',
-            commandInput
-              ? `There is no command called \`${cleanCommandInput(commandInput)}\`. Run \`${config.prefix}help\` to see them all.`
-              : `Name the command it should run, for example \`${config.prefix}alias add ${trigger.label} clear\`.`,
-          ),
-        ],
-      }),
+    await ctx.fail(
+      ephemeral(
+        errorReply(
+          'أمر غير معروف',
+          commandInput
+            ? `ما فيه أمر اسمه \`${cleanCommandInput(commandInput)}\`. شغّل \`${config.prefix}help\` عشان تشوف الكل.`
+            : `حدّد الأمر اللي ينشغّل، مثل \`${config.prefix}alias add ${trigger.label} clear\`.`,
+        ),
+      ),
     );
     return;
   }
 
   if (command.slashOnly) {
-    await ctx.reply(
-      ephemeral({
-        embeds: [
-          errorEmbed(
-            'No prefix form',
-            `\`${command.name}\` only exists as a slash command, so it cannot be triggered by a word.`,
-          ),
-        ],
-      }),
+    await ctx.fail(
+      ephemeral(
+        errorReply(
+          'ما له صيغة بادئة',
+          `\`${command.name}\` موجود كأمر سلاش بس، فما ينفع ينشغّل بكلمة.`,
+        ),
+      ),
     );
     return;
   }
 
   if (command.name === 'alias') {
-    await ctx.reply(
-      ephemeral({
-        embeds: [
-          errorEmbed(
-            'Not allowed',
-            'An alias cannot point at the alias command itself. Pick the command you actually want to shorten.',
-          ),
-        ],
-      }),
+    await ctx.fail(
+      ephemeral(
+        errorReply(
+          'ما مسموح',
+          'الاسم البديل ما يقدر يشير لأمر الأسماء البديلة نفسه. اختر الأمر اللي تبي تختصره فعلًا.',
+        ),
+      ),
     );
     return;
   }
@@ -218,15 +210,13 @@ async function handleAdd(ctx, client) {
   const existing = getAlias(ctx.guildId, trigger.label);
 
   if (!existing && countAliases(ctx.guildId) >= MAX_ALIASES) {
-    await ctx.reply(
-      ephemeral({
-        embeds: [
-          errorEmbed(
-            'Too many aliases',
-            `This server already has ${MAX_ALIASES}. Remove one with \`${config.prefix}alias remove <word>\` first.`,
-          ),
-        ],
-      }),
+    await ctx.fail(
+      ephemeral(
+        errorReply(
+          'أسماء بديلة كثيرة',
+          `السيرفر عنده ${MAX_ALIASES} من قبل. احذف واحد بـ \`${config.prefix}alias remove <word>\` أول.`,
+        ),
+      ),
     );
     return;
   }
@@ -239,7 +229,7 @@ async function handleAdd(ctx, client) {
     createdBy: ctx.user.id,
   });
 
-  await ctx.reply(ephemeral({ embeds: [describeAdd({ alias, command, updated: Boolean(existing) })] }));
+  await ctx.reply(ephemeral(describeAdd({ alias, command, updated: Boolean(existing) })));
 }
 
 async function handleRemove(ctx) {
@@ -249,17 +239,15 @@ async function handleRemove(ctx) {
   const alias = getAlias(ctx.guildId, triggerInput);
 
   if (!alias) {
-    await ctx.reply(
-      ephemeral({
-        embeds: [
-          errorEmbed(
-            'No such alias',
-            triggerInput
-              ? `Nothing is mapped to \`${triggerInput}\`. See them all with \`${config.prefix}alias list\`.`
-              : `Say which word to remove, for example \`${config.prefix}alias remove مسح\`.`,
-          ),
-        ],
-      }),
+    await ctx.fail(
+      ephemeral(
+        errorReply(
+          'ما فيه اسم بديل',
+          triggerInput
+            ? `ما فيه شي مربوط بـ \`${triggerInput}\`. شوف الكل بـ \`${config.prefix}alias list\`.`
+            : `حدّد الكلمة اللي تبي تحذفها، مثل \`${config.prefix}alias remove مسح\`.`,
+        ),
+      ),
     );
     return;
   }
@@ -267,14 +255,12 @@ async function handleRemove(ctx) {
   removeAlias(ctx.guildId, alias.trigger);
 
   await ctx.reply(
-    ephemeral({
-      embeds: [
-        successEmbed(
-          'Alias removed',
-          `**${alias.label}** no longer runs \`${alias.command}\`. The command itself still works as \`${config.prefix}${alias.command}\`.`,
-        ),
-      ],
-    }),
+    ephemeral(
+      okReply(
+        'انحذف الاسم البديل',
+        `**${alias.label}** ما عاد يشغّل \`${alias.command}\`. الأمر نفسه لسا يشتغل كـ \`${config.prefix}${alias.command}\`.`,
+      ),
+    ),
   );
 }
 
@@ -285,17 +271,15 @@ async function handleChannel(ctx) {
   const alias = getAlias(ctx.guildId, triggerInput);
 
   if (!alias) {
-    await ctx.reply(
-      ephemeral({
-        embeds: [
-          errorEmbed(
-            'No such alias',
-            triggerInput
-              ? `Nothing is mapped to \`${triggerInput}\`. Create it with \`${config.prefix}alias add ${triggerInput} clear\`.`
-              : `Say which alias to restrict, for example \`${config.prefix}alias channel مسح allow #general\`.`,
-          ),
-        ],
-      }),
+    await ctx.fail(
+      ephemeral(
+        errorReply(
+          'ما فيه اسم بديل',
+          triggerInput
+            ? `ما فيه شي مربوط بـ \`${triggerInput}\`. أنشئه بـ \`${config.prefix}alias add ${triggerInput} clear\`.`
+            : `حدّد الاسم البديل اللي تبي تقيّده، مثل \`${config.prefix}alias channel مسح allow #general\`.`,
+        ),
+      ),
     );
     return;
   }
@@ -305,25 +289,20 @@ async function handleChannel(ctx) {
   ).toLowerCase();
 
   if (action === 'list' || action === 'show') {
-    const description =
-      alias.channelMode && alias.channels.length
-        ? `**${alias.label}** works ${ruleSummary(alias, ctx.guild)}.`
-        : `**${alias.label}** works in every channel.`;
-
     await ctx.reply(
       ephemeral({
         embeds: [
           embed({
-            title: `Alias channels · ${alias.label}`,
+            title: `قنوات الاسم البديل · ${alias.label}`,
             description: [
-              description,
+              `**${alias.label}** يشتغل ${ruleSummary(alias, ctx.guild)}.`,
               '',
-              `\`${config.prefix}alias channel ${alias.label} allow #channel\` — only that channel (add more to extend the list)`,
-              `\`${config.prefix}alias channel ${alias.label} deny #channel\` — everywhere except that channel`,
-              `\`${config.prefix}alias channel ${alias.label} remove #channel\` — drop one channel`,
-              `\`${config.prefix}alias channel ${alias.label} clear\` — remove all rules`,
+              `\`${config.prefix}alias channel ${alias.label} allow #channel\` — هذي القناة بس (أضف غيرها لتوسيع القائمة)`,
+              `\`${config.prefix}alias channel ${alias.label} deny #channel\` — كل القنوات إلا هذي`,
+              `\`${config.prefix}alias channel ${alias.label} remove #channel\` — شيل قناة وحدة`,
+              `\`${config.prefix}alias channel ${alias.label} clear\` — امسح كل القواعد`,
             ].join('\n'),
-            footer: 'Threads inherit their parent channel; channels inherit their category',
+            footer: 'الثريدات تتبع قناتها الأم، والقنوات تتبع تصنيفها',
           }),
         ],
       }),
@@ -335,29 +314,22 @@ async function handleChannel(ctx) {
     clearAliasChannels(ctx.guildId, alias.trigger);
 
     await ctx.reply(
-      ephemeral({
-        embeds: [
-          successEmbed(
-            'Alias channels cleared',
-            `**${alias.label}** now works in every channel again.`,
-          ),
-        ],
-      }),
+      ephemeral(
+        okReply('انمسحت قنوات الاسم البديل', `**${alias.label}** رجع يشتغل في كل القنوات.`),
+      ),
     );
     return;
   }
 
   if (!['allow', 'deny', 'remove'].includes(action)) {
-    await ctx.reply(
-      ephemeral({
-        embeds: [
-          errorEmbed(
-            'Unknown action',
-            `Use \`allow\`, \`deny\`, \`remove\`, \`clear\` or \`list\`.\n` +
-              `Example: \`${config.prefix}alias channel ${alias.label} allow #general\`.`,
-          ),
-        ],
-      }),
+    await ctx.fail(
+      ephemeral(
+        errorReply(
+          'إجراء غير معروف',
+          `استخدم \`allow\` أو \`deny\` أو \`remove\` أو \`clear\` أو \`list\`.\n` +
+            `مثال: \`${config.prefix}alias channel ${alias.label} allow #general\`.`,
+        ),
+      ),
     );
     return;
   }
@@ -368,15 +340,13 @@ async function handleChannel(ctx) {
     : await resolveChannel(ctx.guild, channelInput);
 
   if (!channel) {
-    await ctx.reply(
-      ephemeral({
-        embeds: [
-          errorEmbed(
-            'Pick a channel',
-            `Mention a channel, for example \`${config.prefix}alias channel ${alias.label} ${action} #general\`.`,
-          ),
-        ],
-      }),
+    await ctx.fail(
+      ephemeral(
+        errorReply(
+          'اختر قناة',
+          `منشن القناة، مثل \`${config.prefix}alias channel ${alias.label} ${action} #general\`.`,
+        ),
+      ),
     );
     return;
   }
@@ -389,23 +359,19 @@ async function handleChannel(ctx) {
     });
 
     if (!updated) {
-      await ctx.reply(
-        ephemeral({ embeds: [errorEmbed('No such alias', 'The alias disappeared while editing it.')] }),
-      );
+      await ctx.fail(ephemeral(errorReply('ما فيه اسم بديل', 'الاسم البديل اختفى أثناء التعديل.')));
       return;
     }
 
     await ctx.reply(
-      ephemeral({
-        embeds: [
-          successEmbed(
-            'Alias channel removed',
-            updated.channelMode
-              ? `**${alias.label}** no longer includes ${channelName(ctx.guild, channel.id)}. It works ${ruleSummary(updated, ctx.guild)}.`
-              : `**${alias.label}** no longer includes ${channelName(ctx.guild, channel.id)} and now works in every channel.`,
-          ),
-        ],
-      }),
+      ephemeral(
+        okReply(
+          'انشالت القناة',
+          updated.channelMode
+            ? `**${alias.label}** ما عاد يشمل ${channelName(ctx.guild, channel.id)}. الحين يشتغل ${ruleSummary(updated, ctx.guild)}.`
+            : `**${alias.label}** ما عاد يشمل ${channelName(ctx.guild, channel.id)} ورجع يشتغل في كل القنوات.`,
+        ),
+      ),
     );
     return;
   }
@@ -419,29 +385,23 @@ async function handleChannel(ctx) {
   });
 
   if (!updated) {
-    await ctx.reply(
-      ephemeral({ embeds: [errorEmbed('No such alias', 'The alias disappeared while editing it.')] }),
-    );
+    await ctx.fail(ephemeral(errorReply('ما فيه اسم بديل', 'الاسم البديل اختفى أثناء التعديل.')));
     return;
   }
 
   const switched = beforeMode && beforeMode !== action;
-  const lines = [`**${alias.label}** now works ${ruleSummary(updated, ctx.guild)}.`];
+  const lines = [`**${alias.label}** الحين يشتغل ${ruleSummary(updated, ctx.guild)}.`];
 
   if (switched) {
     lines.push(
       '',
-      `The old **${beforeMode}** list was cleared when the rule switched to **${action}**.`,
+      `قائمة **${beforeMode === 'allow' ? 'السماح' : 'المنع'}** القديمة انمسحت لما تحوّلت القاعدة إلى **${action === 'allow' ? 'السماح' : 'المنع'}**.`,
     );
   }
 
-  lines.push('', 'Threads inherit their parent channel; channels inherit their category.');
+  lines.push('', 'الثريدات تتبع قناتها الأم، والقنوات تتبع تصنيفها.');
 
-  await ctx.reply(
-    ephemeral({
-      embeds: [successEmbed('Alias channels updated', lines.join('\n'))],
-    }),
-  );
+  await ctx.reply(ephemeral(okReply('تحدّثت قنوات الاسم البديل', lines.join('\n'))));
 }
 
 async function handleList(ctx) {
@@ -453,10 +413,10 @@ async function handleList(ctx) {
       ephemeral({
         embeds: [
           embed({
-            title: 'No aliases yet',
+            title: 'ما فيه أسماء بديلة بعد',
             description: [
-              'An alias lets you run a command by typing a word, with no prefix.',
-              `Example: \`${config.prefix}alias add مسح clear\` — then \`مسح 100\` deletes 100 messages.`,
+              'الاسم البديل يخليك تشغّل أمر بكلمة تكتبها، بدون بادئة.',
+              `مثال: \`${config.prefix}alias add مسح clear\` — بعدها \`مسح 100\` يحذف 100 رسالة.`,
             ].join('\n'),
             color: COLORS.muted,
           }),
@@ -469,21 +429,21 @@ async function handleList(ctx) {
   const lines = aliases.map((alias) => {
     const command = commands.get(alias.command);
     const usage = command ? usageFor(alias.label, command) : `${alias.label} …`;
-    const broken = command ? '' : ' *(broken — command missing)*';
+    const broken = command ? '' : ' *(معطّل — الأمر مو موجود)*';
     const rule =
       alias.channelMode && alias.channels.length
         ? ` · ${ruleSummary(alias, ctx.guild)}`
         : '';
-    return `**${alias.label}** → \`${alias.command}\`${broken}${rule}\n\`${usage}\``;
+    return `**${alias.label}** ← \`${alias.command}\`${broken}${rule}\n\`${usage}\``;
   });
 
   await ctx.reply(
     ephemeral({
       embeds: [
         embed({
-          title: 'Command aliases',
+          title: 'الأسماء البديلة',
           description: lines.join('\n\n'),
-          footer: `${aliases.length} of ${MAX_ALIASES} · ${config.prefix}alias add <word> <command>`,
+          footer: `${aliases.length} من ${MAX_ALIASES} · ${config.prefix}alias add <word> <command>`,
         }),
       ],
     }),
@@ -492,18 +452,18 @@ async function handleList(ctx) {
 
 function usageEmbed() {
   return embed({
-    title: 'Aliases',
+    title: 'الأسماء البديلة',
     description: [
-      `Type a word instead of a command, so \`مسح 100\` works like \`${config.prefix}clear 100\`.`,
+      `اكتب كلمة بدال الأمر، فـ \`مسح 100\` يشتغل مثل \`${config.prefix}clear 100\`.`,
       '',
-      `\`${config.prefix}alias add مسح clear\` — create or change one`,
-      `\`${config.prefix}alias remove مسح\` — delete one`,
-      `\`${config.prefix}alias channel مسح allow #general\` — only in that channel`,
-      `\`${config.prefix}alias channel مسح deny #off-topic\` — everywhere except that channel`,
-      `\`${config.prefix}alias channel مسح clear\` — works everywhere again`,
-      `\`${config.prefix}alias list\` — show them all`,
+      `\`${config.prefix}alias add مسح clear\` — أنشئ واحد أو غيّره`,
+      `\`${config.prefix}alias remove مسح\` — احذف واحد`,
+      `\`${config.prefix}alias channel مسح allow #general\` — في هذي القناة بس`,
+      `\`${config.prefix}alias channel مسح deny #off-topic\` — كل القنوات إلا هذي`,
+      `\`${config.prefix}alias channel مسح clear\` — يرجع يشتغل في كل القنوات`,
+      `\`${config.prefix}alias list\` — اعرض الكل`,
       '',
-      'Everything after the word is passed to the command as arguments.',
+      'وكل اللي بعد الكلمة ينرسل للأمر كوسائط.',
     ].join('\n'),
   });
 }
@@ -511,23 +471,23 @@ function usageEmbed() {
 export default {
   data: new SlashCommandBuilder()
     .setName('alias')
-    .setDescription('Run a command by typing a word, with no prefix')
+    .setDescription('شغّل أمر بكلمة تكتبها، بدون بادئة')
     .setContexts(InteractionContextType.Guild)
     .addSubcommand((subcommand) =>
       subcommand
         .setName('add')
-        .setDescription('Create or change a word that runs a command')
+        .setDescription('أنشئ أو غيّر كلمة تشغّل أمر')
         .addStringOption((option) =>
           option
             .setName('trigger')
-            .setDescription('The word to type, for example مسح')
+            .setDescription('الكلمة اللي تنكتب، مثل مسح')
             .setRequired(true)
             .setMaxLength(MAX_TRIGGER_LENGTH),
         )
         .addStringOption((option) =>
           option
             .setName('command')
-            .setDescription('The command it runs, for example clear')
+            .setDescription('الأمر اللي ينشغّل، مثل clear')
             .setRequired(true)
             .setAutocomplete(true),
         ),
@@ -535,51 +495,51 @@ export default {
     .addSubcommand((subcommand) =>
       subcommand
         .setName('remove')
-        .setDescription('Delete an alias')
+        .setDescription('احذف اسمًا بديلًا')
         .addStringOption((option) =>
           option
             .setName('trigger')
-            .setDescription('The word to stop using')
+            .setDescription('الكلمة اللي تبي توقفها')
             .setRequired(true)
             .setAutocomplete(true),
         ),
     )
-    .addSubcommand((subcommand) => subcommand.setName('list').setDescription('Show every alias'))
+    .addSubcommand((subcommand) => subcommand.setName('list').setDescription('اعرض كل الأسماء البديلة'))
     .addSubcommand((subcommand) =>
       subcommand
         .setName('channel')
-        .setDescription('Choose which channels an alias works in')
+        .setDescription('اختر القنوات اللي يشتغل فيها الاسم البديل')
         .addStringOption((option) =>
           option
             .setName('trigger')
-            .setDescription('The alias word to restrict')
+            .setDescription('الكلمة اللي تبي تقيّدها')
             .setRequired(true)
             .setAutocomplete(true),
         )
         .addStringOption((option) =>
           option
             .setName('action')
-            .setDescription('Allow, deny, remove a channel, clear rules, or list them (default: list)')
+            .setDescription('اسمح بقناة، امنعها، اشيلها، امسح القواعد، أو اعرضها (الافتراضي: عرض)')
             .setRequired(false)
             .addChoices(
-              { name: 'Allow channel', value: 'allow' },
-              { name: 'Deny channel', value: 'deny' },
-              { name: 'Remove channel', value: 'remove' },
-              { name: 'Clear all rules', value: 'clear' },
-              { name: 'List rules', value: 'list' },
+              { name: 'اسمح بقناة', value: 'allow' },
+              { name: 'امنع قناة', value: 'deny' },
+              { name: 'شيل قناة', value: 'remove' },
+              { name: 'امسح كل القواعد', value: 'clear' },
+              { name: 'اعرض القواعد', value: 'list' },
             ),
         )
         .addChannelOption((option) =>
           option
             .setName('channel')
-            .setDescription('Channel, category or thread (not needed for clear/list)')
+            .setDescription('قناة أو تصنيف أو ثريد (ما يلزم للعرض والمسح)')
             .setRequired(false),
         ),
     ),
 
   name: 'alias',
   aliases: ['aliases', 'shortcut', 'shortcuts'],
-  description: 'Run a command by typing a word, with no prefix',
+  description: 'شغّل أمر بكلمة تكتبها، بدون بادئة',
   category: 'General',
   usage:
     'alias add <word> <command> | remove <word> | channel <word> <allow|deny|remove|clear|list> [#channel] | list',

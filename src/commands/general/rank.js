@@ -7,8 +7,9 @@ import {
   SlashCommandBuilder,
 } from 'discord.js';
 import { formatNumber, rankBadge } from '../../lib/activity-format.js';
-import { embed, warningEmbed } from '../../lib/embeds.js';
+import { embed } from '../../lib/embeds.js';
 import { createLogger } from '../../lib/logger.js';
+import { errorReply, warnReply } from '../../lib/replies.js';
 import { linkedPoints } from '../../services/ebot-vex.js';
 import { ensureCoinBackfill, rankedProfiles } from '../../services/profile-store.js';
 
@@ -50,27 +51,27 @@ function pagerRow(page, pages) {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('rank:first')
-      .setLabel('« First')
+      .setLabel('« الأول')
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(page <= 1),
     new ButtonBuilder()
       .setCustomId('rank:prev')
-      .setLabel('‹ Previous')
+      .setLabel('‹ السابق')
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(page <= 1),
     new ButtonBuilder()
       .setCustomId('rank:page')
-      .setLabel(`Page ${page} / ${pages}`)
+      .setLabel(`صفحة ${page} / ${pages}`)
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(true),
     new ButtonBuilder()
       .setCustomId('rank:next')
-      .setLabel('Next ›')
+      .setLabel('التالي ›')
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(page >= pages),
     new ButtonBuilder()
       .setCustomId('rank:last')
-      .setLabel('Last »')
+      .setLabel('الأخير »')
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(page >= pages),
   );
@@ -90,7 +91,7 @@ function buildPage(rows, state) {
   const lines = rows.slice(start, start + state.pageSize).map(
     (row, index) =>
       `\u200E${rankBadge(start + index)} <@${row.userId}>\u200E — ` +
-      `Level **${row.level}** · Coins **${formatNumber(row.coins)}** · ` +
+      `المستوى **${row.level}** · العملات **${formatNumber(row.coins)}** · ` +
       `Vex **${formatNumber(row.vex)}** · ` +
       `Nightmare **${formatNumber(row.nightmare)}**`,
   );
@@ -98,11 +99,11 @@ function buildPage(rows, state) {
   const payload = {
     embeds: [
       embed({
-        title: 'Member levels',
+        title: 'مستويات الأعضاء',
         description: lines.join('\n'),
         footer: [
-          'Ordered by level · Vex + Nightmare',
-          pages > 1 ? `Page ${page} / ${pages}` : null,
+          'مرتّب حسب المستوى · Vex + Nightmare',
+          pages > 1 ? `صفحة ${page} / ${pages}` : null,
         ]
           .filter(Boolean)
           .join(' · '),
@@ -159,12 +160,12 @@ function attachPager({ message, rows, state }) {
 export default {
   data: new SlashCommandBuilder()
     .setName('rank')
-    .setDescription('Rank members by level, Vex and Nightmare points')
+    .setDescription('رتّب الأعضاء حسب المستوى ونقاط Vex وNightmare')
     .setContexts(InteractionContextType.Guild)
     .addIntegerOption((option) =>
       option
         .setName('per_page')
-        .setDescription('Members per page (1–25, default 10)')
+        .setDescription('عدد الأعضاء في الصفحة (1–25، الافتراضي 10)')
         .setRequired(false)
         .setMinValue(1)
         .setMaxValue(MAX_PAGE_SIZE),
@@ -175,7 +176,7 @@ export default {
   // name win, so `:-rank` reaches this command. These extra words are for
   // discoverability; `:-rank` itself is covered by the command name.
   aliases: ['levels', 'levelboard', 'ranks'],
-  description: 'Rank members by level, Vex and Nightmare points',
+  description: 'رتّب الأعضاء حسب المستوى ونقاط Vex وNightmare',
   category: 'Profile',
   usage: 'rank [per page]',
   cooldown: 5,
@@ -185,15 +186,13 @@ export default {
     const pageSize = parsePageSize(ctx);
 
     if (!pageSize) {
-      await ctx.fail({
-        embeds: [
-          warningEmbed(
-            'Invalid page size',
-            `Use a number from 1 to ${MAX_PAGE_SIZE}, for example ` +
-              `\`${ctx.isSlash ? '/rank per_page:10' : ':-levels 10'}\`.`,
-          ),
-        ],
-      });
+      await ctx.fail(
+        errorReply(
+          'حجم صفحة غير صحيح',
+          `استخدم رقم من 1 إلى ${MAX_PAGE_SIZE}، مثل ` +
+            `\`${ctx.isSlash ? '/rank per_page:10' : ':-levels 10'}\`.`,
+        ),
+      );
       return;
     }
 
@@ -218,14 +217,11 @@ export default {
 
     if (!built) {
       await ctx.reply({
-        embeds: [
-          warningEmbed(
-            'No ranked members yet',
-            'Levels come from Vex and Nightmare points. Staff can add them with ' +
-              `\`${ctx.isSlash ? '/profile-edit' : ':-profile-edit'}\`, and the linked ` +
-              'bots contribute automatically.',
-          ),
-        ],
+        content: warnReply(
+          'ما فيه أعضاء مرتّبين بعد',
+          'المستويات تجي من نقاط Vex وNightmare. المشرفون يضيفونها بـ ' +
+            `\`${ctx.isSlash ? '/profile-edit' : ':-profile-edit'}\`، والبوتات المرتبطة تضيفها تلقائيًا.`,
+        ).content,
         allowedMentions: { parse: [] },
       });
       return;

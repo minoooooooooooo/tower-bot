@@ -1,27 +1,24 @@
-import { InteractionContextType, MessageFlags, SlashCommandBuilder } from 'discord.js';
-import { embed, errorEmbed, infoEmbed } from '../../lib/embeds.js';
+import { InteractionContextType, SlashCommandBuilder } from 'discord.js';
+import { embed } from '../../lib/embeds.js';
+import { ephemeral, errorReply, infoReply } from '../../lib/replies.js';
 import { targetGuild } from '../../lib/targets.js';
-
-function ephemeral(payload) {
-  return { ...payload, flags: MessageFlags.Ephemeral };
-}
 
 export default {
   data: new SlashCommandBuilder()
     .setName('server-avatar')
-    .setDescription('Show a server’s icon, including servers you are not in this one with')
+    .setDescription('اعرض أيقونة سيرفر، حتى سيرفر ثاني البوت موجود فيه')
     .setContexts(InteractionContextType.Guild)
     .addStringOption((option) =>
       option
         .setName('server')
-        .setDescription('Server id or name (defaults to this server)')
+        .setDescription('آيدي السيرفر أو اسمه (الافتراضي: هذا السيرفر)')
         .setRequired(false)
         .setMaxLength(100),
     ),
 
   name: 'server-avatar',
   aliases: ['serverav', 'servericon', 'sicon'],
-  description: 'Show a server’s icon (another server the bot is in can be picked)',
+  description: 'اعرض أيقونة سيرفر (تقدر تختار سيرفر ثاني البوت موجود فيه)',
   category: 'General',
   usage: 'server-avatar [server id or name]',
   cooldown: 3,
@@ -31,15 +28,13 @@ export default {
     const guild = await targetGuild(ctx, client);
 
     if (!guild) {
-      await ctx.reply(
-        ephemeral({
-          embeds: [
-            errorEmbed(
-              'Server not found',
-              'I can only look at servers I am already in. Paste the server id or its exact name.',
-            ),
-          ],
-        }),
+      await ctx.fail(
+        ephemeral(
+          errorReply(
+            'السيرفر غير موجود',
+            'ما أقدر أشوف إلا سيرفرات أنا موجود فيها. الصق آيدي السيرفر أو اسمه بالضبط.',
+          ),
+        ),
       );
       return;
     }
@@ -47,19 +42,17 @@ export default {
     const icon = guild.iconURL({ size: 4096 }) ?? null;
 
     if (!icon) {
-      await ctx.reply({
-        embeds: [infoEmbed('No icon', `**${guild.name}** has not set a server icon.`)],
-      });
+      await ctx.reply(infoReply('ما فيه أيقونة', `**${guild.name}** ما حط أيقونة للسيرفر.`));
       return;
     }
 
     await ctx.reply({
       embeds: [
         embed({
-          title: `${guild.name}’s icon`,
+          title: `أيقونة ${guild.name}`,
           image: icon,
-          description: `[Open in full size](${icon})`,
-          footer: `Server ID: ${guild.id}`,
+          description: `[افتحها بالحجم الكامل](${icon})`,
+          footer: `آيدي السيرفر: ${guild.id}`,
         }),
       ],
     });

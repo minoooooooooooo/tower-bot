@@ -1,6 +1,7 @@
 import { InteractionContextType, SlashCommandBuilder } from 'discord.js';
 import { formatDate, formatNumber } from '../../lib/activity-format.js';
-import { embed, warningEmbed } from '../../lib/embeds.js';
+import { embed } from '../../lib/embeds.js';
+import { okReply, warnReply } from '../../lib/replies.js';
 import { normalizeForMatch } from '../../lib/text.js';
 import { countBackfillableChannels } from '../../services/activity-backfill.js';
 import {
@@ -38,12 +39,12 @@ function stateOf(ctx) {
   const done = Math.min(stats.done, channelTotal || stats.done);
   const handled = stats.done + stats.errors;
 
-  let state = 'Not started';
+  let state = 'ما بدأ';
 
-  if (running) state = job.cancelled ? 'Stopping' : 'Running';
+  if (running) state = job.cancelled ? 'يتوقف' : 'يشتغل';
   else if (channelTotal > 0 && handled >= channelTotal) {
-    state = stats.errors === 0 ? 'Complete' : 'Complete with skips';
-  } else if (stats.channels > 0) state = 'Paused';
+    state = stats.errors === 0 ? 'مكتمل' : 'مكتمل مع تخطيات';
+  } else if (stats.channels > 0) state = 'متوقف مؤقتًا';
 
   return { job, stats, total, running, channelTotal, done, state };
 }
@@ -52,84 +53,84 @@ function statusPayload(ctx) {
   const { job, stats, running, channelTotal, done, state } = stateOf(ctx);
 
   const description = running
-    ? 'Reading older messages in the background and counting custom emojis. Progress is saved after every page.'
-    : state === 'Complete'
-      ? 'Every readable text channel has been scanned back to your server’s beginning.'
-      : state === 'Complete with skips'
-        ? 'Every readable channel was scanned. The skipped channels usually need Read Message History; fix that and run `/emojibackfill start` to retry them.'
-        : state === 'Paused'
-          ? 'The last run stopped early. `/emojibackfill start` continues from each channel’s saved cursor.'
-          : 'Older messages have not been scanned for emoji usage yet. Run `/emojibackfill start` once.';
+    ? 'يقرأ الرسائل القديمة في الخلفية ويحسب الإيموجيات المخصصة. التقدّم ينحفظ بعد كل صفحة.'
+    : state === 'مكتمل'
+      ? 'كل قناة نصية مقروءة انفحصت رجوعًا لبداية سيرفرك.'
+      : state === 'مكتمل مع تخطيات'
+        ? 'كل قناة مقروءة انفحصت. القنوات المتخطّاة تحتاج عادةً **قراءة سجل الرسائل**؛ صلّحها وشغّل `/emojibackfill start` عشان تعيد المحاولة.'
+        : state === 'متوقف مؤقتًا'
+          ? 'آخر تشغيل وقف بدري. `/emojibackfill start` يكمّل من المؤشر المحفوظ لكل قناة.'
+          : 'الرسائل القديمة ما انفحصت لاستخدام الإيموجيات بعد. شغّل `/emojibackfill start` مرة واحدة.';
 
   return embed({
-    title: 'Emoji backfill',
+    title: 'استيراد الإيموجيات',
     description,
     fields: [
-      { name: 'State', value: state, inline: true },
+      { name: 'الحالة', value: state, inline: true },
       {
-        name: 'Channels',
+        name: 'القنوات',
         value: `${formatNumber(done)} / ${formatNumber(channelTotal)}`,
         inline: true,
       },
       {
-        name: 'Messages scanned',
+        name: 'رسائل مفحوصة',
         value: formatNumber(stats.fetched),
         inline: true,
       },
       {
-        name: 'Emoji uses found',
+        name: 'استخدامات إيموجي',
         value: formatNumber(stats.emojiUses),
         inline: true,
       },
       {
-        name: 'Oldest scanned',
+        name: 'أقدم رسالة مفحوصة',
         value: stats.oldestAt ? formatDate(stats.oldestAt) : '—',
         inline: true,
       },
       {
-        name: 'Backfilled since',
+        name: 'مستورد منذ',
         value: emojiBackfilledSince(ctx.guildId)
           ? formatDate(emojiBackfilledSince(ctx.guildId))
           : '—',
         inline: true,
       },
       {
-        name: 'Current channel',
+        name: 'القناة الحالية',
         value: running && job.channelId ? `<#${job.channelId}>` : '—',
         inline: true,
       },
       {
-        name: 'Live since',
+        name: 'العدّ المباشر منذ',
         value: emojiTrackingSince(ctx.guildId)
           ? formatDate(emojiTrackingSince(ctx.guildId))
           : '—',
         inline: true,
       },
     ],
-    footer: 'Inline and standalone uses are counted separately · /emojibackfill cancel keeps saved progress',
+    footer: 'الاستخدام داخل الرسالة ولحاله ينحسبان منفصلين · /emojibackfill cancel يحفظ التقدّم',
   });
 }
 
 export default {
   data: new SlashCommandBuilder()
     .setName('emojibackfill')
-    .setDescription('Import older messages into the emoji usage stats')
+    .setDescription('استورد الرسائل القديمة في إحصائيات استخدام الإيموجيات')
     .setContexts(InteractionContextType.Guild)
     .addStringOption((option) =>
       option
         .setName('action')
-        .setDescription('What to do (default: status)')
+        .setDescription('اللي تبي تسويه (الافتراضي: الحالة)')
         .setRequired(false)
         .addChoices(
-          { name: 'Start', value: 'start' },
-          { name: 'Status', value: 'status' },
-          { name: 'Cancel', value: 'cancel' },
+          { name: 'ابدأ', value: 'start' },
+          { name: 'الحالة', value: 'status' },
+          { name: 'إلغاء', value: 'cancel' },
         ),
     ),
 
   name: 'emojibackfill',
   aliases: ['importemojis', 'emojihistory'],
-  description: 'Import older messages into the emoji usage stats',
+  description: 'استورد الرسائل القديمة في إحصائيات استخدام الإيموجيات',
   category: 'Activity',
   usage: 'emojibackfill [start|status|cancel]',
   cooldown: 10,
@@ -140,14 +141,12 @@ export default {
     const action = parseAction(ctx);
 
     if (!action) {
-      await ctx.fail({
-        embeds: [
-          warningEmbed(
-            'Unknown action',
-            `Use \`${ctx.isSlash ? '/emojibackfill' : ':-emojibackfill'} [start|status|cancel]\`.`,
-          ),
-        ],
-      });
+      await ctx.fail(
+        warnReply(
+          'إجراء غير معروف',
+          `استخدم \`${ctx.isSlash ? '/emojibackfill' : ':-emojibackfill'} [start|status|cancel]\`.`,
+        ),
+      );
       return;
     }
 
@@ -160,52 +159,43 @@ export default {
       const job = cancelEmojiBackfill(ctx.guildId);
 
       if (!job) {
-        await ctx.reply({
-          embeds: [
-            warningEmbed(
-              'Nothing is running',
-              'Start an import with `/emojibackfill start`. Saved progress is kept.',
-            ),
-          ],
-        });
+        await ctx.reply(
+          warnReply(
+            'ما فيه شي يشتغل',
+            'ابدأ استيراد بـ `/emojibackfill start`. التقدّم المحفوظ يبقى.',
+          ),
+        );
         return;
       }
 
-      await ctx.reply({
-        embeds: [
-          embed({
-            title: 'Stopping',
-            description:
-              'The current page finishes, then the emoji import stops. Every completed page is saved, so the same command resumes from there.',
-          }),
-        ],
-      });
+      await ctx.reply(
+        warnReply(
+          'يتوقف',
+          'الصفحة الحالية تخلص، بعدها استيراد الإيموجيات يوقف. كل صفحة مكتملة تنحفظ، فأمر نفسه يكمّل من هناك.',
+        ),
+      );
       return;
     }
 
     const { stats, total } = stateOf(ctx);
 
     if (total === 0) {
-      await ctx.reply({
-        embeds: [
-          warningEmbed(
-            'Nothing to scan',
-            'I cannot see any text channels with readable message history. Check my View Channel and Read Message History permissions, then try again.',
-          ),
-        ],
-      });
+      await ctx.reply(
+        warnReply(
+          'ما فيه شي ينفحص',
+          'ما أشوف قنوات نصية فيها سجل رسائل مقروء. تأكد من صلاحيات **عرض القنوات** و**قراءة سجل الرسائل**، وبعدها جرّب.',
+        ),
+      );
       return;
     }
 
     if (stats.done >= total && stats.errors === 0) {
-      await ctx.reply({
-        embeds: [
-          warningEmbed(
-            'Emoji backfill already complete',
-            `All ${formatNumber(total)} text channels were scanned back to ${stats.oldestAt ? formatDate(stats.oldestAt) : 'the beginning'}.`,
-          ),
-        ],
-      });
+      await ctx.reply(
+        warnReply(
+          'استيراد الإيموجيات مكتمل من قبل',
+          `كل ${formatNumber(total)} قناة نصية انفحصت رجوعًا إلى ${stats.oldestAt ? formatDate(stats.oldestAt) : 'البداية'}.`,
+        ),
+      );
       return;
     }
 
@@ -213,29 +203,24 @@ export default {
     const result = startEmojiBackfill(client, ctx.guildId);
 
     if (!result.started) {
-      await ctx.reply({
-        embeds: [
-          warningEmbed(
-            'Already running',
-            'Use `/emojibackfill status` to watch progress or `/emojibackfill cancel` to stop it.',
-          ),
-        ],
-      });
+      await ctx.reply(
+        warnReply(
+          'يشتغل من قبل',
+          'استخدم `/emojibackfill status` عشان تتابع التقدّم أو `/emojibackfill cancel` عشان توقفه.',
+        ),
+      );
       return;
     }
 
-    await ctx.reply({
-      embeds: [
-        embed({
-          title: 'Emoji backfill started',
-          description: [
-            `Reading ${formatNumber(total)} text channel(s) backwards from ${formatDate(since)}, which is when live emoji counting began.`,
-            'Only messages older than that are counted, so nothing is counted twice. In-message and standalone emoji uses are stored separately and added for the leaderboard.',
-            'It runs in the background: `/emojibackfill status` shows progress, `/emojibackfill cancel` stops after the current page, and a restart resumes from the saved per-channel cursor.',
-          ].join('\n\n'),
-          footer: 'This can take a while on a large server',
-        }),
-      ],
-    });
+    await ctx.reply(
+      okReply(
+        'بدأ استيراد الإيموجيات',
+        [
+          `يقرأ ${formatNumber(total)} قناة نصية رجوعًا من ${formatDate(since)}، وهي لحظة بداية العدّ المباشر للإيموجيات.`,
+          'الرسائل الأقدم من كذا بس تنحسب، فما ينحسب شي مرتين. الاستخدام داخل الرسالة ولحاله ينحفظان منفصلين وينجمعان للترتيب.',
+          'يشتغل في الخلفية: `/emojibackfill status` يعرض التقدّم، `/emojibackfill cancel` يوقف بعد الصفحة الحالية، وإعادة التشغيل تكمّل من المؤشر المحفوظ لكل قناة.',
+        ].join('\n\n'),
+      ),
+    );
   },
 };

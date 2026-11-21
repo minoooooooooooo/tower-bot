@@ -6,7 +6,7 @@ import {
   SlashCommandBuilder,
 } from 'discord.js';
 import { colorListEmbed } from '../../lib/color-palette.js';
-import { embed, errorEmbed } from '../../lib/embeds.js';
+import { errorReply, infoReply, okReply } from '../../lib/replies.js';
 import { createLogger } from '../../lib/logger.js';
 import { normalizeForMatch } from '../../lib/text.js';
 
@@ -139,7 +139,7 @@ const CLEAR_WORDS = new Set([
 // Prefix has no optional options, so "-" means "keep this color as it is".
 const KEEP_WORDS = new Set(['-', '_', 'keep', 'same', 'ابق']);
 
-const FOOTER = 'Only your highest editable personal role can be changed.';
+const FOOTER = 'تقدر تغيّر أعلى رتبة شخصية عندك فقط.';
 
 
 // `:-color list` / `primary:list` / bare `/color`.
@@ -237,13 +237,13 @@ export function findEditablePersonalRole(member, counts = null, botTop = Infinit
  */
 export async function pickColorRole(guild, member) {
   if (!member) {
-    return { problem: 'I could not read your server profile. Try again in a moment.' };
+    return { problem: 'ما قدرت أقرأ ملفك في السيرفر. جرّب بعد لحظة.' };
   }
 
   const me = guild.members?.me;
 
   if (!me) {
-    return { problem: 'I could not read my own server profile. Try again in a moment.' };
+    return { problem: 'ما قدرت أقرأ ملفي في السيرفر. جرّب بعد لحظة.' };
   }
 
   const canManage =
@@ -251,7 +251,7 @@ export async function pickColorRole(guild, member) {
     me.permissions?.has(PermissionFlagsBits.Administrator);
 
   if (!canManage) {
-    return { problem: 'I need the **Manage Roles** permission to change role colors.' };
+    return { problem: 'أحتاج صلاحية **إدارة الرتب** عشان أغيّر ألوان الرتب.' };
   }
 
   let counts = null;
@@ -278,8 +278,8 @@ export async function pickColorRole(guild, member) {
     if (personal.length === 0) {
       return {
         problem:
-          'You do not have an editable **personal role** — every role you have is either shared with someone else or managed by an integration.\n' +
-          'Ask an admin to give you a role that nobody else has, then run the command again.',
+          'ما عندك **رتبة شخصية** تقدر أعدّلها — كل رتبك إما مشتركة مع غيرك أو مرتبطة بتكامل.\n' +
+          'اطلب من مشرف يعطيك رتبة ما يملكها غيرك، وبعدها شغّل الأمر مرة ثانية.',
       };
     }
 
@@ -287,8 +287,8 @@ export async function pickColorRole(guild, member) {
       role: personal[0],
       blocked: personal[0],
       problem:
-        `**${personal[0].name}** sits at or above my highest role, so I cannot change its colors.\n` +
-        'Ask an admin to drag my role above it in **Server Settings → Roles**, then try again.',
+        `**${personal[0].name}** في نفس مستوى أعلى رتبة عندي أو فوقها، فما أقدر أغيّر ألوانها.\n` +
+        'اطلب من مشرف يرفع رتبتي فوقها من **إعدادات السيرفر ← الرتب**، وبعدها جرّب.',
     };
   }
 
@@ -317,13 +317,13 @@ async function respond(ctx, payload) {
 // Errors release the cooldown: a bad hex code or a blocked role should not
 // stop the user from trying again straight away.
 function fail(ctx, title, description) {
-  return ctx.fail(privatePayload({ embeds: [errorEmbed(title, description)] }));
+  return ctx.fail(privatePayload(errorReply(title, description)));
 }
 
 function usageLines(ctx) {
   const examples = ctx.isSlash ? USAGE.slash : USAGE.prefix;
 
-  return ['**Usage:**', ...examples.map((line) => `\`${line}\``)].join('\n');
+  return ['**الاستخدام:**', ...examples.map((line) => `\`${line}\``)].join('\n');
 }
 
 function isClearInput(value) {
@@ -345,16 +345,16 @@ async function showColorList(ctx) {
 
 function colorSummary(primaryHex, secondaryHex) {
   return secondaryHex
-    ? `\`${primaryHex}\` → \`${secondaryHex}\``
-    : `\`${primaryHex}\` (solid)`;
+    ? `\`${primaryHex}\` ← \`${secondaryHex}\``
+    : `\`${primaryHex}\` (لون واحد)`;
 }
 
 function skippedNote(blocked, role) {
-  return `${blocked} sits above my highest role, so it cannot be changed — I used ${role} instead.`;
+  return `${blocked} فوق أعلى رتبة عندي، فما قدرت أعدّلها — استخدمت ${role} بدالها.`;
 }
 
 function reasonFor(ctx) {
-  return `Color command: ${ctx.user.tag ?? ctx.user.username}`.slice(0, 500);
+  return `أمر اللون: ${ctx.user.tag ?? ctx.user.username}`.slice(0, 500);
 }
 
 function hexOf(value) {
@@ -364,23 +364,23 @@ function hexOf(value) {
 function apiProblem(error) {
   if (error instanceof DiscordAPIError) {
     if (error.code === 50013) {
-      return 'Discord says I do not have permission to edit that role. Move my role above it and make sure I have **Manage Roles**.';
+      return 'ديسكورد يقول ما عندي صلاحية أعدّل هذي الرتبة. ارفع رتبتي فوقها وتأكد أن عندي **إدارة الرتب**.';
     }
 
     if (error.code === 50035) {
-      return 'Discord rejected those colors. Gradient role colors need a boosted server, and both values must be valid.';
+      return 'ديسكورد رفض هذي الألوان. ألوان التدرّج تحتاج سيرفر معزّز، والقيمتين لازم تكونان صحيحتين.';
     }
 
     if (error.code === 429 || /rate limit/i.test(error.message)) {
-      return 'Discord is rate limiting role changes. Wait a minute and try again.';
+      return 'ديسكورد يحدّد سرعة تغيير الرتب الحين. انتظر دقيقة وجرّب.';
     }
 
-    return `Discord said: ${String(error.message).slice(0, 300)}`;
+    return `ديسكورد قال: ${String(error.message).slice(0, 300)}`;
   }
 
   return error?.message
-    ? `Something went wrong: ${String(error.message).slice(0, 300)}`
-    : 'Something went wrong while changing the role colors.';
+    ? `صار خطأ: ${String(error.message).slice(0, 300)}`
+    : 'صار خطأ وأنا أغيّر ألوان الرتبة.';
 }
 
 /**
@@ -394,15 +394,13 @@ async function clearColors(ctx, role, blocked, current) {
     // Nothing changed, so do not hold the cooldown against the user.
     ctx.releaseCooldown();
 
-    await respond(ctx, {
-      embeds: [
-        embed({
-          title: 'Already clear',
-          description: `${role} already uses the default color — there is nothing to clear.`,
-          footer: FOOTER,
-        }),
-      ],
-    });
+    await respond(
+      ctx,
+      infoReply(
+        'اللون فاضي أصلًا',
+        `${role} يستخدم اللون الافتراضي من قبل — ما فيه شي ينمسح.`,
+      ),
+    );
     return;
   }
 
@@ -416,37 +414,29 @@ async function clearColors(ctx, role, blocked, current) {
       `${ctx.user.tag ?? ctx.user.username} (${ctx.user.id}) cleared ${role.name} (${role.id})`,
     );
 
-    const lines = [`${role} now uses the default color — no gradient.`];
+    const lines = [`${role} رجع للون الافتراضي — بدون تدرّج.`];
 
     if (blocked) {
       lines.push('', skippedNote(blocked, role));
     }
 
-    await respond(ctx, {
-      embeds: [
-        embed({
-          title: 'Color cleared',
-          description: lines.join('\n'),
-          footer: FOOTER,
-        }),
-      ],
-    });
+    await respond(ctx, okReply('انمسح اللون', lines.join('\n')));
   } catch (error) {
     logger.warn(`Color clear failed for ${ctx.user.id} on ${role.id}: ${error.message}`);
 
-    await fail(ctx, 'Could not clear the colors', apiProblem(error));
+    await fail(ctx, 'ما قدرت أمسح الألوان', apiProblem(error));
   }
 }
 
 export default {
   data: new SlashCommandBuilder()
     .setName('color')
-    .setDescription('Change or clear the colors of your own personal role')
+    .setDescription('غيّر أو امسح ألوان رتبتك الشخصية')
     .setContexts(InteractionContextType.Guild)
     .addStringOption((option) =>
       option
         .setName('primary')
-        .setDescription('First color: #ff0000, f00, red, أحمر — or clear to remove it')
+        .setDescription('اللون الأول: #ff0000، f00، red، أحمر — أو clear لإزالته')
         .setMinLength(3)
         .setMaxLength(24)
         .setRequired(false),
@@ -454,7 +444,7 @@ export default {
     .addStringOption((option) =>
       option
         .setName('secondary')
-        .setDescription('Second color for a gradient: #00ff00, green, أخضر (optional)')
+        .setDescription('اللون الثاني للتدرّج: #00ff00، green، أخضر (اختياري)')
         .setMinLength(3)
         .setMaxLength(24)
         .setRequired(false),
@@ -462,13 +452,13 @@ export default {
     .addBooleanOption((option) =>
       option
         .setName('clear')
-        .setDescription('Remove the color and gradient, back to default (clear / مسح)')
+        .setDescription('امسح اللون والتدرّج وارجع للافتراضي (clear / مسح)')
         .setRequired(false),
     ),
 
   name: 'color',
   aliases: ['colour'],
-  description: 'Change or clear the colors of the highest role that only you have',
+  description: 'غيّر أو امسح ألوان أعلى رتبة يملكها غيرك ما يملكها',
   category: 'General',
   usage: 'color [primary] [secondary] | color clear',
   cooldown: 10,
@@ -488,8 +478,8 @@ export default {
     if (!ctx.isSlash && args.length > 2) {
       await fail(
         ctx,
-        'Too many values',
-        `Give one color, two colors, or \`clear\`.\n\n${usageLines(ctx)}`,
+        'قيم كثيرة',
+        `عطني لون واحد أو لونين أو \`clear\`.\n\n${usageLines(ctx)}`,
       );
       return;
     }
@@ -503,7 +493,7 @@ export default {
 
     if (firstIsList || secondIsList) {
       if (clearFlag || (firstIsList && secondaryInput) || (secondIsList && primaryInput)) {
-        await fail(ctx, 'Pick one', `Use \`list\` on its own.\n\n${usageLines(ctx)}`);
+        await fail(ctx, 'اختر واحد', `استخدم \`list\` لحالها.\n\n${usageLines(ctx)}`);
         return;
       }
 
@@ -518,8 +508,8 @@ export default {
     ) {
       await fail(
         ctx,
-        'Pick one',
-        `Use colors or \`clear\`, not both.\n\n${usageLines(ctx)}`,
+        'اختر واحد',
+        `استخدم ألوان أو \`clear\`، مو الاثنين.\n\n${usageLines(ctx)}`,
       );
       return;
     }
@@ -537,16 +527,16 @@ export default {
 
     if (!wantsClear && (!primary && primaryInput || !secondary && secondaryInput)) {
       const badFirst = !primary && primaryInput;
-      const which = badFirst ? 'first' : 'second';
+      const which = badFirst ? 'الأول' : 'الثاني';
       const bad = String(badFirst ? primaryInput : secondaryInput)
         .slice(0, 40)
         .replace(/[`\r\n]/g, ' ');
 
       await fail(
         ctx,
-        'Unknown color',
-        `\`${String(bad).slice(0, 40)}\` is not a valid ${which} color.\n\n` +
-          'Use a hex code like `#FF0000` or `#F00`, a name like `red`, `blue`, `أحمر`, `أخضر`, or `list` to see every color.\n\n' +
+        'لون غير معروف',
+        `\`${String(bad).slice(0, 40)}\` مو لون ${which} صحيح.\n\n` +
+          'استخدم كود مثل `#FF0000` أو `#F00`، أو اسم مثل `red` أو `blue` أو `أحمر` أو `أخضر`، أو `list` عشان تشوف كل الألوان.\n\n' +
           usageLines(ctx),
       );
       return;
@@ -558,7 +548,7 @@ export default {
     const { role, blocked, problem } = await pickColorRole(ctx.guild, ctx.member);
 
     if (problem) {
-      await fail(ctx, 'Cannot change your color', problem);
+      await fail(ctx, 'ما أقدر أغيّر لونك', problem);
       return;
     }
 
@@ -581,8 +571,8 @@ export default {
     if (secondary && !nextPrimary) {
       await fail(
         ctx,
-        'First color needed',
-        `**${role.name}** has no first color yet, so give one along with the second.\n\n${usageLines(ctx)}`,
+        'محتاج اللون الأول',
+        `**${role.name}** ما عندها لون أول بعد، فعطني إياه مع الثاني.\n\n${usageLines(ctx)}`,
       );
       return;
     }
@@ -595,29 +585,25 @@ export default {
       // Nothing changed, so do not hold the cooldown against the user.
       ctx.releaseCooldown();
 
-      await respond(ctx, {
-        embeds: [
-          embed({
-            title: 'Already set',
-            description:
-              `${role} already uses ${colorSummary(hexOf(nextPrimary), nextSecondary === null ? null : hexOf(nextSecondary))}.\n` +
-              'Try different colors if you want a visible change.',
-            color: nextPrimary,
-            footer: FOOTER,
-          }),
-        ],
-      });
+      await respond(
+        ctx,
+        infoReply(
+          'اللون مضبوط أصلًا',
+          `${role} يستخدم ${colorSummary(hexOf(nextPrimary), nextSecondary === null ? null : hexOf(nextSecondary))} من قبل.\n` +
+            'جرّب ألوان مختلفة إذا تبي تغيير واضح.',
+        ),
+      );
       return;
     }
 
     const title = !secondary
-      ? 'Primary updated'
+      ? 'تحدّث اللون الأول'
       : !primary
-        ? 'Secondary updated'
-        : 'Color updated';
+        ? 'تحدّث اللون الثاني'
+        : 'تحدّث اللون';
 
     try {
-      const updated = await role.setColors(
+      await role.setColors(
         {
           primaryColor: nextPrimary,
           secondaryColor: nextSecondary,
@@ -634,41 +620,32 @@ export default {
 
       const solid = nextSecondary === null || nextSecondary === nextPrimary;
       const lines = [
-        `${role} now uses ${solid ? 'a solid color' : 'a gradient'}.`,
+        `${role} الحين يستخدم ${solid ? 'لون واحد' : 'تدرّج'}.`,
         '',
-        `**Primary:** \`${hexOf(nextPrimary)}\`${primary ? '' : ' _(kept)_'}`,
+        `**الأول:** \`${hexOf(nextPrimary)}\`${primary ? '' : ' _(محفوظ)_'}`,
       ];
 
       if (nextSecondary === null) {
-        lines.push('**Secondary:** _none_');
+        lines.push('**الثاني:** _ما فيه_');
       } else {
         lines.push(
-          `**Secondary:** \`${hexOf(nextSecondary)}\`${secondary ? '' : ' _(kept)_'}`,
+          `**الثاني:** \`${hexOf(nextSecondary)}\`${secondary ? '' : ' _(محفوظ)_'}`,
         );
       }
 
       if (nextSecondary !== null && nextSecondary === nextPrimary) {
-        lines.push('', 'Both values are the same, so the role will look solid.');
+        lines.push('', 'القيمتين نفس اللون، فبتطلع الرتبة بلون واحد.');
       }
 
       if (blocked) {
         lines.push('', skippedNote(blocked, role));
       }
 
-      await respond(ctx, {
-        embeds: [
-          embed({
-            title,
-            description: lines.join('\n'),
-            color: updated?.colors?.primaryColor ?? nextPrimary,
-            footer: FOOTER,
-          }),
-        ],
-      });
+      await respond(ctx, okReply(title, lines.join('\n')));
     } catch (error) {
       logger.warn(`Color change failed for ${ctx.user.id} on ${role.id}: ${error.message}`);
 
-      await fail(ctx, 'Could not change the colors', apiProblem(error));
+      await fail(ctx, 'ما قدرت أغيّر الألوان', apiProblem(error));
     }
   },
 };

@@ -2,11 +2,11 @@ import { SlashCommandBuilder } from 'discord.js';
 import { embed } from '../../lib/embeds.js';
 
 export default {
-  data: new SlashCommandBuilder().setName('ping').setDescription('Check the bot latency'),
+  data: new SlashCommandBuilder().setName('ping').setDescription('اعرض سرعة استجابة البوت'),
 
   name: 'ping',
   aliases: ['pong'],
-  description: 'Check the bot latency',
+  description: 'اعرض سرعة استجابة البوت',
   category: 'General',
   usage: 'ping',
   cooldown: 3,
@@ -14,17 +14,17 @@ export default {
   async execute(ctx, client) {
     const start = Date.now();
 
-    await ctx.reply({ embeds: [embed({ title: 'Pinging...', description: 'Measuring latency.' })] });
+    await ctx.reply({ embeds: [embed({ title: 'أقيس السرعة…', description: 'لحظة واحدة.' })] });
 
     const roundtrip = Date.now() - start;
 
     await ctx.editReply({
       embeds: [
         embed({
-          title: 'Pong!',
+          title: 'جاهز!',
           fields: [
-            { name: 'WebSocket', value: `${Math.max(client.ws.ping, 0)}ms`, inline: true },
-            { name: 'Roundtrip', value: `${roundtrip}ms`, inline: true },
+            { name: 'الاتصال', value: `${Math.max(client.ws.ping, 0)}ms`, inline: true },
+            { name: 'الرحلة الكاملة', value: `${roundtrip}ms`, inline: true },
           ],
         }),
       ],

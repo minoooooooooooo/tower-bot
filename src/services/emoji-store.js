@@ -53,10 +53,10 @@ export function emojiPeriodStart(period, now = Date.now()) {
 }
 
 export const EMOJI_PERIOD_LABELS = {
-  '1d': 'Today',
-  '7d': 'Last 7 days',
-  '30d': 'Last 30 days',
-  all: 'All time',
+  '1d': 'اليوم',
+  '7d': 'آخر 7 أيام',
+  '30d': 'آخر 30 يوم',
+  all: 'كل الوقت',
 };
 
 export function emojiPeriodLabel(period) {

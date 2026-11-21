@@ -1,9 +1,23 @@
 import { SlashCommandBuilder } from 'discord.js';
 import { config } from '../../config.js';
-import { COLORS, embed } from '../../lib/embeds.js';
+import { embed } from '../../lib/embeds.js';
+import { errorReply } from '../../lib/replies.js';
 import { getAlias, listAliases } from '../../services/alias-store.js';
 
 const MAX_FIELD_LENGTH = 1000;
+
+/** Arabic names for the categories the loader assigns. */
+const CATEGORY_LABELS = {
+  General: 'عامة',
+  Moderation: 'إشراف',
+  Profile: 'الملف',
+  Community: 'المجتمع',
+  Activity: 'النشاط',
+};
+
+function categoryLabel(category) {
+  return CATEGORY_LABELS[category] ?? category;
+}
 
 function chunkLines(lines, limit = MAX_FIELD_LENGTH) {
   const chunks = [];
@@ -25,18 +39,18 @@ function chunkLines(lines, limit = MAX_FIELD_LENGTH) {
 export default {
   data: new SlashCommandBuilder()
     .setName('help')
-    .setDescription('List every command, or get details about one')
+    .setDescription('اعرض كل الأوامر، أو تفاصيل أمر واحد')
     .addStringOption((option) =>
       option
         .setName('command')
-        .setDescription('Show details for a specific command')
+        .setDescription('اسم الأمر اللي تبي تفاصيله')
         .setRequired(false)
         .setAutocomplete(true),
     ),
 
   name: 'help',
   aliases: ['commands', 'h'],
-  description: 'List every command, or get details about one',
+  description: 'اعرض كل الأوامر، أو تفاصيل أمر واحد',
   category: 'General',
   usage: 'help [command]',
   cooldown: 3,
@@ -62,15 +76,12 @@ export default {
       const command = builtIn ?? (custom ? client.commands.get(custom.command) : null);
 
       if (!command) {
-        await ctx.reply({
-          embeds: [
-            embed({
-              title: 'Command not found',
-              description: `No command called \`${query}\`. Run \`${config.prefix}help\` to see them all.`,
-              color: COLORS.danger,
-            }),
-          ],
-        });
+        await ctx.fail(
+          errorReply(
+            'الأمر غير موجود',
+            `ما فيه أمر اسمه \`${query}\`. شغّل \`${config.prefix}help\` عشان تشوف الكل.`,
+          ),
+        );
         return;
       }
 
@@ -90,22 +101,22 @@ export default {
       }
 
       const aliases = names.length
-        ? names.map((alias) => `\`${config.prefix}${alias}\``).join(', ')
-        : 'None';
+        ? names.map((alias) => `\`${config.prefix}${alias}\``).join('، ')
+        : 'ما فيه';
 
       await ctx.reply({
         embeds: [
           embed({
             title: `/${command.name}`,
-            description: command.description ?? 'No description.',
+            description: command.description ?? 'ما فيه وصف.',
             fields: [
               {
-                name: 'Usage',
-                value: `\`/${usage}\` or \`${config.prefix}${usage}\``,
+                name: 'الاستخدام',
+                value: `\`/${usage}\` أو \`${config.prefix}${usage}\``,
               },
-              { name: 'Aliases', value: aliases, inline: true },
-              { name: 'Cooldown', value: `${command.cooldown ?? 3}s`, inline: true },
-              { name: 'Category', value: command.category ?? 'General', inline: true },
+              { name: 'الأسماء البديلة', value: aliases, inline: true },
+              { name: 'الانتظار', value: `${command.cooldown ?? 3} ثانية`, inline: true },
+              { name: 'الفئة', value: categoryLabel(command.category ?? 'General'), inline: true },
             ],
           }),
         ],
@@ -123,16 +134,19 @@ export default {
 
     const fields = [];
 
-    for (const [category, list] of [...groups.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+    for (const [category, list] of [...groups.entries()].sort(([a], [b]) =>
+      categoryLabel(a).localeCompare(categoryLabel(b), 'ar'),
+    )) {
+      const label = categoryLabel(category);
       const lines = list
         .sort((a, b) => a.name.localeCompare(b.name))
-        .map((command) => `\`/${command.name}\` - ${command.description ?? 'No description.'}`);
+        .map((command) => `\`/${command.name}\` — ${command.description ?? 'ما فيه وصف.'}`);
 
       const chunks = chunkLines(lines);
 
       chunks.forEach((chunk, index) => {
         fields.push({
-          name: index === 0 ? category : `${category} (cont.)`,
+          name: index === 0 ? label : `${label} (تابع)`,
           value: chunk,
         });
       });
@@ -141,13 +155,13 @@ export default {
     await ctx.reply({
       embeds: [
         embed({
-          title: 'Commands',
+          title: 'الأوامر',
           description: [
-            `Use \`/command\` or \`${config.prefix}command\`.`,
-            `Add a name for details: \`${config.prefix}help ping\`.`,
+            `استخدم \`/command\` أو \`${config.prefix}command\`.`,
+            `أضف اسم الأمر للتفاصيل: \`${config.prefix}help ping\`.`,
           ].join('\n'),
           fields,
-          footer: `${all.length} command(s) available`,
+          footer: `${all.length} أمر متاح`,
         }),
       ],
     });

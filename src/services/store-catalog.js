@@ -14,12 +14,12 @@ import { BACKGROUNDS } from './profile-backgrounds.js';
  */
 
 export const STORE_TYPE_LABELS = {
-  background: 'Profile backgrounds',
-  xp: 'Experience',
-  behavior: 'Good behaviour',
-  title: 'Profile title',
-  role: 'Custom role',
-  emoji: 'Server emoji',
+  background: 'خلفيات الملف',
+  xp: 'الخبرة',
+  behavior: 'السلوك الحسن',
+  title: 'لقب الملف',
+  role: 'رتبة خاصة',
+  emoji: 'إيموجي السيرفر',
 };
 
 /** Discord's limit for one emoji upload. */
@@ -31,48 +31,48 @@ export const STORE_ITEMS = [
   {
     key: 'xp-10',
     type: 'xp',
-    name: '10 XP',
+    name: '10 خبرة',
     price: 40,
     amount: 10,
     limit: 0,
-    summary: 'Adds 10 XP (50 Nightmare points). Punishments still tax the gain.',
+    summary: 'يضيف 10 خبرة (50 نقطة Nightmare). العقوبات لسا تنقص من المكسب.',
   },
   {
     key: 'behavior-1',
     type: 'behavior',
-    name: '1 good behaviour point',
+    name: 'نقطة سلوك حسن',
     price: 100,
     amount: 1,
     limit: 0,
     stackable: true,
-    summary: 'Adds one good behaviour point to your card. Buy several at once with a quantity.',
+    summary: 'يضيف نقطة سلوك حسن لبطاقتك. اشترِ أكثر من وحدة مرة وحدة بالكمية.',
   },
   {
     key: 'profile-title',
     type: 'title',
-    name: 'Profile title',
+    name: 'لقب الملف',
     price: 60,
     limit: 0,
     needs: ['name'],
-    summary: 'Sets the title on your card. Buy again to change it.',
+    summary: 'يحط اللقب على بطاقتك. اشتره مرة ثانية عشان تغيّره.',
   },
   {
     key: 'emoji-slot',
     type: 'emoji',
-    name: 'Server emoji',
+    name: 'إيموجي سيرفر',
     price: 75,
     limit: 3,
     needs: ['name', 'image'],
-    summary: 'Uploads an emoji for you (PNG, JPEG, WebP or GIF up to 256 KB).',
+    summary: 'يرفع لك إيموجي (PNG أو JPEG أو WebP أو GIF حتى 256 كيلوبايت).',
   },
   {
     key: 'custom-role',
     type: 'role',
-    name: 'Custom role',
+    name: 'رتبة خاصة',
     price: 120,
     limit: 1,
     needs: ['name'],
-    summary: 'Creates a role with your name and colour and gives it to you.',
+    summary: 'ينشئ رتبة باسمك ولونك ويعطيك إياها.',
   },
 ];
 
@@ -99,12 +99,12 @@ export function backgroundStoreItems() {
   return BACKGROUNDS.filter((background) => Number(background.price) > 0).map((background) => ({
     key: designItemKey(background.id),
     type: 'background',
-    name: `${background.name} background`,
+    name: background.name,
     price: Math.max(1, Math.trunc(Number(background.price) || 0)),
     backgroundId: background.id,
     level: background.level,
     limit: 1,
-    summary: `Unlocks the ${background.name} design for your profile card.`,
+    summary: `يفتح تصميم ${background.name} على بطاقة ملفك.`,
   }));
 }
 

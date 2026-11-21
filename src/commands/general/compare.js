@@ -6,7 +6,8 @@ import {
   formatVoiceTime,
   relativeTime,
 } from '../../lib/activity-format.js';
-import { errorEmbed, embed, warningEmbed } from '../../lib/embeds.js';
+import { embed } from '../../lib/embeds.js';
+import { errorReply, warnReply } from '../../lib/replies.js';
 import { resolveUser } from '../../lib/resolve.js';
 import { normalizeForMatch } from '../../lib/text.js';
 import { memberStats, periodStart } from '../../services/activity-store.js';
@@ -38,7 +39,7 @@ function parsePrefix(args) {
   }
 
   if (tokens.length !== 2) {
-    return { error: 'Give exactly two members to compare.' };
+    return { error: 'عطني عضوين بالضبط عشان أقارن.' };
   }
 
   return { period, tokens };
@@ -60,9 +61,9 @@ function memberField(name, messages, voiceSeconds, lastActiveAt) {
   return {
     name: `\u200E${name}`,
     value: [
-      `**Messages:** ${formatNumber(messages)}`,
-      `**Voice time:** ${formatVoiceTime(voiceSeconds)}`,
-      `**Last active:** ${relativeTime(lastActiveAt)}`,
+      `**الرسائل:** ${formatNumber(messages)}`,
+      `**وقت الصوت:** ${formatVoiceTime(voiceSeconds)}`,
+      `**آخر نشاط:** ${relativeTime(lastActiveAt)}`,
     ].join('\n'),
     inline: false,
   };
@@ -79,25 +80,25 @@ function memberName(ctx, user, option) {
 export default {
   data: new SlashCommandBuilder()
     .setName('compare')
-    .setDescription('Compare two members’ activity')
+    .setDescription('قارن نشاط عضوين')
     .setContexts(InteractionContextType.Guild)
     .addUserOption((option) =>
-      option.setName('first').setDescription('First member').setRequired(true),
+      option.setName('first').setDescription('العضو الأول').setRequired(true),
     )
     .addUserOption((option) =>
-      option.setName('second').setDescription('Second member').setRequired(true),
+      option.setName('second').setDescription('العضو الثاني').setRequired(true),
     )
     .addStringOption((option) =>
       option
         .setName('period')
-        .setDescription('Time window (default: all time)')
+        .setDescription('المدة (الافتراضي: كل الوقت)')
         .setRequired(false)
         .addChoices(...PERIOD_CHOICES),
     ),
 
   name: 'compare',
   aliases: ['versus', 'vs'],
-  description: 'Compare two members’ activity',
+  description: 'قارن نشاط عضوين',
   category: 'Activity',
   usage: 'compare <@member> <@member> [all|7d|30d]',
   cooldown: 5,
@@ -107,14 +108,12 @@ export default {
     const parsed = ctx.isSlash ? null : parsePrefix(ctx.args);
 
     if (parsed?.error) {
-      await ctx.fail({
-        embeds: [
-          warningEmbed(
-            'Who should I compare?',
-            `${parsed.error}\nUse \`${ctx.isSlash ? '/compare first:@a second:@b' : ':-compare @a @b'} [all|7d|30d]\`.`,
-          ),
-        ],
-      });
+      await ctx.fail(
+        warnReply(
+          'منو أقارن؟',
+          `${parsed.error}\nاستخدم \`${ctx.isSlash ? '/compare first:@a second:@b' : ':-compare @a @b'} [all|7d|30d]\`.`,
+        ),
+      );
       return;
     }
 
@@ -127,23 +126,19 @@ export default {
     ]);
 
     if (!first || !second) {
-      await ctx.fail({
-        embeds: [
-          errorEmbed(
-            'Unknown member',
-            !first && !second
-              ? 'I could not find either member. Mention them or paste their ids.'
-              : `I could not find ${!first ? 'the first member' : 'the second member'}. Mention them or paste an id.`,
-          ),
-        ],
-      });
+      await ctx.fail(
+        errorReply(
+          'عضو غير معروف',
+          !first && !second
+            ? 'ما لقيت أي واحد منهم. منشنهم أو الصق آيدياتهم.'
+            : `ما لقيت ${!first ? 'العضو الأول' : 'العضو الثاني'}. منشنه أو الصق آيديه.`,
+        ),
+      );
       return;
     }
 
     if (first.id === second.id) {
-      await ctx.fail({
-        embeds: [warningEmbed('Same member', 'Pick two different members to compare.')],
-      });
+      await ctx.fail(warnReply('نفس العضو', 'اختر عضوين مختلفين عشان تقارن.'));
       return;
     }
 
@@ -157,12 +152,12 @@ export default {
 
     if (aMessages === 0 && bMessages === 0 && aVoice === 0 && bVoice === 0) {
       await ctx.reply({
-        embeds: [
-          warningEmbed(
-            'No activity recorded',
-            `Neither member has ${since ? `activity in the ${formatPeriod(period).toLowerCase()}` : 'tracked activity yet'}.`,
-          ),
-        ],
+        content: warnReply(
+          'ما فيه نشاط مسجّل',
+          since
+            ? `ما فيه نشاط لأي منهم في ${formatPeriod(period)}.`
+            : 'ما فيه نشاط متابَع لأي منهم بعد.',
+        ).content,
         allowedMentions: { parse: [] },
       });
       return;
@@ -176,26 +171,24 @@ export default {
 
     if (aMessages !== bMessages) {
       leads.push(
-        `Leads in messages: \u200E${aMessages > bMessages ? aTag : bTag}`,
+        `متقدّم في الرسائل: \u200E${aMessages > bMessages ? aTag : bTag}`,
       );
     }
 
     if (aVoice !== bVoice) {
-      leads.push(`Leads in voice time: \u200E${aVoice > bVoice ? aTag : bTag}`);
+      leads.push(`متقدّم في وقت الصوت: \u200E${aVoice > bVoice ? aTag : bTag}`);
     }
 
     await ctx.reply({
       embeds: [
         embed({
-          title: 'Member comparison',
-          description: leads.length ? leads.join('\n') : 'Dead heat so far.',
+          title: 'مقارنة عضوين',
+          description: leads.length ? leads.join('\n') : 'تعادل تام لين الحين.',
           fields: [
             memberField(aName, aMessages, aVoice, a.lastActiveAt),
             memberField(bName, bMessages, bVoice, b.lastActiveAt),
           ],
-          footer: period
-            ? `${formatPeriod(period)} · last active is all-time`
-            : formatPeriod(period),
+          footer: `${formatPeriod(period)} · آخر نشاط لكل الوقت`,
         }),
       ],
       allowedMentions: { parse: [] },

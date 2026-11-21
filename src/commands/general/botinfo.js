@@ -9,7 +9,7 @@ function formatUptime(ms) {
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = totalSeconds % 60;
 
-  return [days && `${days}d`, hours && `${hours}h`, minutes && `${minutes}m`, `${seconds}s`]
+  return [days && `${days} ي`, hours && `${hours} س`, minutes && `${minutes} د`, `${seconds} ث`]
     .filter(Boolean)
     .join(' ');
 }
@@ -17,11 +17,11 @@ function formatUptime(ms) {
 export default {
   data: new SlashCommandBuilder()
     .setName('botinfo')
-    .setDescription('Show information about the bot'),
+    .setDescription('اعرض معلومات عن البوت'),
 
   name: 'botinfo',
   aliases: ['info', 'stats'],
-  description: 'Show information about the bot',
+  description: 'اعرض معلومات عن البوت',
   category: 'General',
   usage: 'botinfo',
   cooldown: 5,
@@ -37,17 +37,17 @@ export default {
           title: client.user.username,
           thumbnail: client.user.displayAvatarURL({ size: 256 }),
           fields: [
-            { name: 'Servers', value: `${client.guilds.cache.size}`, inline: true },
-            { name: 'Uptime', value: formatUptime(client.uptime ?? 0), inline: true },
-            { name: 'WebSocket', value: `${Math.max(client.ws.ping, 0)}ms`, inline: true },
-            { name: 'Memory', value: `${heapUsed} MB`, inline: true },
+            { name: 'السيرفرات', value: `${client.guilds.cache.size}`, inline: true },
+            { name: 'مدة التشغيل', value: formatUptime(client.uptime ?? 0), inline: true },
+            { name: 'الاتصال', value: `${Math.max(client.ws.ping, 0)}ms`, inline: true },
+            { name: 'الذاكرة', value: `${heapUsed} MB`, inline: true },
             { name: 'Node.js', value: process.version, inline: true },
             { name: 'discord.js', value: `v${discordVersion}`, inline: true },
             {
-              name: 'Build',
+              name: 'النسخة',
               value: build.commit
                 ? `\`${build.commit}\`${build.date ? ` · ${build.date}` : ''}`
-                : 'unknown',
+                : 'غير معروفة',
               inline: true,
             },
           ],

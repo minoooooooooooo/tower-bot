@@ -1,23 +1,20 @@
-import { InteractionContextType, MessageFlags, SlashCommandBuilder } from 'discord.js';
-import { embed, errorEmbed, infoEmbed } from '../../lib/embeds.js';
+import { InteractionContextType, SlashCommandBuilder } from 'discord.js';
+import { embed } from '../../lib/embeds.js';
+import { ephemeral, errorReply, infoReply } from '../../lib/replies.js';
 import { displayNameOf, targetUser } from '../../lib/targets.js';
-
-function ephemeral(payload) {
-  return { ...payload, flags: MessageFlags.Ephemeral };
-}
 
 export default {
   data: new SlashCommandBuilder()
     .setName('banner')
-    .setDescription('Show a member’s profile banner')
+    .setDescription('اعرض بانر ملف عضو')
     .setContexts(InteractionContextType.Guild)
     .addUserOption((option) =>
-      option.setName('user').setDescription('Member to look up (defaults to you)').setRequired(false),
+      option.setName('user').setDescription('العضو المطلوب (الافتراضي: أنت)').setRequired(false),
     ),
 
   name: 'banner',
   aliases: ['userbanner'],
-  description: 'Show a member’s profile banner',
+  description: 'اعرض بانر ملف عضو',
   category: 'General',
   usage: 'banner [@member]',
   cooldown: 3,
@@ -27,15 +24,13 @@ export default {
     const user = await targetUser(ctx, client);
 
     if (!user) {
-      await ctx.reply(
-        ephemeral({
-          embeds: [
-            errorEmbed(
-              'Unknown user',
-              `Mention the member or paste their id, for example \`${ctx.isSlash ? '/banner user:@member' : ':-banner @member'}\`.`,
-            ),
-          ],
-        }),
+      await ctx.fail(
+        ephemeral(
+          errorReply(
+            'عضو غير معروف',
+            `منشن العضو أو الصق الآيدي، مثل \`${ctx.isSlash ? '/banner user:@member' : ':-banner @member'}\`.`,
+          ),
+        ),
       );
       return;
     }
@@ -46,24 +41,17 @@ export default {
     const banner = user.bannerURL?.({ size: 4096 }) ?? null;
 
     if (!banner) {
-      await ctx.reply({
-        embeds: [
-          infoEmbed(
-            'No banner',
-            `${member ?? user} has not set a profile banner.`,
-          ),
-        ],
-      });
+      await ctx.reply(infoReply('ما فيه بانر', `${member ?? user} ما حط بانر لملفه.`));
       return;
     }
 
     await ctx.reply({
       embeds: [
         embed({
-          title: `${displayNameOf(user, member)}’s banner`,
+          title: `بانر ${displayNameOf(user, member)}`,
           image: banner,
-          description: `[Open in full size](${banner})`,
-          footer: `User ID: ${user.id}`,
+          description: `[افتحه بالحجم الكامل](${banner})`,
+          footer: `آيدي العضو: ${user.id}`,
         }),
       ],
     });

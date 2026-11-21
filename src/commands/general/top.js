@@ -14,8 +14,9 @@ import {
   formatVoiceTime,
   rankBadge,
 } from '../../lib/activity-format.js';
-import { embed, warningEmbed } from '../../lib/embeds.js';
+import { embed } from '../../lib/embeds.js';
 import { createLogger } from '../../lib/logger.js';
+import { warnReply } from '../../lib/replies.js';
 import { normalizeForMatch } from '../../lib/text.js';
 import {
   countTopMembers,
@@ -88,8 +89,8 @@ function parsePrefix(args) {
 
 function rowValue(row, metric) {
   return metric === 'voice'
-    ? `**${formatVoiceTime(row.voiceSeconds)}** in voice`
-    : `**${formatNumber(row.messages)}** messages`;
+    ? `**${formatVoiceTime(row.voiceSeconds)}** في الصوت`
+    : `**${formatNumber(row.messages)}** رسالة`;
 }
 
 /**
@@ -119,27 +120,27 @@ function pagerRow(page, pages) {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('top:first')
-      .setLabel('« First')
+      .setLabel('« الأول')
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(page <= 1),
     new ButtonBuilder()
       .setCustomId('top:prev')
-      .setLabel('‹ Previous')
+      .setLabel('‹ السابق')
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(page <= 1),
     new ButtonBuilder()
       .setCustomId('top:page')
-      .setLabel(`Page ${page} / ${pages}`)
+      .setLabel(`صفحة ${page} / ${pages}`)
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(true),
     new ButtonBuilder()
       .setCustomId('top:next')
-      .setLabel('Next ›')
+      .setLabel('التالي ›')
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(page >= pages),
     new ButtonBuilder()
       .setCustomId('top:last')
-      .setLabel('Last »')
+      .setLabel('الأخير »')
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(page >= pages),
   );
@@ -161,11 +162,11 @@ function buildPage(ctx, state) {
   );
   const coverage =
     state.metric === 'voice'
-      ? `voice since ${formatDate(voiceSince(ctx.guildId))}`
-      : `messages since ${formatDate(messagesSince(ctx.guildId))}`;
+      ? `الصوت منذ ${formatDate(voiceSince(ctx.guildId))}`
+      : `الرسائل منذ ${formatDate(messagesSince(ctx.guildId))}`;
   const footer = [
     formatPeriod(state.period),
-    pages > 1 ? `Page ${page} / ${pages}` : null,
+    pages > 1 ? `صفحة ${page} / ${pages}` : null,
     coverage,
   ]
     .filter(Boolean)
@@ -174,7 +175,7 @@ function buildPage(ctx, state) {
   const payload = {
     embeds: [
       embed({
-        title: `Most active members · ${state.metric === 'voice' ? 'voice time' : 'messages'}`,
+        title: `أكثر الأعضاء نشاطًا · ${state.metric === 'voice' ? 'وقت الصوت' : 'الرسائل'}`,
         description: lines.join('\n'),
         footer,
         timestamp: false,
@@ -225,29 +226,29 @@ function attachPager({ ctx, message, state }) {
 export default {
   data: new SlashCommandBuilder()
     .setName('top')
-    .setDescription('Rank members by messages or voice time')
+    .setDescription('رتّب الأعضاء حسب الرسائل أو وقت الصوت')
     .setContexts(InteractionContextType.Guild)
     .addStringOption((option) =>
       option
         .setName('metric')
-        .setDescription('What to rank by (default: messages)')
+        .setDescription('الترتيب حسب (الافتراضي: الرسائل)')
         .setRequired(false)
         .addChoices(
-          { name: 'Messages', value: 'messages' },
-          { name: 'Voice time', value: 'voice' },
+          { name: 'الرسائل', value: 'messages' },
+          { name: 'وقت الصوت', value: 'voice' },
         ),
     )
     .addStringOption((option) =>
       option
         .setName('period')
-        .setDescription('Time window (default: all time)')
+        .setDescription('المدة (الافتراضي: كل الوقت)')
         .setRequired(false)
         .addChoices(...PERIOD_CHOICES),
     )
     .addIntegerOption((option) =>
       option
         .setName('per_page')
-        .setDescription('Members per page (1–25, default 10)')
+        .setDescription('عدد الأعضاء في الصفحة (1–25، الافتراضي 10)')
         .setRequired(false)
         .setMinValue(1)
         .setMaxValue(25),
@@ -255,7 +256,7 @@ export default {
 
   name: 'top',
   aliases: ['leaderboard', 'ranking', 'rank'],
-  description: 'Rank members by messages or voice time',
+  description: 'رتّب الأعضاء حسب الرسائل أو وقت الصوت',
   category: 'Activity',
   usage: 'top [messages|voice] [all|7d|30d] [per page]',
   cooldown: 5,
@@ -265,15 +266,13 @@ export default {
     const parsed = ctx.isSlash ? null : parsePrefix(ctx.args);
 
     if (parsed?.error) {
-      await ctx.fail({
-        embeds: [
-          warningEmbed(
-            'Unknown option',
-            `\`${parsed.error}\` is not a metric, period or number.\n` +
-              `Use \`${ctx.isSlash ? '/top' : ':-top'} [messages|voice] [all|7d|30d] [per page]\`.`,
-          ),
-        ],
-      });
+      await ctx.fail(
+        warnReply(
+          'خيار غير معروف',
+          `\`${parsed.error}\` مو نوع ترتيب ولا مدة ولا رقم.\n` +
+            `استخدم \`${ctx.isSlash ? '/top' : ':-top'} [messages|voice] [all|7d|30d] [per page]\`.`,
+        ),
+      );
       return;
     }
 
@@ -295,14 +294,12 @@ export default {
       const anyTime = topMembers(ctx.guildId, { metric: state.metric, since: null, limit: 1 });
 
       await ctx.reply({
-        embeds: [
-          warningEmbed(
-            'No activity yet',
-            periodStart(state.period) && anyTime.length > 0
-              ? `Nothing in the ${formatPeriod(state.period).toLowerCase()}. Try \`${ctx.isSlash ? '/top period:All time' : ':-top all'}\` for the all-time ranking.`
-              : 'I count messages and voice time while I am online. Once people chat or join voice, the ranking appears here, and `/backfill start` imports older messages.',
-          ),
-        ],
+        content: warnReply(
+          'ما فيه نشاط بعد',
+          periodStart(state.period) && anyTime.length > 0
+            ? `ما فيه شي في ${formatPeriod(state.period)}. جرّب \`${ctx.isSlash ? '/top period:كل الوقت' : ':-top all'}\` لترتيب كل الوقت.`
+            : 'أنا أحسب الرسائل ووقت الصوت وأنا شغّال. أول ما يتكلمون الأعضاء أو يدخلون الصوت يطلع الترتيب، و`/backfill start` يستورد الرسائل القديمة.',
+        ).content,
         allowedMentions: { parse: [] },
       });
       return;

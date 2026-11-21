@@ -7,8 +7,9 @@ import {
   SlashCommandBuilder,
 } from 'discord.js';
 import { formatDate, formatNumber, rankBadge } from '../../lib/activity-format.js';
-import { embed, warningEmbed } from '../../lib/embeds.js';
+import { embed } from '../../lib/embeds.js';
 import { createLogger } from '../../lib/logger.js';
+import { warnReply } from '../../lib/replies.js';
 import { normalizeForMatch } from '../../lib/text.js';
 import {
   emojiCoverageSince,
@@ -59,15 +60,15 @@ const ORDERS = new Map(
 );
 
 const PERIOD_CHOICES = [
-  { name: 'Today', value: '1d' },
-  { name: 'Last 7 days', value: '7d' },
-  { name: 'Last 30 days', value: '30d' },
-  { name: 'All time', value: 'all' },
+  { name: 'اليوم', value: '1d' },
+  { name: 'آخر 7 أيام', value: '7d' },
+  { name: 'آخر 30 يوم', value: '30d' },
+  { name: 'كل الوقت', value: 'all' },
 ];
 
 const ORDER_CHOICES = [
-  { name: 'Most used', value: 'most' },
-  { name: 'Least used', value: 'least' },
+  { name: 'الأكثر استخدامًا', value: 'most' },
+  { name: 'الأقل استخدامًا', value: 'least' },
 ];
 
 function parsePrefix(args) {
@@ -110,7 +111,7 @@ function emojiLabel(guild, row) {
   if (live) return live.toString();
 
   const name = row.emojiName || row.emojiId;
-  return `\`${name}\` *(not in server)*`;
+  return `\`${name}\` *(مو في السيرفر)*`;
 }
 
 /**
@@ -178,27 +179,27 @@ function pagerRow(page, pages) {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('topemojis:first')
-      .setLabel('« First')
+      .setLabel('« الأول')
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(page <= 1),
     new ButtonBuilder()
       .setCustomId('topemojis:prev')
-      .setLabel('‹ Previous')
+      .setLabel('‹ السابق')
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(page <= 1),
     new ButtonBuilder()
       .setCustomId('topemojis:page')
-      .setLabel(`Page ${page} / ${pages}`)
+      .setLabel(`صفحة ${page} / ${pages}`)
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(true),
     new ButtonBuilder()
       .setCustomId('topemojis:next')
-      .setLabel('Next ›')
+      .setLabel('التالي ›')
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(page >= pages),
     new ButtonBuilder()
       .setCustomId('topemojis:last')
-      .setLabel('Last »')
+      .setLabel('الأخير »')
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(page >= pages),
   );
@@ -215,9 +216,9 @@ function buildPage(ctx, state) {
   const lines = rows.map((row, index) => {
     const detail =
       row.total > 0
-        ? `**${formatNumber(row.total)}** uses (${formatNumber(row.inlineCount)} in messages · ` +
-          `${formatNumber(row.standaloneCount)} standalone)`
-        : '**0** uses · unused in this period';
+        ? `**${formatNumber(row.total)}** استخدام (${formatNumber(row.inlineCount)} داخل رسالة · ` +
+          `${formatNumber(row.standaloneCount)} لحاله)`
+        : '**0** استخدام · ما انستخدم في هذي المدة';
 
     return `\u200E${rankBadge(start + index)} ${emojiLabel(ctx.guild, row)}\u200E — ${detail}`;
   });
@@ -225,8 +226,8 @@ function buildPage(ctx, state) {
   const coverageSince = emojiCoverageSince(ctx.guildId);
   const footer = [
     emojiPeriodLabel(state.period),
-    pages > 1 ? `Page ${page} / ${pages}` : null,
-    coverageSince ? `since ${formatDate(coverageSince)}` : 'live counting not started',
+    pages > 1 ? `صفحة ${page} / ${pages}` : null,
+    coverageSince ? `منذ ${formatDate(coverageSince)}` : 'العدّ المباشر ما بدأ',
   ]
     .filter(Boolean)
     .join(' · ');
@@ -234,7 +235,7 @@ function buildPage(ctx, state) {
   const payload = {
     embeds: [
       embed({
-        title: `${state.order === 'least' ? 'Least used' : 'Most used'} emojis · ${emojiPeriodLabel(state.period)}`,
+        title: `${state.order === 'least' ? 'أقل' : 'أكثر'} الإيموجيات استخدامًا · ${emojiPeriodLabel(state.period)}`,
         description: lines.join('\n'),
         footer,
         timestamp: false,
@@ -285,26 +286,26 @@ function attachPager({ ctx, message, state }) {
 export default {
   data: new SlashCommandBuilder()
     .setName('topemojis')
-    .setDescription('Rank this server’s custom emojis by usage')
+    .setDescription('رتّب إيموجيات السيرفر المخصصة حسب الاستخدام')
     .setContexts(InteractionContextType.Guild)
     .addStringOption((option) =>
       option
         .setName('order')
-        .setDescription('Most or least used (default: most)')
+        .setDescription('الأكثر أو الأقل استخدامًا (الافتراضي: الأكثر)')
         .setRequired(false)
         .addChoices(...ORDER_CHOICES),
     )
     .addStringOption((option) =>
       option
         .setName('period')
-        .setDescription('Time window (default: all time)')
+        .setDescription('المدة (الافتراضي: كل الوقت)')
         .setRequired(false)
         .addChoices(...PERIOD_CHOICES),
     )
     .addIntegerOption((option) =>
       option
         .setName('per_page')
-        .setDescription('Emojis per page (1–25, default 10)')
+        .setDescription('عدد الإيموجيات في الصفحة (1–25، الافتراضي 10)')
         .setRequired(false)
         .setMinValue(1)
         .setMaxValue(MAX_PAGE_SIZE),
@@ -312,7 +313,7 @@ export default {
 
   name: 'topemojis',
   aliases: ['emojis', 'emoji', 'emojistats', 'topemoji'],
-  description: 'Rank this server’s custom emojis by usage',
+  description: 'رتّب إيموجيات السيرفر المخصصة حسب الاستخدام',
   category: 'Activity',
   usage: 'topemojis [most|least] [today|7d|30d|all] [per page]',
   cooldown: 5,
@@ -322,15 +323,13 @@ export default {
     const parsed = ctx.isSlash ? null : parsePrefix(ctx.args);
 
     if (parsed?.error) {
-      await ctx.fail({
-        embeds: [
-          warningEmbed(
-            'Unknown option',
-            `\`${parsed.error}\` is not an order, period or number.\n` +
-              `Use \`${ctx.isSlash ? '/topemojis' : ':-topemojis'} [most|least] [today|7d|30d|all] [per page]\`.`,
-          ),
-        ],
-      });
+      await ctx.fail(
+        warnReply(
+          'خيار غير معروف',
+          `\`${parsed.error}\` مو ترتيب ولا مدة ولا رقم.\n` +
+            `استخدم \`${ctx.isSlash ? '/topemojis' : ':-topemojis'} [most|least] [today|7d|30d|all] [per page]\`.`,
+        ),
+      );
       return;
     }
 
@@ -351,17 +350,14 @@ export default {
     if (!payload) {
       const anyTime = rankedEmojiUsage(ctx.guildId, { since: null });
 
-      await ctx.reply({
-        embeds: [
-          warningEmbed(
-            'No emoji usage yet',
-            state.period !== 'all' && anyTime.length > 0
-              ? `No custom emoji were used in the ${emojiPeriodLabel(state.period).toLowerCase()}. Try \`${ctx.isSlash ? '/topemojis period:All time' : ':-topemojis all'}\` for the all-time ranking.`
-              : 'I count custom emojis in messages while I am online. Once people use them, the ranking appears here. `/emojibackfill start` imports older messages.',
-          ),
-        ],
-        allowedMentions: { parse: [] },
-      });
+      await ctx.reply(
+        warnReply(
+          'ما فيه استخدام للإيموجيات بعد',
+          state.period !== 'all' && anyTime.length > 0
+            ? `ما انستخدم أي إيموجي مخصص في ${emojiPeriodLabel(state.period)}. جرّب \`${ctx.isSlash ? '/topemojis period:كل الوقت' : ':-topemojis all'}\` لترتيب كل الوقت.`
+            : 'أنا أحسب الإيموجيات المخصصة في الرسائل وأنا شغّال. أول ما يستخدمونها يطلع الترتيب، و`/emojibackfill start` يستورد الرسائل القديمة.',
+        ),
+      );
       return;
     }
 

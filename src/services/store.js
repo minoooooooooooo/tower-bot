@@ -375,11 +375,11 @@ function refundPurchase(guildId, userId, purchaseId, price) {
 function deliveryMessage(error) {
   const code = Number(error?.code);
 
-  if (code === 50013) return 'I am missing a permission for that. Tell an admin.';
-  if (code === 30008) return 'The server has no free emoji slots left. Tell an admin.';
-  if (code === 50035) return 'Discord refused the name or image. Try another.';
+  if (code === 50013) return 'ناقصني صلاحية لهذي. قول لمشرف.';
+  if (code === 30008) return 'ما فيه خانات إيموجي فاضية في السيرفر. قول لمشرف.';
+  if (code === 50035) return 'ديسكورد رفض الاسم أو الصورة. جرّب غيرها.';
 
-  return 'Discord refused it, so your coins were refunded.';
+  return 'ديسكورد رفضها، فانرجعت عملاتك.';
 }
 
 /* ── Buying ──────────────────────────────────────────────────────────────── */
@@ -434,7 +434,7 @@ export async function buyStoreItem({
         ok: false,
         reason: 'name',
         item,
-        message: 'Send a role name (1–32 characters, not `@everyone`).',
+        message: 'اكتب اسم الرتبة (1–32 حرف، مو `@everyone`).',
       };
     }
 
@@ -443,7 +443,7 @@ export async function buyStoreItem({
         ok: false,
         reason: 'color',
         item,
-        message: 'Use a hex colour like `#ff8800` or a name like `red`.',
+        message: 'استخدم كود لون مثل `#ff8800` أو اسم مثل `red`.',
       };
     }
 
@@ -453,7 +453,7 @@ export async function buyStoreItem({
         ok: false,
         reason: 'permission',
         item,
-        message: 'I need **Manage Roles** before I can create your role.',
+        message: 'أحتاج **إدارة الرتب** قبل ما أقدر أنشئ رتبتك.',
       };
     }
   }
@@ -466,7 +466,7 @@ export async function buyStoreItem({
         ok: false,
         reason: 'name',
         item,
-        message: 'Emoji names use 2–32 letters, numbers or underscores, like `tower_star`.',
+        message: 'أسماء الإيموجي حروف وأرقام و`_` من 2 إلى 32، مثل `tower_star`.',
       };
     }
 
@@ -475,7 +475,7 @@ export async function buyStoreItem({
         ok: false,
         reason: 'image',
         item,
-        message: 'Attach the emoji image (PNG, JPEG, WebP or GIF).',
+        message: 'ارفق صورة الإيموجي (PNG أو JPEG أو WebP أو GIF).',
       };
     }
 
@@ -486,7 +486,7 @@ export async function buyStoreItem({
         ok: false,
         reason: 'image',
         item,
-        message: 'The emoji must be a PNG, JPEG, WebP or GIF image.',
+        message: 'الإيموجي لازم يكون صورة PNG أو JPEG أو WebP أو GIF.',
       };
     }
 
@@ -495,7 +495,7 @@ export async function buyStoreItem({
         ok: false,
         reason: 'size',
         item,
-        message: `The image is ${Math.ceil(Number(attachment.size) / 1024)} KB; the limit is 256 KB.`,
+        message: `الصورة حجمها ${Math.ceil(Number(attachment.size) / 1024)} كيلوبايت؛ الحد 256 كيلوبايت.`,
       };
     }
 
@@ -506,7 +506,7 @@ export async function buyStoreItem({
         ok: false,
         reason: 'permission',
         item,
-        message: 'I need **Manage Expressions** before I can upload an emoji.',
+        message: 'أحتاج **إدارة التعبيرات** قبل ما أقدر أرفع إيموجي.',
       };
     }
 
@@ -518,8 +518,8 @@ export async function buyStoreItem({
         reason: 'slots',
         item,
         message: animated
-          ? 'The server has no free animated emoji slots.'
-          : 'The server has no free emoji slots.',
+          ? 'ما فيه خانات إيموجي متحركة فاضية في السيرفر.'
+          : 'ما فيه خانات إيموجي فاضية في السيرفر.',
       };
     }
   }
@@ -532,7 +532,7 @@ export async function buyStoreItem({
         ok: false,
         reason: 'name',
         item,
-        message: 'Send the title you want (up to 32 characters).',
+        message: 'اكتب اللقب اللي تبيه (حتى 32 حرف).',
       };
     }
   }

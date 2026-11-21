@@ -4,7 +4,8 @@ import {
   formatNumber,
   formatVoiceTime,
 } from '../../lib/activity-format.js';
-import { embed, warningEmbed } from '../../lib/embeds.js';
+import { embed } from '../../lib/embeds.js';
+import { warnReply } from '../../lib/replies.js';
 import {
   activityDay,
   messagesSince,
@@ -16,24 +17,24 @@ import {
 } from '../../services/activity-store.js';
 
 function channelLabel(guild, id) {
-  return guild.channels?.cache?.get(id)?.toString?.() ?? '#deleted-channel';
+  return guild.channels?.cache?.get(id)?.toString?.() ?? '#قناة-محذوفة';
 }
 
 function memberLine(row) {
-  if (!row) return 'No messages yet';
+  if (!row) return 'ما فيه رسائل بعد';
 
-  return `\u200E<@${row.userId}>\u200E — **${formatNumber(row.messages)}** messages · **${formatVoiceTime(row.voiceSeconds)}** in voice`;
+  return `\u200E<@${row.userId}>\u200E — **${formatNumber(row.messages)}** رسالة · **${formatVoiceTime(row.voiceSeconds)}** في الصوت`;
 }
 
 export default {
   data: new SlashCommandBuilder()
     .setName('serverstats')
-    .setDescription('Show this server’s activity totals and leaders')
+    .setDescription('اعرض نشاط السيرفر وأكثر الأعضاء والقنوات حركة')
     .setContexts(InteractionContextType.Guild),
 
   name: 'serverstats',
   aliases: ['activity', 'serveractivity', 'sstats'],
-  description: 'Show this server’s activity totals and leaders',
+  description: 'اعرض نشاط السيرفر وأكثر الأعضاء والقنوات حركة',
   category: 'Activity',
   usage: 'serverstats',
   cooldown: 5,
@@ -43,15 +44,13 @@ export default {
     const all = serverTotals(ctx.guildId, null);
 
     if (all.messages === 0 && all.voiceSeconds === 0) {
-      await ctx.reply({
-        embeds: [
-          warningEmbed(
-            'No activity yet',
-            'I start counting the moment I see a message or someone joins voice. ' +
-              'Run `/backfill start` to import older messages.',
-          ),
-        ],
-      });
+      await ctx.reply(
+        warnReply(
+          'ما فيه نشاط بعد',
+          'أبدأ أحسب أول ما أشوف رسالة أو أحد يدخل الصوت. ' +
+            'شغّل `/backfill start` عشان تستورد الرسائل القديمة.',
+        ),
+      );
       return;
     }
 
@@ -67,61 +66,61 @@ export default {
     await ctx.reply({
       embeds: [
         embed({
-          title: `${ctx.guild.name} · activity`,
+          title: `${ctx.guild.name} · النشاط`,
           thumbnail: ctx.guild.iconURL?.({ size: 128 }) ?? null,
           fields: [
             {
-              name: 'Members',
-              value: `${formatNumber(memberCount)} in server · **${formatNumber(all.members)}** tracked`,
+              name: 'الأعضاء',
+              value: `${formatNumber(memberCount)} في السيرفر · **${formatNumber(all.members)}** متابَع`,
               inline: true,
             },
             {
-              name: 'Channels',
-              value: `**${formatNumber(all.channels)}** active`,
+              name: 'القنوات',
+              value: `**${formatNumber(all.channels)}** نشطة`,
               inline: true,
             },
             {
-              name: 'Messages since',
+              name: 'الرسائل منذ',
               value: formatDate(messagesSince(ctx.guildId)),
               inline: true,
             },
             {
-              name: 'Voice since',
+              name: 'الصوت منذ',
               value: formatDate(voiceSince(ctx.guildId)),
               inline: true,
             },
             {
-              name: 'Messages',
+              name: 'الرسائل',
               value: [
-                `**${formatNumber(all.messages)}** total`,
-                `${formatNumber(week.messages)} in the last 7 days`,
-                `${formatNumber(today.messages)} today`,
+                `**${formatNumber(all.messages)}** الإجمالي`,
+                `${formatNumber(week.messages)} في آخر 7 أيام`,
+                `${formatNumber(today.messages)} اليوم`,
               ].join('\n'),
               inline: true,
             },
             {
-              name: 'Voice time',
+              name: 'وقت الصوت',
               value: [
-                `**${formatVoiceTime(all.voiceSeconds)}** total`,
-                `${formatVoiceTime(week.voiceSeconds)} in the last 7 days`,
-                `${formatVoiceTime(today.voiceSeconds)} today`,
+                `**${formatVoiceTime(all.voiceSeconds)}** الإجمالي`,
+                `${formatVoiceTime(week.voiceSeconds)} في آخر 7 أيام`,
+                `${formatVoiceTime(today.voiceSeconds)} اليوم`,
               ].join('\n'),
               inline: true,
             },
             {
-              name: 'Most active member',
+              name: 'أكثر عضو نشاطًا',
               value: memberLine(topMember),
               inline: false,
             },
             {
-              name: 'Most active channel',
+              name: 'أكثر قناة نشاطًا',
               value: topChannel
-                ? `\u200E${channelLabel(ctx.guild, topChannel.channelId)}\u200E — **${formatNumber(topChannel.messages)}** messages`
-                : 'No messages yet',
+                ? `\u200E${channelLabel(ctx.guild, topChannel.channelId)}\u200E — **${formatNumber(topChannel.messages)}** رسالة`
+                : 'ما فيه رسائل بعد',
               inline: false,
             },
           ],
-          footer: 'Messages include imported history · voice counted live',
+          footer: 'الرسائل تشمل السجل المستورد · الصوت يُحسب مباشرة',
         }),
       ],
       allowedMentions: { parse: [] },

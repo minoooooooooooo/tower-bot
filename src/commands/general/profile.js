@@ -4,7 +4,7 @@ import {
   MessageFlags,
   SlashCommandBuilder,
 } from 'discord.js';
-import { errorEmbed } from '../../lib/embeds.js';
+import { errorReply } from '../../lib/replies.js';
 import { createLogger } from '../../lib/logger.js';
 import { displayNameOf, targetUser } from '../../lib/targets.js';
 import { config } from '../../config.js';
@@ -117,18 +117,18 @@ async function memberIds(guild) {
 export default {
   data: new SlashCommandBuilder()
     .setName('profile')
-    .setDescription('Show a member’s profile card')
+    .setDescription('اعرض بطاقة ملف عضو')
     .setContexts(InteractionContextType.Guild)
     .addUserOption((option) =>
       option
         .setName('user')
-        .setDescription('Member to show (defaults to you)')
+        .setDescription('العضو المطلوب (الافتراضي: أنت)')
         .setRequired(false),
     ),
 
   name: 'profile',
   aliases: ['card', 'profilecard'],
-  description: 'Show a member’s profile card',
+  description: 'اعرض بطاقة ملف عضو',
   category: 'General',
   usage: 'profile [@member]',
   cooldown: 5,
@@ -143,14 +143,12 @@ export default {
 
     if (!user) {
       await ctx.fail(
-        ephemeral({
-          embeds: [
-            errorEmbed(
-              'Unknown user',
-              `Mention the member or paste their id, for example \`${ctx.isSlash ? '/profile user:@member' : ':-profile @member'}\`.`,
-            ),
-          ],
-        }),
+        ephemeral(
+          errorReply(
+            'عضو غير معروف',
+            `منشن العضو أو الصق الآيدي، مثل \`${ctx.isSlash ? '/profile user:@member' : ':-profile @member'}\`.`,
+          ),
+        ),
       );
       return;
     }
@@ -232,14 +230,12 @@ export default {
     } catch (error) {
       logger.error(`Could not render the card for ${user.id}`, error);
       await ctx.fail(
-        ephemeral({
-          embeds: [
-            errorEmbed(
-              'Could not render the card',
-              'The profile image could not be generated. The bot owner should check that `assets/profile/` is present and `@napi-rs/canvas` is installed.',
-            ),
-          ],
-        }),
+        ephemeral(
+          errorReply(
+            'ما قدرت أرسم البطاقة',
+            'ما انقدرت أجيب صورة الملف. صاحب البوت يتأكد أن `assets/profile/` موجود و`@napi-rs/canvas` مثبّت.',
+          ),
+        ),
       );
       return;
     }

@@ -5,7 +5,8 @@ import {
   formatVoiceTime,
   relativeTime,
 } from '../../lib/activity-format.js';
-import { embed, warningEmbed } from '../../lib/embeds.js';
+import { embed } from '../../lib/embeds.js';
+import { warnReply } from '../../lib/replies.js';
 import { resolveUser } from '../../lib/resolve.js';
 import { memberStats, messagesSince, voiceSince } from '../../services/activity-store.js';
 
@@ -42,18 +43,18 @@ async function resolveTarget(ctx, client) {
 export default {
   data: new SlashCommandBuilder()
     .setName('lastseen')
-    .setDescription('Show when a member was last active')
+    .setDescription('اعرض آخر نشاط لعضو')
     .setContexts(InteractionContextType.Guild)
     .addUserOption((option) =>
       option
         .setName('user')
-        .setDescription('Member to look up (default: you)')
+        .setDescription('العضو المطلوب (الافتراضي: أنت)')
         .setRequired(false),
     ),
 
   name: 'lastseen',
   aliases: ['lastactive', 'lastactivity', 'seen', 'last'],
-  description: 'Show when a member was last active',
+  description: 'اعرض آخر نشاط لعضو',
   category: 'Activity',
   usage: 'lastseen [@member]',
   cooldown: 3,
@@ -63,14 +64,9 @@ export default {
     const { user, member } = await resolveTarget(ctx, client);
 
     if (!user) {
-      await ctx.fail({
-        embeds: [
-          warningEmbed(
-            'Unknown member',
-            'Mention a member or paste their id, then try again.',
-          ),
-        ],
-      });
+      await ctx.fail(
+        warnReply('عضو غير معروف', 'منشن العضو أو الصق الآيدي، وجرّب مرة ثانية.'),
+      );
       return;
     }
 
@@ -78,12 +74,10 @@ export default {
 
     if (stats.messages === 0 && stats.voiceSeconds === 0) {
       await ctx.reply({
-        embeds: [
-          warningEmbed(
-            'No activity recorded',
-            `\u200E<@${user.id}> has no messages or voice time yet. I only count while I am online.`,
-          ),
-        ],
+        content: warnReply(
+          'ما فيه نشاط مسجّل',
+          `\u200E<@${user.id}> ما عنده رسائل ولا وقت صوت بعد. أنا أحسب بس وأنا شغّال.`,
+        ).content,
         allowedMentions: { parse: [] },
       });
       return;
@@ -94,45 +88,45 @@ export default {
     await ctx.reply({
       embeds: [
         embed({
-          title: 'Member activity',
+          title: 'نشاط العضو',
           description: `\u200E<@${user.id}>`,
           fields: [
             {
-              name: 'Last active',
+              name: 'آخر نشاط',
               value: `\u200E${relativeTime(stats.lastActiveAt)}`,
               inline: true,
             },
             {
-              name: 'Last message',
+              name: 'آخر رسالة',
               value: `\u200E${relativeTime(stats.lastMessageAt)}`,
               inline: true,
             },
             {
-              name: 'Messages',
+              name: 'الرسائل',
               value: `\u200E${formatNumber(stats.messages)}`,
               inline: true,
             },
             {
-              name: 'Voice time',
+              name: 'وقت الصوت',
               value: `\u200E${formatVoiceTime(stats.voiceSeconds)}`,
               inline: true,
             },
             {
-              name: 'First message',
+              name: 'أول رسالة',
               value: `\u200E${relativeTime(stats.firstMessageAt)}`,
               inline: true,
             },
             {
-              name: 'Member since',
+              name: 'عضو منذ',
               value: member?.joinedTimestamp
                 ? `\u200E${relativeTime(member.joinedTimestamp)}`
-                : 'Unknown',
+                : 'غير معروف',
               inline: true,
             },
           ],
           footer:
-            `Messages since ${formatDate(messagesSince(ctx.guildId))}` +
-            ` · voice since ${formatDate(voiceSince(ctx.guildId))}`,
+            `الرسائل منذ ${formatDate(messagesSince(ctx.guildId))}` +
+            ` · الصوت منذ ${formatDate(voiceSince(ctx.guildId))}`,
         }),
       ],
       allowedMentions: { parse: [] },

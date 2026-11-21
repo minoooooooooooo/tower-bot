@@ -1,7 +1,7 @@
 import { InteractionContextType, SlashCommandBuilder } from 'discord.js';
 import { config } from '../../config.js';
 import { formatNumber } from '../../lib/activity-format.js';
-import { COLORS, embed, errorEmbed, warningEmbed } from '../../lib/embeds.js';
+import { errorReply, okReply, warnReply } from '../../lib/replies.js';
 import { resolveUser } from '../../lib/resolve.js';
 import { displayNameOf } from '../../lib/targets.js';
 import { linkedPoints } from '../../services/ebot-vex.js';
@@ -30,38 +30,38 @@ function parseAmount(token) {
 
 function usage(ctx) {
   if (ctx.isSlash) {
-    return 'Use `/coins` to see your balance, or `/coins user:@member amount:50` to send coins.';
+    return 'استخدم `/coins` عشان تشوف رصيدك، أو `/coins user:@member amount:50` عشان ترسل عملات.';
   }
 
   return (
-    `Use \`${config.prefix}coins\` to see your balance, ` +
-    `\`${config.prefix}coins @member\` to see theirs, or ` +
-    `\`${config.prefix}coins @member 50\` to send 50 coins.`
+    `استخدم \`${config.prefix}coins\` عشان تشوف رصيدك، ` +
+    `\`${config.prefix}coins @member\` عشان تشوف رصيده، أو ` +
+    `\`${config.prefix}coins @member 50\` عشان ترسل 50 عملة.`
   );
 }
 
 export default {
   data: new SlashCommandBuilder()
     .setName('coins')
-    .setDescription('Check a coin balance or send coins to a member')
+    .setDescription('اعرض رصيد العملات أو أرسل عملات لعضو')
     .setContexts(InteractionContextType.Guild)
     .addUserOption((option) =>
       option
         .setName('user')
-        .setDescription('Member to check or pay (default: you)')
+        .setDescription('العضو المطلوب أو المستلم (الافتراضي: أنت)')
         .setRequired(false),
     )
     .addIntegerOption((option) =>
       option
         .setName('amount')
-        .setDescription('Coins to send (leave empty to check a balance)')
+        .setDescription('عدد العملات اللي ترسلها (اتركها فاضية لعرض الرصيد)')
         .setMinValue(1)
         .setRequired(false),
     ),
 
   name: 'coins',
   aliases: ['coin', 'balance', 'wallet'],
-  description: 'Check a coin balance or send coins to a member',
+  description: 'اعرض رصيد العملات أو أرسل عملات لعضو',
   category: 'Profile',
   usage: 'coins [@member] [amount]',
   cooldown: 3,
@@ -71,31 +71,25 @@ export default {
     const tokens = ctx.isSlash ? [] : ctx.args;
 
     if (!ctx.isSlash && tokens.length > 2) {
-      await ctx.fail({
-        embeds: [errorEmbed('Too many arguments', usage(ctx))],
-      });
+      await ctx.fail(errorReply('وسائط كثيرة', usage(ctx)));
       return;
     }
 
     const amount = ctx.isSlash ? ctx.getInteger('amount') ?? null : parseAmount(tokens[1]);
 
     if (amount === undefined) {
-      await ctx.fail({
-        embeds: [
-          errorEmbed(
-            'Invalid amount',
-            `The amount must be a whole number of at least 1.\n\n${usage(ctx)}`,
-          ),
-        ],
-      });
+      await ctx.fail(
+        errorReply(
+          'مبلغ غير صحيح',
+          `المبلغ لازم يكون رقم صحيح 1 أو أكثر.\n\n${usage(ctx)}`,
+        ),
+      );
       return;
     }
 
     // A slash amount without a target has nobody to pay.
     if (ctx.isSlash && amount !== null && !ctx.getUser('user')) {
-      await ctx.fail({
-        embeds: [errorEmbed('Pick a member', 'Choose who should receive the coins.')],
-      });
+      await ctx.fail(errorReply('اختر عضو', 'حدّد مين يستلم العملات.'));
       return;
     }
 
@@ -109,14 +103,12 @@ export default {
       targetUser = await resolveUser(client, tokens[0], ctx.message);
 
       if (!targetUser) {
-        await ctx.fail({
-          embeds: [
-            errorEmbed(
-              'Unknown member',
-              `Mention the member or paste their id, for example \`${config.prefix}coins @member\`.`,
-            ),
-          ],
-        });
+        await ctx.fail(
+          errorReply(
+            'عضو غير معروف',
+            `منشن العضو أو الصق الآيدي، مثل \`${config.prefix}coins @member\`.`,
+          ),
+        );
         return;
       }
     }
@@ -141,9 +133,7 @@ export default {
     // ---- balance view -----------------------------------------------------
     if (!targetUser || amount === null) {
       if (targetUser?.bot) {
-        await ctx.fail({
-          embeds: [errorEmbed('Bots have no coins', 'Pick a member, not a bot.')],
-        });
+        await ctx.fail(errorReply('البوتات ما عندها عملات', 'اختر عضو، مو بوت.'));
         return;
       }
 
@@ -156,15 +146,9 @@ export default {
       const name = targetUser ? displayNameOf(targetUser, member) : null;
 
       await ctx.editReply({
-        embeds: [
-          embed({
-            title: targetUser ? `${name} · coins` : 'Your coins',
-            description: `**${formatNumber(coins)}** coins`,
-            footer: targetUser
-              ? undefined
-              : `Send coins with ${config.prefix}coins @member <amount>`,
-          }),
-        ],
+        content: targetUser
+          ? `ℹ️ **رصيد ${name}**\n**${formatNumber(coins)}** عملة`
+          : `ℹ️ **رصيدك**\n**${formatNumber(coins)}** عملة\nأرسل عملات بـ \`${config.prefix}coins @member <amount>\`.`,
         allowedMentions: { parse: [] },
       });
       return;
@@ -172,29 +156,23 @@ export default {
 
     // ---- transfer ---------------------------------------------------------
     if (targetUser.id === senderId) {
-      await ctx.fail({
-        embeds: [errorEmbed('Cannot pay yourself', 'Choose another member.')],
-      });
+      await ctx.fail(errorReply('ما تقدر تدفع لنفسك', 'اختر عضو ثاني.'));
       return;
     }
 
     if (targetUser.bot) {
-      await ctx.fail({
-        embeds: [errorEmbed('Bots have no coins', 'Choose a member, not a bot.')],
-      });
+      await ctx.fail(errorReply('البوتات ما عندها عملات', 'اختر عضو، مو بوت.'));
       return;
     }
 
     if (!transferEnabled(ctx.guildId)) {
-      await ctx.fail({
-        embeds: [
-          warningEmbed(
-            'Transfers are off',
-            `Coin transfers are disabled in this server. An admin can turn them on with ` +
-              `\`${config.prefix}coins-config on\`.`,
-          ),
-        ],
-      });
+      await ctx.fail(
+        warnReply(
+          'التحويل مقفّل',
+          'تحويل العملات مقفّل في هذا السيرفر. مشرف يقدر يفتحه بـ ' +
+            `\`${config.prefix}coins-config on\`.`,
+        ),
+      );
       return;
     }
 
@@ -203,11 +181,9 @@ export default {
       (await ctx.guild.members.fetch(targetUser.id).catch(() => null));
 
     if (!targetMember) {
-      await ctx.fail({
-        embeds: [
-          errorEmbed('Member not in this server', 'Coins can only be sent to current members.'),
-        ],
-      });
+      await ctx.fail(
+        errorReply('العضو مو في السيرفر', 'العملات تنرسل للأعضاء الموجودين بس.'),
+      );
       return;
     }
 
@@ -218,43 +194,33 @@ export default {
     try {
       result = transferCoins(ctx.guildId, senderId, targetUser.id, amount);
     } catch {
-      await ctx.fail({
-        embeds: [errorEmbed('Could not send the coins', 'The database write failed. Try again.')],
-      });
+      await ctx.fail(errorReply('ما قدرت أرسل العملات', 'كتابة قاعدة البيانات فشلت. جرّب مرة ثانية.'));
       return;
     }
 
     if (!result.ok) {
       if (result.reason === 'funds') {
-        await ctx.fail({
-          embeds: [
-            warningEmbed(
-              'Not enough coins',
-              `You have **${formatNumber(result.balance)}** coins, so you cannot send ` +
-                `**${formatNumber(amount)}**.`,
-            ),
-          ],
-        });
+        await ctx.fail(
+          warnReply(
+            'ما عندك عملات كافية',
+            `عندك **${formatNumber(result.balance)}** عملة، فما تقدر ترسل ` +
+              `**${formatNumber(amount)}**.`,
+          ),
+        );
         return;
       }
 
-      await ctx.fail({
-        embeds: [errorEmbed('Could not send the coins', usage(ctx))],
-      });
+      await ctx.fail(errorReply('ما قدرت أرسل العملات', usage(ctx)));
       return;
     }
 
     await ctx.editReply({
-      embeds: [
-        embed({
-          title: 'Coins sent',
-          description:
-            `**${formatNumber(amount)}** coins to ${targetMember}.\n` +
-            `Your balance: **${formatNumber(result.fromBalance)}** coins.`,
-          color: COLORS.success,
-          footer: `Their balance: ${formatNumber(result.toBalance)} coins`,
-        }),
-      ],
+      content: okReply(
+        'انرسلت العملات',
+        `**${formatNumber(amount)}** عملة إلى ${targetMember}.\n` +
+          `رصيدك: **${formatNumber(result.fromBalance)}** عملة.\n` +
+          `رصيده: **${formatNumber(result.toBalance)}** عملة.`,
+      ).content,
       allowedMentions: { parse: [] },
     });
   },

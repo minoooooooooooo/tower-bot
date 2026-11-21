@@ -9,27 +9,27 @@ import { getDb } from '../lib/db.js';
 export const COIN_PAGE_SIZE = 8;
 
 export const COIN_TYPE_LABELS = {
-  earn: 'Level reward',
-  backfill: 'Opening balance',
-  transfer_in: 'Transfer in',
-  transfer_out: 'Transfer out',
-  purchase: 'Purchase',
-  refund: 'Refund',
-  admin_add: 'Admin added',
-  admin_remove: 'Admin removed',
-  adjust: 'Adjustment',
+  earn: 'مكافأة مستوى',
+  backfill: 'رصيد افتتاحي',
+  transfer_in: 'تحويل داخل',
+  transfer_out: 'تحويل خارج',
+  purchase: 'شراء',
+  refund: 'استرجاع',
+  admin_add: 'إضافة مشرف',
+  admin_remove: 'خصم مشرف',
+  adjust: 'تعديل',
 };
 
 export const COIN_FILTERS = ['all', 'earn', 'transfer', 'purchase', 'refund', 'admin', 'backfill'];
 
 export const COIN_FILTER_LABELS = {
-  all: 'All movement',
-  earn: 'Level rewards',
-  transfer: 'Transfers',
-  purchase: 'Purchases',
-  refund: 'Refunds',
-  admin: 'Admin changes',
-  backfill: 'Opening balances',
+  all: 'كل الحركة',
+  earn: 'مكافآت المستويات',
+  transfer: 'التحويلات',
+  purchase: 'المشتريات',
+  refund: 'الاسترجاعات',
+  admin: 'تعديلات المشرفين',
+  backfill: 'الأرصدة الافتتاحية',
 };
 
 function filterTypes(filter) {

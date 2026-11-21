@@ -5,7 +5,8 @@ import {
 } from 'discord.js';
 import { config } from '../../config.js';
 import { formatNumber } from '../../lib/activity-format.js';
-import { COLORS, embed, errorEmbed } from '../../lib/embeds.js';
+import { COLORS, embed } from '../../lib/embeds.js';
+import { errorReply } from '../../lib/replies.js';
 import { resolveUser } from '../../lib/resolve.js';
 import { displayNameOf } from '../../lib/targets.js';
 import { linkedPoints } from '../../services/ebot-vex.js';
@@ -91,14 +92,14 @@ function ago(createdAt) {
   const stamp = Number(createdAt) || 0;
   const minutes = Math.floor(Math.max(0, Date.now() - stamp) / 60_000);
 
-  if (minutes < 1) return 'now';
-  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 1) return 'الآن';
+  if (minutes < 60) return `قبل ${minutes}د`;
 
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
+  if (hours < 24) return `قبل ${hours}س`;
 
   const days = Math.floor(hours / 24);
-  if (days < 30) return `${days}d ago`;
+  if (days < 30) return `قبل ${days}ي`;
 
   return `<t:${Math.floor(stamp / 1000)}:d>`;
 }
@@ -108,24 +109,24 @@ function describe(row, userId) {
 
   switch (row.type) {
     case 'purchase':
-      return short((detail.itemName ?? detail.itemKey ?? 'store item').replace(/\s+background$/i, ''));
+      return short((detail.itemName ?? detail.itemKey ?? 'منتج').replace(/\s+background$/i, ''));
     case 'refund': {
       const key = detail.itemKey ? String(detail.itemKey).replace(/^design:/, '') : '';
       return key ? short(key, 24) : '';
     }
     case 'transfer_in':
-      return detail.fromUserId ? `from <@${detail.fromUserId}>` : '';
+      return detail.fromUserId ? `من <@${detail.fromUserId}>` : '';
     case 'transfer_out':
-      return detail.toUserId ? `to <@${detail.toUserId}>` : '';
+      return detail.toUserId ? `إلى <@${detail.toUserId}>` : '';
     case 'earn':
-      return detail.level ? `level ${detail.level}` : '';
+      return detail.level ? `المستوى ${detail.level}` : '';
     case 'backfill':
       if (detail.source === 'ledger started') return '';
-      return detail.level ? `level ${detail.level}` : short(detail.source ?? '');
+      return detail.level ? `المستوى ${detail.level}` : short(detail.source ?? '');
     case 'admin_add':
     case 'admin_remove': {
-      const source = detail.source === 'profile-edit' ? 'profile edit' : short(detail.source ?? '');
-      const actor = row.actor_id && row.actor_id !== userId ? ` by <@${row.actor_id}>` : '';
+      const source = detail.source === 'profile-edit' ? 'تعديل الملف' : short(detail.source ?? '');
+      const actor = row.actor_id && row.actor_id !== userId ? ` بواسطة <@${row.actor_id}>` : '';
       return `${source}${actor}`.trim();
     }
     default:
@@ -144,7 +145,7 @@ function historyLine(row, { member = false, viewerId } = {}) {
     COIN_TYPE_LABELS[row.type] ?? row.type,
     member ? `<@${row.user_id}>` : null,
     describe(row, viewerId),
-    `bal **${formatNumber(row.balance_after)}**`,
+    `الرصيد **${formatNumber(row.balance_after)}**`,
     ago(row.created_at),
   ].filter(Boolean);
 
@@ -154,22 +155,22 @@ function historyLine(row, { member = false, viewerId } = {}) {
 function logEmbed({ targetId, name, isSelf, filter, page, pages, totals, rows, balance }) {
   const lines = rows.length
     ? rows.map((row) => historyLine(row, { viewerId: targetId })).join('\n')
-    : '_No coin movement yet._';
+    : '_ما فيه أي حركة عملات بعد._';
 
   return embed({
-    title: isSelf ? 'Your coin log' : `${name} · coin log`,
+    title: isSelf ? 'سجل عملاتك' : `${name} · سجل العملات`,
     description:
-      `Filter: **${COIN_FILTER_LABELS[filter] ?? filter}**` +
-      (totals.count ? ` · ${formatNumber(totals.count)} records` : '') +
-      ' · newest first',
+      `الفلتر: **${COIN_FILTER_LABELS[filter] ?? filter}**` +
+      (totals.count ? ` · ${formatNumber(totals.count)} حركة` : '') +
+      ' · الأحدث أولًا',
     color: COLORS.primary,
     fields: [
-      { name: 'Balance', value: `**${formatNumber(balance)}** coins`, inline: true },
-      { name: 'In', value: totals.earned ? `**+${formatNumber(totals.earned)}**` : '**0**', inline: true },
-      { name: 'Out', value: totals.spent ? `**-${formatNumber(totals.spent)}**` : '**0**', inline: true },
-      { name: 'History', value: lines, inline: false },
+      { name: 'الرصيد', value: `**${formatNumber(balance)}** عملة`, inline: true },
+      { name: 'الداخل', value: totals.earned ? `**+${formatNumber(totals.earned)}**` : '**0**', inline: true },
+      { name: 'الخارج', value: totals.spent ? `**-${formatNumber(totals.spent)}**` : '**0**', inline: true },
+      { name: 'السجل', value: lines, inline: false },
     ],
-    footer: `Page ${formatNumber(page)} / ${formatNumber(pages)} · ${COIN_PAGE_SIZE} per page`,
+    footer: `صفحة ${formatNumber(page)} / ${formatNumber(pages)} · ${COIN_PAGE_SIZE} في الصفحة`,
   });
 }
 
@@ -178,22 +179,22 @@ function guildLogEmbed({ guildName, filter, page, pages, totals, rows }) {
     ? rows
         .map((row) => historyLine(row, { member: true, viewerId: row.user_id }))
         .join('\n')
-    : '_No coin movement yet._';
+    : '_ما فيه أي حركة عملات بعد._';
 
   return embed({
-    title: `${guildName} · server coin log`,
+    title: `${guildName} · سجل عملات السيرفر`,
     description:
-      `All members · **${COIN_FILTER_LABELS[filter] ?? filter}**` +
-      (totals.count ? ` · ${formatNumber(totals.count)} records` : '') +
-      ' · newest first',
+      `كل الأعضاء · **${COIN_FILTER_LABELS[filter] ?? filter}**` +
+      (totals.count ? ` · ${formatNumber(totals.count)} حركة` : '') +
+      ' · الأحدث أولًا',
     color: COLORS.primary,
     fields: [
-      { name: 'In', value: totals.earned ? `**+${formatNumber(totals.earned)}**` : '**0**', inline: true },
-      { name: 'Out', value: totals.spent ? `**-${formatNumber(totals.spent)}**` : '**0**', inline: true },
-      { name: 'Members', value: `**${formatNumber(totals.members)}**`, inline: true },
-      { name: 'History', value: lines, inline: false },
+      { name: 'الداخل', value: totals.earned ? `**+${formatNumber(totals.earned)}**` : '**0**', inline: true },
+      { name: 'الخارج', value: totals.spent ? `**-${formatNumber(totals.spent)}**` : '**0**', inline: true },
+      { name: 'الأعضاء', value: `**${formatNumber(totals.members)}**`, inline: true },
+      { name: 'السجل', value: lines, inline: false },
     ],
-    footer: `Page ${formatNumber(page)} / ${formatNumber(pages)} · ${COIN_PAGE_SIZE} per page`,
+    footer: `صفحة ${formatNumber(page)} / ${formatNumber(pages)} · ${COIN_PAGE_SIZE} في الصفحة`,
   });
 }
 
@@ -210,14 +211,12 @@ async function runCoinLog(ctx, client) {
     global = ctx.getBoolean('global') === true;
 
     if (global && ctx.getUser('user')) {
-      await ctx.fail({
-        embeds: [
-          errorEmbed(
-            'Choose one view',
-            'Pick a member or `global:true`, not both. `/coin-log global:true` shows every member.',
-          ),
-        ],
-      });
+      await ctx.fail(
+        errorReply(
+          'اختر عرض واحد',
+          'اختر عضو أو `global:true`، مو الاثنين. `/coin-log global:true` يعرض كل الأعضاء.',
+        ),
+      );
       return;
     }
   } else {
@@ -230,14 +229,12 @@ async function runCoinLog(ctx, client) {
       const resolved = await resolveUser(client, args[0], ctx.message);
 
       if (!resolved) {
-        await ctx.fail({
-          embeds: [
-            errorEmbed(
-              'Unknown member',
-              `Mention the member or paste their id, for example \`${config.prefix}coin-log @member\`.`,
-            ),
-          ],
-        });
+        await ctx.fail(
+          errorReply(
+            'عضو غير معروف',
+            `منشن العضو أو الصق الآيدي، مثل \`${config.prefix}coin-log @member\`.`,
+          ),
+        );
         return;
       }
 
@@ -257,36 +254,30 @@ async function runCoinLog(ctx, client) {
 
   if (global) {
     if (!ctx.member?.permissions?.has?.(PermissionFlagsBits.ManageGuild)) {
-      await ctx.fail({
-        embeds: [
-          errorEmbed(
-            'Missing permissions',
-            'You need **Manage Server** to read the server-wide coin log.',
-          ),
-        ],
-      });
+      await ctx.fail(
+        errorReply(
+          'صلاحيات ناقصة',
+          'تحتاج **إدارة السيرفر** عشان تقرأ سجل عملات السيرفر.',
+        ),
+      );
       return;
     }
   } else if (target.id !== ctx.user.id) {
     const allowed = Boolean(ctx.member?.permissions?.has?.(PermissionFlagsBits.ManageGuild));
 
     if (!allowed) {
-      await ctx.fail({
-        embeds: [
-          errorEmbed(
-            'Missing permissions',
-            'You need **Manage Server** to read another member’s coin log.',
-          ),
-        ],
-      });
+      await ctx.fail(
+        errorReply(
+          'صلاحيات ناقصة',
+          'تحتاج **إدارة السيرفر** عشان تقرأ سجل عملات عضو ثاني.',
+        ),
+      );
       return;
     }
   }
 
   if (!global && target.bot) {
-    await ctx.fail({
-      embeds: [errorEmbed('Bots have no coins', 'Pick a member, not a bot.')],
-    });
+    await ctx.fail(errorReply('البوتات ما عندها عملات', 'اختر عضو، مو بوت.'));
     return;
   }
 
@@ -319,7 +310,7 @@ async function runCoinLog(ctx, client) {
     await ctx.editReply({
       embeds: [
         guildLogEmbed({
-          guildName: ctx.guild?.name ?? 'Server',
+          guildName: ctx.guild?.name ?? 'السيرفر',
           filter,
           page: safePage,
           pages,
@@ -379,38 +370,38 @@ async function runCoinLog(ctx, client) {
 export default {
   data: new SlashCommandBuilder()
     .setName('coin-log')
-    .setDescription('Show recent coin movement and the current balance')
+    .setDescription('اعرض حركة العملات الأخيرة والرصيد الحالي')
     .setContexts(InteractionContextType.Guild)
     .addUserOption((option) =>
       option
         .setName('user')
-        .setDescription('Member to inspect (default: you; Manage Server for others)')
+        .setDescription('العضو المطلوب (الافتراضي: أنت؛ إدارة السيرفر لغيرك)')
         .setRequired(false),
     )
     .addStringOption((option) =>
       option
         .setName('type')
-        .setDescription('Only show one kind of movement')
+        .setDescription('اعرض نوع واحد من الحركة')
         .addChoices(...FILTER_CHOICES)
         .setRequired(false),
     )
     .addBooleanOption((option) =>
       option
         .setName('global')
-        .setDescription('Show every member in this server (Manage Server)')
+        .setDescription('اعرض كل أعضاء السيرفر (إدارة السيرفر)')
         .setRequired(false),
     )
     .addIntegerOption((option) =>
       option
         .setName('page')
-        .setDescription('Page number (8 records per page)')
+        .setDescription('رقم الصفحة (8 حركات في الصفحة)')
         .setMinValue(1)
         .setRequired(false),
     ),
 
   name: 'coin-log',
   aliases: ['coins-log', 'coin-history', 'coinlog', 'ledger', 'bank-log'],
-  description: 'Show recent coin movement and the current balance',
+  description: 'اعرض حركة العملات الأخيرة والرصيد الحالي',
   category: 'Profile',
   usage: 'coin-log [@member | all] [earn|transfer|purchase|refund|admin|backfill] [page]',
   cooldown: 3,
