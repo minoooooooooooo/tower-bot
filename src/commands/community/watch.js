@@ -1,12 +1,12 @@
 import {
   ChannelType,
   InteractionContextType,
-  MessageFlags,
   PermissionFlagsBits,
   SlashCommandBuilder,
 } from 'discord.js';
-import { COLORS, embed, errorEmbed, infoEmbed, successEmbed } from '../../lib/embeds.js';
+import { COLORS, embed } from '../../lib/embeds.js';
 import { createLogger } from '../../lib/logger.js';
+import { ephemeral, errorReply, infoReply, okReply } from '../../lib/replies.js';
 import {
   MAX_TERM_LENGTH,
   MAX_WATCH_TERMS,
@@ -30,19 +30,11 @@ const logger = createLogger('watch');
 const MAX_SHOWN = 30;
 const OFF_WORDS = ['off', 'none', 'clear', 'disable'];
 
-function ephemeral(payload) {
-  return { ...payload, flags: MessageFlags.Ephemeral };
-}
-
 async function requireModerator(ctx) {
   if (ctx.member?.permissions?.has(PermissionFlagsBits.ManageMessages)) return true;
 
-  await ctx.reply(
-    ephemeral({
-      embeds: [
-        errorEmbed('Missing permissions', 'You need **Manage Messages** to manage keyword alerts.'),
-      ],
-    }),
+  await ctx.fail(
+    ephemeral(errorReply('صلاحيات ناقصة', 'تحتاج **إدارة الرسائل** عشان تدير تنبيهات الكلمات.')),
   );
 
   return false;
@@ -51,15 +43,10 @@ async function requireModerator(ctx) {
 async function requireAdmin(ctx) {
   if (ctx.member?.permissions?.has(PermissionFlagsBits.ManageGuild)) return true;
 
-  await ctx.reply(
-    ephemeral({
-      embeds: [
-        errorEmbed(
-          'Missing permissions',
-          'You need **Manage Server** to choose where keyword alerts are posted.',
-        ),
-      ],
-    }),
+  await ctx.fail(
+    ephemeral(
+      errorReply('صلاحيات ناقصة', 'تحتاج **إدارة السيرفر** عشان تختار وين تنكتب تنبيهات الكلمات.'),
+    ),
   );
 
   return false;
@@ -127,15 +114,13 @@ async function resolvePrefixChannel(ctx, raw) {
 
 async function requireSendableChannel(ctx, channel) {
   if (!channel?.isTextBased?.() || channel.isDMBased?.()) {
-    await ctx.reply(
-      ephemeral({
-        embeds: [
-          errorEmbed(
-            'Not a text channel',
-            'Pick a normal server channel, for example `/watch channel #mod-log`.',
-          ),
-        ],
-      }),
+    await ctx.fail(
+      ephemeral(
+        errorReply(
+          'مو قناة نصية',
+          'اختر قناة عادية في السيرفر، مثل `/watch channel #mod-log`.',
+        ),
+      ),
     );
     return false;
   }
@@ -147,15 +132,13 @@ async function requireSendableChannel(ctx, channel) {
     permissions &&
     !permissions.has([PermissionFlagsBits.SendMessages, PermissionFlagsBits.EmbedLinks])
   ) {
-    await ctx.reply(
-      ephemeral({
-        embeds: [
-          errorEmbed(
-            'I cannot post there',
-            `I need **View Channel**, **Send Messages** and **Embed Links** in ${channel}.`,
-          ),
-        ],
-      }),
+    await ctx.fail(
+      ephemeral(
+        errorReply(
+          'ما أقدر أنشر هناك',
+          `أحتاج **عرض القنوات** و**إرسال الرسائل** و**إرفاق الروابط** في ${channel}.`,
+        ),
+      ),
     );
     return false;
   }
@@ -167,8 +150,8 @@ function channelSummary(ctx) {
   const channelId = getWatchChannelId(ctx.guildId);
 
   return channelId
-    ? { channelId, text: `Alerts post in <#${channelId}>.` }
-    : { channelId: null, text: '⚠️ No alert channel set — run `/watch channel #channel`.' };
+    ? { channelId, text: `التنبيهات تنكتب في <#${channelId}>.` }
+    : { channelId: null, text: '⚠️ ما فيه قناة تنبيه — شغّل `/watch channel #channel`.' };
 }
 
 function listPayload(ctx) {
@@ -177,12 +160,12 @@ function listPayload(ctx) {
 
   if (terms.length === 0) {
     return embed({
-      title: 'No keywords yet',
+      title: 'ما فيه كلمات مراقبة بعد',
       description: [
-        `Add one with \`${ctx.isSlash ? '/watch add keyword:leak' : ':-watch add leak'}\`.`,
-        'The list is shared: any moderator can add or remove a word, and every alert goes to one channel.',
+        `أضف واحدة بـ \`${ctx.isSlash ? '/watch add keyword:leak' : ':-watch add leak'}\`.`,
+        'القائمة مشتركة: أي مشرف يضيف أو يحذف كلمة، وكل التنبيهات تنروح لقناة وحدة.',
         '',
-        channelId ? text : `⚠️ No alert channel set yet — run \`${ctx.isSlash ? '/watch channel' : ':-watch channel'} #channel\`.`,
+        channelId ? text : `⚠️ ما فيه قناة تنبيه بعد — شغّل \`${ctx.isSlash ? '/watch channel' : ':-watch channel'} #channel\`.`,
       ].join('\n'),
       color: COLORS.muted,
     });
@@ -190,17 +173,17 @@ function listPayload(ctx) {
 
   const shown = terms.slice(0, MAX_SHOWN);
   const lines = shown.map(
-    (entry) => `\u200E- \`${entry.term}\` — added by <@${entry.createdBy}>`,
+    (entry) => `\u200E- \`${entry.term}\` — أضافها <@${entry.createdBy}>`,
   );
 
-  if (terms.length > shown.length) lines.push(`…and ${terms.length - shown.length} more`);
+  if (terms.length > shown.length) lines.push(`…و ${terms.length - shown.length} غيرها`);
 
   return embed({
-    title: `Watched keywords (${terms.length}/${MAX_WATCH_TERMS})`,
+    title: `الكلمات المراقبة (${terms.length}/${MAX_WATCH_TERMS})`,
     description: lines.join('\n'),
     footer: channelId
-      ? `${text} Every alert includes a jump link.`
-      : 'No alert channel set — alerts will not be posted until one is chosen.',
+      ? `${text} كل تنبيه فيه رابط قفز.`
+      : 'ما فيه قناة تنبيه — التنبيهات ما تنكتب لين تختار وحدة.',
     color: channelId ? COLORS.primary : COLORS.warning,
   });
 }
@@ -211,15 +194,13 @@ async function handleAdd(ctx) {
   const term = extractTerm(ctx);
 
   if (term.length < MIN_TERM_LENGTH || term.length > MAX_TERM_LENGTH) {
-    await ctx.reply(
-      ephemeral({
-        embeds: [
-          errorEmbed(
-            'Invalid keyword',
-            `Use ${MIN_TERM_LENGTH}–${MAX_TERM_LENGTH} characters, for example \`/watch add keyword:leak\`.`,
-          ),
-        ],
-      }),
+    await ctx.fail(
+      ephemeral(
+        errorReply(
+          'كلمة غير صحيحة',
+          `استخدم من ${MIN_TERM_LENGTH} إلى ${MAX_TERM_LENGTH} حرف، مثل \`/watch add keyword:leak\`.`,
+        ),
+      ),
     );
     return;
   }
@@ -227,24 +208,20 @@ async function handleAdd(ctx) {
   const result = addWatchTerm(ctx.guildId, ctx.user.id, term);
 
   if (!result.added && result.reason === 'limit') {
-    await ctx.reply(
-      ephemeral({
-        embeds: [
-          errorEmbed(
-            'Keyword list is full',
-            `The server already watches ${countTerms(ctx.guildId)} words (max ${MAX_WATCH_TERMS}). Remove one first.`,
-          ),
-        ],
-      }),
+    await ctx.fail(
+      ephemeral(
+        errorReply(
+          'قائمة الكلمات مليانة',
+          `السيرفر يراقب ${countTerms(ctx.guildId)} كلمة من قبل (الحد ${MAX_WATCH_TERMS}). احذف واحدة أول.`,
+        ),
+      ),
     );
     return;
   }
 
   if (!result.added && result.reason === 'duplicate') {
     await ctx.reply(
-      ephemeral({
-        embeds: [infoEmbed('Already watching', `\`${result.term}\` is already on the list.`)],
-      }),
+      ephemeral(infoReply('مراقَبة أصلًا', `\`${result.term}\` موجودة في القائمة.`)),
     );
     return;
   }
@@ -254,16 +231,14 @@ async function handleAdd(ctx) {
   const channelId = getWatchChannelId(ctx.guildId);
 
   await ctx.reply(
-    ephemeral({
-      embeds: [
-        successEmbed(
-          'Keyword added',
-          channelId
-            ? `I will post an alert in <#${channelId}> whenever \`${term}\` appears anywhere in this server.`
-            : `\`${term}\` is now watched, but no alert channel is set yet — run \`/watch channel #channel\` or alerts will not be posted.`,
-        ),
-      ],
-    }),
+    ephemeral(
+      okReply(
+        'انضافت الكلمة',
+        channelId
+          ? `بنشر تنبيه في <#${channelId}> كل ما تطلع \`${term}\` في أي مكان بالسيرفر.`
+          : `\`${term}\` صارت مراقَبة، لكن ما فيه قناة تنبيه بعد — شغّل \`/watch channel #channel\` وإلا ما تنكتب التنبيهات.`,
+      ),
+    ),
   );
 }
 
@@ -273,10 +248,10 @@ async function handleRemove(ctx) {
   const term = extractTerm(ctx);
 
   if (!term) {
-    await ctx.reply(
-      ephemeral({
-        embeds: [errorEmbed('Which keyword?', 'Use `/watch remove keyword:word` or `:-watch remove word`.')],
-      }),
+    await ctx.fail(
+      ephemeral(
+        errorReply('أي كلمة؟', 'استخدم `/watch remove keyword:word` أو `:-watch remove word`.'),
+      ),
     );
     return;
   }
@@ -287,13 +262,11 @@ async function handleRemove(ctx) {
   invalidateWatchCache(ctx.guildId);
 
   await ctx.reply(
-    ephemeral({
-      embeds: [
-        removed > 0
-          ? successEmbed('Keyword removed', `\`${existing.term}\` is no longer watched.`)
-          : infoEmbed('Not on the list', `\`${term}\` was not being watched.`),
-      ],
-    }),
+    ephemeral(
+      removed > 0
+        ? okReply('انحذفت الكلمة', `\`${existing.term}\` ما عادت مراقَبة.`)
+        : infoReply('مو في القائمة', `\`${term}\` ما كانت مراقَبة.`),
+    ),
   );
 }
 
@@ -305,13 +278,11 @@ async function handleClear(ctx) {
   invalidateWatchCache(ctx.guildId);
 
   await ctx.reply(
-    ephemeral({
-      embeds: [
-        removed > 0
-          ? successEmbed('Keywords cleared', `Removed ${removed} keyword${removed === 1 ? '' : 's'}.`)
-          : infoEmbed('Nothing to clear', 'The keyword list was already empty.'),
-      ],
-    }),
+    ephemeral(
+      removed > 0
+        ? okReply('انمسحت الكلمات', `انحذفت ${removed} كلمة.`)
+        : infoReply('ما فيه شي ينمسح', 'قائمة الكلمات فاضية أصلًا.'),
+    ),
   );
 }
 
@@ -326,11 +297,9 @@ async function handleChannel(ctx) {
       invalidateWatchCache(ctx.guildId);
 
       await ctx.reply(
-        ephemeral({
-          embeds: [
-            successEmbed('Alerts are off', 'No channel will receive keyword alerts until one is set.'),
-          ],
-        }),
+        ephemeral(
+          okReply('التنبيهات مقفّلة', 'ما فيه قناة بتستقبل تنبيهات الكلمات لين تنضبط وحدة.'),
+        ),
       );
       return;
     }
@@ -341,11 +310,7 @@ async function handleChannel(ctx) {
     invalidateWatchCache(ctx.guildId);
 
     await ctx.reply(
-      ephemeral({
-        embeds: [
-          successEmbed('Alert channel saved', `Keyword alerts will be posted in ${channel}.`),
-        ],
-      }),
+      ephemeral(okReply('انحفظت قناة التنبيه', `تنبيهات الكلمات بتنكتب في ${channel}.`)),
     );
     return;
   }
@@ -357,11 +322,9 @@ async function handleChannel(ctx) {
     invalidateWatchCache(ctx.guildId);
 
     await ctx.reply(
-      ephemeral({
-        embeds: [
-          successEmbed('Alerts are off', 'No channel will receive keyword alerts until one is set.'),
-        ],
-      }),
+      ephemeral(
+        okReply('التنبيهات مقفّلة', 'ما فيه قناة بتستقبل تنبيهات الكلمات لين تنضبط وحدة.'),
+      ),
     );
     return;
   }
@@ -369,15 +332,13 @@ async function handleChannel(ctx) {
   const channel = await resolvePrefixChannel(ctx, raw).catch(() => null);
 
   if (!channel) {
-    await ctx.reply(
-      ephemeral({
-        embeds: [
-          errorEmbed(
-            'Unknown channel',
-            `I could not find \`${raw}\`. Mention it as \`#channel\` or paste the channel id.`,
-          ),
-        ],
-      }),
+    await ctx.fail(
+      ephemeral(
+        errorReply(
+          'قناة غير معروفة',
+          `ما لقيت \`${raw}\`. منشنها كـ \`#channel\` أو الصق آيدي القناة.`,
+        ),
+      ),
     );
     return;
   }
@@ -388,11 +349,7 @@ async function handleChannel(ctx) {
   invalidateWatchCache(ctx.guildId);
 
   await ctx.reply(
-    ephemeral({
-      embeds: [
-        successEmbed('Alert channel saved', `Keyword alerts will be posted in ${channel}.`),
-      ],
-    }),
+    ephemeral(okReply('انحفظت قناة التنبيه', `تنبيهات الكلمات بتنكتب في ${channel}.`)),
   );
 }
 
@@ -402,15 +359,10 @@ async function handleTest(ctx) {
   const channelId = getWatchChannelId(ctx.guildId);
 
   if (!channelId) {
-    await ctx.reply(
-      ephemeral({
-        embeds: [
-          errorEmbed(
-            'No alert channel',
-            'Run `/watch channel #channel` first, then test again.',
-          ),
-        ],
-      }),
+    await ctx.fail(
+      ephemeral(
+        errorReply('ما فيه قناة تنبيه', 'شغّل `/watch channel #channel` أول، وبعدها جرّب.'),
+      ),
     );
     return;
   }
@@ -425,15 +377,13 @@ async function handleTest(ctx) {
   }
 
   if (!channel?.isTextBased?.()) {
-    await ctx.reply(
-      ephemeral({
-        embeds: [
-          errorEmbed(
-            'Channel is missing',
-            'The saved alert channel no longer exists. Choose another with `/watch channel #channel`.',
-          ),
-        ],
-      }),
+    await ctx.fail(
+      ephemeral(
+        errorReply(
+          'القناة مو موجودة',
+          'قناة التنبيه المحفوظة ما عادت موجودة. اختر غيرها بـ `/watch channel #channel`.',
+        ),
+      ),
     );
     return;
   }
@@ -443,10 +393,10 @@ async function handleTest(ctx) {
       allowedMentions: { parse: [] },
       embeds: [
         embed({
-          title: 'Keyword alerts are working',
+          title: 'تنبيهات الكلمات شغّالة',
           description: [
-            'This is where a moderator will see a watched word being mentioned.',
-            'Every alert includes the keyword, the author, a quote and a jump link.',
+            'هنا بيشوف المشرف الكلمة المراقبة وقت ما تنذكر.',
+            'كل تنبيه فيه الكلمة والكاتب واقتباس ورابط قفز.',
           ].join('\n'),
           color: COLORS.success,
         }),
@@ -454,22 +404,18 @@ async function handleTest(ctx) {
     });
 
     await ctx.reply(
-      ephemeral({
-        embeds: [successEmbed('Test sent', `Check ${channel} — the alert layout is posted there.`)],
-      }),
+      ephemeral(okReply('انرسل الاختبار', `شوف ${channel} — شكل التنبيه منشور هناك.`)),
     );
   } catch (error) {
     logger.warn(`Watch test to channel ${channelId} failed: ${error.message}`);
 
-    await ctx.reply(
-      ephemeral({
-        embeds: [
-          errorEmbed(
-            'Could not post there',
-            'I need **View Channel**, **Send Messages** and **Embed Links** in the alert channel.',
-          ),
-        ],
-      }),
+    await ctx.fail(
+      ephemeral(
+        errorReply(
+          'ما قدرت أنشر هناك',
+          'أحتاج **عرض القنوات** و**إرسال الرسائل** و**إرفاق الروابط** في قناة التنبيه.',
+        ),
+      ),
     );
   }
 }
@@ -479,11 +425,11 @@ function ignoredPayload(ctx) {
 
   if (rows.length === 0) {
     return embed({
-      title: 'No ignored channels',
+      title: 'ما فيه قنوات متجاهَلة',
       description: [
-        'Watched words trigger alerts in every channel.',
-        `Ignore one with \`${ctx.isSlash ? '/watch ignore channel:#channel' : ':-watch ignore #channel'}\`.`,
-        'Ignoring a category covers every channel inside it.',
+        'الكلمات المراقبة تنبّه في كل القنوات.',
+        `تجاهل قناة بـ \`${ctx.isSlash ? '/watch ignore channel:#channel' : ':-watch ignore #channel'}\`.`,
+        'تجاهل تصنيف يغطي كل القنوات اللي داخله.',
       ].join('\n'),
       color: COLORS.muted,
     });
@@ -494,16 +440,16 @@ function ignoredPayload(ctx) {
     const channel = ctx.guild.channels.cache.get(row.channelId);
 
     return channel
-      ? `\u200E- <#${row.channelId}> — added by <@${row.createdBy}>`
-      : `\u200E- ⚠️ \`${row.channelId}\` — channel deleted`;
+      ? `\u200E- <#${row.channelId}> — أضافها <@${row.createdBy}>`
+      : `\u200E- ⚠️ \`${row.channelId}\` — القناة محذوفة`;
   });
 
-  if (rows.length > shown.length) lines.push(`…and ${rows.length - shown.length} more`);
+  if (rows.length > shown.length) lines.push(`…و ${rows.length - shown.length} غيرها`);
 
   return embed({
-    title: `Ignored channels (${rows.length})`,
+    title: `القنوات المتجاهَلة (${rows.length})`,
     description: lines.join('\n'),
-    footer: 'Watched words in these channels never trigger an alert.',
+    footer: 'الكلمات المراقبة في هذي القنوات ما تنبّه أبدًا.',
     color: COLORS.primary,
   });
 }
@@ -533,33 +479,27 @@ async function handleIgnore(ctx) {
       return;
     }
 
-    await ctx.reply(
-      ephemeral({
-        embeds: [
-          errorEmbed(
-            'Unknown channel',
-            `I could not find \`${raw}\`. Mention it as \`#channel\` or paste the channel id.`,
-          ),
-        ],
-      }),
+    await ctx.fail(
+      ephemeral(
+        errorReply(
+          'قناة غير معروفة',
+          `ما لقيت \`${raw}\`. منشنها كـ \`#channel\` أو الصق آيدي القناة.`,
+        ),
+      ),
     );
     return;
   }
 
   if ((channel.guildId ?? channel.guild?.id) !== ctx.guildId) {
-    await ctx.reply(
-      ephemeral({
-        embeds: [errorEmbed('Wrong server', 'Pick a channel from this server.')],
-      }),
+    await ctx.fail(
+      ephemeral(errorReply('سيرفر غلط', 'اختر قناة من هذا السيرفر.')),
     );
     return;
   }
 
   if (!addIgnoredChannel(ctx.guildId, channel.id, ctx.user.id)) {
     await ctx.reply(
-      ephemeral({
-        embeds: [infoEmbed('Already ignored', `${channel} never triggers a keyword alert.`)],
-      }),
+      ephemeral(infoReply('متجاهَلة أصلًا', `${channel} ما تنبّه على أي كلمة مراقَبة.`)),
     );
     return;
   }
@@ -569,16 +509,14 @@ async function handleIgnore(ctx) {
   const isCategory = channel.type === ChannelType.GuildCategory;
 
   await ctx.reply(
-    ephemeral({
-      embeds: [
-        successEmbed(
-          'Channel ignored',
-          isCategory
-            ? `Watched words in ${channel} and every channel inside it no longer trigger an alert.`
-            : `Watched words in ${channel} no longer trigger an alert.`,
-        ),
-      ],
-    }),
+    ephemeral(
+      okReply(
+        'تجاهلت القناة',
+        isCategory
+          ? `الكلمات المراقبة في ${channel} وكل قناة داخله ما عادت تنبّه.`
+          : `الكلمات المراقبة في ${channel} ما عادت تنبّه.`,
+      ),
+    ),
   );
 }
 
@@ -588,29 +526,25 @@ async function handleUnignore(ctx) {
   const { channel, raw } = await resolveIgnoreTarget(ctx);
 
   if (!channel) {
-    await ctx.reply(
-      ephemeral({
-        embeds: [
-          raw
-            ? errorEmbed(
-                'Unknown channel',
-                `I could not find \`${raw}\`. Mention it as \`#channel\` or paste the channel id.`,
-              )
-            : errorEmbed(
-                'Which channel?',
-                `Use \`${ctx.isSlash ? '/watch unignore channel:#channel' : ':-watch unignore #channel'}\`.`,
-              ),
-        ],
-      }),
+    await ctx.fail(
+      ephemeral(
+        raw
+          ? errorReply(
+              'قناة غير معروفة',
+              `ما لقيت \`${raw}\`. منشنها كـ \`#channel\` أو الصق آيدي القناة.`,
+            )
+          : errorReply(
+              'أي قناة؟',
+              `استخدم \`${ctx.isSlash ? '/watch unignore channel:#channel' : ':-watch unignore #channel'}\`.`,
+            ),
+      ),
     );
     return;
   }
 
   if (removeIgnoredChannel(ctx.guildId, channel.id) === 0) {
     await ctx.reply(
-      ephemeral({
-        embeds: [infoEmbed('Not ignored', `${channel} already triggers alerts.`)],
-      }),
+      ephemeral(infoReply('مو متجاهَلة', `${channel} تنبّه أصلًا.`)),
     );
     return;
   }
@@ -618,11 +552,7 @@ async function handleUnignore(ctx) {
   invalidateWatchCache(ctx.guildId);
 
   await ctx.reply(
-    ephemeral({
-      embeds: [
-        successEmbed('Channel watched again', `${channel} will trigger keyword alerts again.`),
-      ],
-    }),
+    ephemeral(okReply('رجعت القناة للمراقبة', `${channel} بتنبّه على الكلمات المراقبة مرة ثانية.`)),
   );
 }
 
@@ -635,17 +565,17 @@ async function handleIgnored(ctx) {
 export default {
   data: new SlashCommandBuilder()
     .setName('watch')
-    .setDescription('Post an alert in a channel when a keyword is mentioned')
+    .setDescription('انشر تنبيه في قناة لما تنذكر كلمة معينة')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
     .setContexts(InteractionContextType.Guild)
     .addSubcommand((sub) =>
       sub
         .setName('add')
-        .setDescription('Watch a word or phrase')
+        .setDescription('راقب كلمة أو عبارة')
         .addStringOption((option) =>
           option
             .setName('keyword')
-            .setDescription('Word or short phrase')
+            .setDescription('كلمة أو عبارة قصيرة')
             .setRequired(true)
             .setMinLength(MIN_TERM_LENGTH)
             .setMaxLength(MAX_TERM_LENGTH),
@@ -654,51 +584,51 @@ export default {
     .addSubcommand((sub) =>
       sub
         .setName('remove')
-        .setDescription('Stop watching a word')
+        .setDescription('وقّف مراقبة كلمة')
         .addStringOption((option) =>
-          option.setName('keyword').setDescription('Word to stop watching').setRequired(true),
+          option.setName('keyword').setDescription('الكلمة اللي تبي توقفها').setRequired(true),
         ),
     )
-    .addSubcommand((sub) => sub.setName('list').setDescription('Show the shared keyword list'))
-    .addSubcommand((sub) => sub.setName('clear').setDescription('Remove every keyword'))
+    .addSubcommand((sub) => sub.setName('list').setDescription('اعرض قائمة الكلمات المشتركة'))
+    .addSubcommand((sub) => sub.setName('clear').setDescription('احذف كل الكلمات'))
     .addSubcommand((sub) =>
       sub
         .setName('channel')
-        .setDescription('Choose where alerts are posted (leave empty to turn alerts off)')
+        .setDescription('اختر وين تنكتب التنبيهات (اتركها فاضية تقفل التنبيهات)')
         .addChannelOption((option) =>
           option
             .setName('channel')
-            .setDescription('Alert channel')
+            .setDescription('قناة التنبيه')
             .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement),
         ),
     )
-    .addSubcommand((sub) => sub.setName('test').setDescription('Post a test alert in the channel'))
+    .addSubcommand((sub) => sub.setName('test').setDescription('انشر تنبيه تجريبي في القناة'))
     .addSubcommand((sub) =>
       sub
         .setName('ignore')
-        .setDescription('Never alert on words in a channel or category')
+        .setDescription('لا تنبّه على الكلمات في قناة أو تصنيف')
         .addChannelOption((option) =>
           option
             .setName('channel')
-            .setDescription('Channel or category to ignore (leave empty to list them)'),
+            .setDescription('قناة أو تصنيف تبي تتجاهله (اتركها فاضية تعرضهم)'),
         ),
     )
     .addSubcommand((sub) =>
       sub
         .setName('unignore')
-        .setDescription('Alert on words in a channel again')
+        .setDescription('رجّع التنبيه على الكلمات في قناة')
         .addChannelOption((option) =>
           option
             .setName('channel')
-            .setDescription('Channel or category to watch again')
+            .setDescription('قناة أو تصنيف ترجعه للمراقبة')
             .setRequired(true),
         ),
     )
-    .addSubcommand((sub) => sub.setName('ignored').setDescription('Show ignored channels')),
+    .addSubcommand((sub) => sub.setName('ignored').setDescription('اعرض القنوات المتجاهَلة')),
 
   name: 'watch',
   aliases: ['alert', 'keywords'],
-  description: 'Post an alert in a channel when a keyword is mentioned',
+  description: 'انشر تنبيه في قناة لما تنذكر كلمة معينة',
   category: 'Community',
   usage:
     'watch add <keyword> | remove <keyword> | list | clear | channel <#channel|off> | test | ignore [#channel] | unignore #channel | ignored',

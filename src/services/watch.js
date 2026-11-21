@@ -128,20 +128,20 @@ export function alertPayload(message, hits) {
     allowedMentions: { parse: ['everyone'] },
     embeds: [
       embed({
-        title: 'Keyword alert',
+        title: 'تنبيه كلمة مراقَبة',
         description: [
           // A leading LRM keeps the sentence left-to-right; an Arabic keyword
           // at the start would otherwise flip the whole line.
-          `\u200E**${terms.slice(0, 200)}** was mentioned by **${author}** in ${channel}.`,
+          `\u200E**${terms.slice(0, 200)}** ذكرها **${author}** في ${channel}.`,
           '',
-          quoted ? `> ${quoted.split('\n').join('\n> ')}` : '_The message has no text._',
+          quoted ? `> ${quoted.split('\n').join('\n> ')}` : '_الرسالة ما فيها نص._',
           '',
-          link ? `[Jump to the message](${link})` : '',
+          link ? `[اقفز للرسالة](${link})` : '',
         ]
           .filter(Boolean)
           .join('\n')
           .slice(0, 4000),
-        footer: `\u200E${hits.length === 1 ? 'Watched keyword' : 'Watched keywords'}: ${terms}`.slice(
+        footer: `\u200E${hits.length === 1 ? 'كلمة مراقَبة' : 'كلمات مراقَبة'}: ${terms}`.slice(
           0,
           2048,
         ),
