@@ -172,6 +172,32 @@ export function formatListDate(year, month, day) {
   return `${pad(day)} ${name}${year ? ` ${year}` : ''}`;
 }
 
+const ARABIC_MONTHS = [
+  'يناير',
+  'فبراير',
+  'مارس',
+  'أبريل',
+  'مايو',
+  'يونيو',
+  'يوليو',
+  'أغسطس',
+  'سبتمبر',
+  'أكتوبر',
+  'نوفمبر',
+  'ديسمبر',
+];
+
+/**
+ * "5 نوفمبر 2026" for Arabic prose (cards, greetings). The birthday list keeps
+ * `formatListDate` because its column is aligned on the English month width.
+ */
+export function formatArabicDate(year, month, day) {
+  const index = Math.min(11, Math.max(0, Number(month ?? 1) - 1));
+  const name = ARABIC_MONTHS[index];
+
+  return `${day} ${name}${year ? ` ${year}` : ''}`;
+}
+
 /**
  * "May 14" style label. Uses a leap reference year so Feb 29 is formattable.
  */

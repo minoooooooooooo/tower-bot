@@ -40,7 +40,7 @@ export default {
     const raw = picked?.id ?? (ctx.isSlash ? ctx.getString('id') : ctx.args[0]);
     const user = picked ?? (raw ? await resolveUser(client, raw, ctx.message) : null);
     const userId = user?.id ?? (/^\d{17,20}$/.test(String(raw ?? '')) ? String(raw) : null);
-    const label = user?.tag ?? (userId ? `<@${userId}>` : 'That user');
+    const label = user?.tag ?? (userId ? `<@${userId}>` : 'هذا العضو');
 
     if (!userId) {
       await fail(

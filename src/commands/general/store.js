@@ -135,7 +135,7 @@ function browseEmbed(ctx, items, balance, owned) {
       'ويقدر الأعضاء يحوّلون لك منها.',
     color: COLORS.primary,
     fields,
-    footer: `اشترِ بـ ${ctx.isSlash ? '/store buy item:' : `${config.prefix}store buy `}<key or name>`,
+    footer: `اشترِ بـ ${ctx.isSlash ? '/store buy item:' : `${config.prefix}store buy `}<المفتاح أو الاسم>`,
   });
 }
 

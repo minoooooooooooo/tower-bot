@@ -1,8 +1,8 @@
 import { config } from '../config.js';
 import { CommandContext } from '../lib/context.js';
-import { errorEmbed } from '../lib/embeds.js';
 import { createLogger } from '../lib/logger.js';
 import { parseArgs } from '../lib/parse-args.js';
+import { errorReply } from '../lib/replies.js';
 import { runCommand } from '../lib/run-command.js';
 import { aliasAllowsChannel, getAlias } from './alias-store.js';
 import { hasGrantForMember } from './permission-store.js';
@@ -71,13 +71,11 @@ export async function runAliasCommand(message, client) {
     await message
       .reply({
         allowedMentions: { parse: [] },
-        embeds: [
-          errorEmbed(
-            'Broken alias',
-            `\`${alias.label}\` points to \`${alias.command}\`, which no longer exists. ` +
-              `Fix it with \`${config.prefix}alias remove ${alias.label}\`.`,
-          ),
-        ],
+        ...errorReply(
+          'الاختصار خربان',
+          `\`${alias.label}\` يشير إلى \`${alias.command}\`، وهذا الأمر ما عاد موجود. ` +
+            `صلّحه بـ \`${config.prefix}alias remove ${alias.label}\`.`,
+        ),
       })
       .catch(() => {});
     return true;
@@ -87,13 +85,11 @@ export async function runAliasCommand(message, client) {
     await message
       .reply({
         allowedMentions: { parse: [] },
-        embeds: [
-          errorEmbed(
-            'No prefix form',
-            `\`${alias.label}\` points to \`${command.name}\`, which only exists as a slash command. ` +
-              `Change it with \`${config.prefix}alias add\`.`,
-          ),
-        ],
+        ...errorReply(
+          'ما له صيغة بادئة',
+          `\`${alias.label}\` يشير إلى \`${command.name}\`، وهذا الأمر موجود كسلاش بس. ` +
+            `غيّره بـ \`${config.prefix}alias add\`.`,
+        ),
       })
       .catch(() => {});
     return true;

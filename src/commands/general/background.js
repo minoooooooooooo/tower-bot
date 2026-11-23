@@ -64,7 +64,11 @@ const WALLPAPER_PROBLEMS = {
   type: 'الملف لازم يكون PNG أو JPEG أو WebP أو GIF.',
   download: 'ما قدرت أنزّل الصورة من ديسكورد. جرّب ترفعها مرة ثانية.',
   decode: 'الملف ما انقرأ كصورة. جرّب صورة ثانية.',
+  dimensions: 'أبعاد الصورة ما تناسب البطاقة. جرّب صورة أكبر.',
   path: 'ما أقدر أستخدم هذي الصورة كخلفية.',
+  name: 'اكتب اسم للخلفية (1–40 حرف).',
+  image: 'ارفق صورة للخلفية.',
+  unknown: 'هذي الخلفية ما عادت موجودة.',
 };
 
 function wallpaperProblem(error) {
@@ -218,7 +222,7 @@ function listEmbed(ctx, level, stored, hasCustom, owned, manager = false) {
       { name: 'تصاميم المتجر', value: paidLine, inline: false },
       { name: 'السلّم', value: lines.join('\n'), inline: false },
     ],
-    footer: `اختر بـ ${ctx.isSlash ? '/background set design:' : ':-background set '}<name or level>`,
+    footer: `اختر بـ ${ctx.isSlash ? '/background set design:' : ':-background set '}<الاسم أو المستوى>`,
   });
 }
 
@@ -246,7 +250,7 @@ async function handleSet(ctx, client, query) {
       ctx,
       errorReply(
         'اختر تصميم',
-        `استخدم \`${ctx.isSlash ? '/background set design:' : ':-background set '}<name or level>\`، مثل \`15\` أو \`Tide\` أو \`default\` أو \`custom\`.`,
+        `استخدم \`${ctx.isSlash ? '/background set design:' : ':-background set '}<الاسم أو المستوى>\`، مثل \`15\` أو \`المد\` أو \`default\` أو \`custom\`.`,
       ),
     );
     return;
@@ -480,7 +484,7 @@ export default {
         .addStringOption((option) =>
           option
             .setName('design')
-            .setDescription('الاسم أو المستوى: 15، Tide، default، custom')
+            .setDescription('الاسم أو المستوى: 15، المد، default، custom')
             .setRequired(true)
             .setMaxLength(40),
         ),

@@ -69,13 +69,20 @@ export function formatDuration(ms) {
  * number plus unit gets wrong.
  */
 const ARABIC_UNITS = {
+  second: ['ثانية', 'ثانيتين', 'ثواني', 'ثانية'],
   minute: ['دقيقة', 'دقيقتين', 'دقائق', 'دقيقة'],
   hour: ['ساعة', 'ساعتين', 'ساعات', 'ساعة'],
   day: ['يوم', 'يومين', 'أيام', 'يوم'],
+  week: ['أسبوع', 'أسبوعين', 'أسابيع', 'أسبوع'],
+  year: ['سنة', 'سنتين', 'سنوات', 'سنة'],
 };
 
-function arabicCount(count, unit) {
-  const [one, two, few, many] = ARABIC_UNITS[unit];
+/**
+ * Arabic count with the dual and the 3–10 plural, e.g. "سنتين", "3 أيام".
+ * Shared by the reply formatters and the profile card.
+ */
+export function formatArabicCount(count, unit) {
+  const [one, two, few, many] = ARABIC_UNITS[unit] ?? ARABIC_UNITS.minute;
 
   if (count === 1) return one;
   if (count === 2) return two;
@@ -83,6 +90,8 @@ function arabicCount(count, unit) {
 
   return `${count} ${many}`;
 }
+
+const arabicCount = formatArabicCount;
 
 /** "3 أيام" / "ساعتين" / "أقل من دقيقة". */
 export function formatDurationArabic(ms) {

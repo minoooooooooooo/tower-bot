@@ -4,7 +4,8 @@ import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { createCanvas, GifEncoder, GlobalFonts, loadImage } from '@napi-rs/canvas';
 import { config, rootDir } from '../config.js';
-import { effectiveDay, formatListDate, zonedDate } from '../lib/dates.js';
+import { effectiveDay, formatArabicDate, zonedDate } from '../lib/dates.js';
+import { formatArabicCount } from '../lib/durations.js';
 import { createLogger } from '../lib/logger.js';
 import { backgroundArtFile } from './profile-backgrounds.js';
 import {
@@ -213,14 +214,14 @@ const CUSTOM_LAYOUT = {
 };
 
 const PANEL_LABELS = {
-  title: 'TITLE',
-  coins: 'COINS',
-  level: 'LEVEL',
-  rank: 'RANK',
-  vex: 'VEX POINT',
-  nightmare: 'NIGHTMARE POINTS',
-  punishments: 'PUNISHMENTS',
-  behavior: 'GOOD BEHAVIOR',
+  title: 'العنوان',
+  coins: 'الكوينز',
+  level: 'المستوى',
+  rank: 'الترتيب',
+  vex: 'نقاط فيكس',
+  nightmare: 'نقاط الكوابيس',
+  punishments: 'العقوبات',
+  behavior: 'السلوك الحسن',
 };
 
 // The lower-left of the template is open cloud artwork with no UI panel, so the
@@ -237,11 +238,11 @@ const STATUS_GLASS = 'rgba(255, 255, 255, 0.13)';
 const STATUS_EDGE = 'rgba(255, 255, 255, 0.36)';
 
 const PRESENCE = {
-  online: { label: 'Online', color: '#3ba55d' },
-  idle: { label: 'Idle', color: '#faa81a' },
-  dnd: { label: 'Do Not Disturb', color: '#ed4245' },
-  offline: { label: 'Offline', color: '#8b909a' },
-  streaming: { label: 'Streaming', color: '#a970ff' },
+  online: { label: 'متصل', color: '#3ba55d' },
+  idle: { label: 'بعيد', color: '#faa81a' },
+  dnd: { label: 'لا تزعج', color: '#ed4245' },
+  offline: { label: 'غير متصل', color: '#8b909a' },
+  streaming: { label: 'بث مباشر', color: '#a970ff' },
 };
 
 let templatePromise = null;
@@ -447,9 +448,23 @@ function drawPanelLabel(ctx, panel, label) {
   ctx.textAlign = 'left';
   ctx.textBaseline = 'alphabetic';
   ctx.fillStyle = 'rgba(255, 255, 255, 0.72)';
-  ctx.font = fontOf(26, 600, label);
+  ctx.font = fontOf(24, 600, label);
   ctx.fillText(label, panel.x + 44, panel.y + 56);
   ctx.restore();
+}
+
+/**
+ * The bundled `card.png` has no baked labels, so the template draws its own in
+ * Arabic. Authored `template` art already carries labels, and wallpapers get
+ * theirs from `drawCustomChrome`.
+ */
+function drawTemplateLabels(ctx) {
+  for (const [key, panel] of Object.entries(PANELS)) {
+    drawPanelLabel(ctx, panel, PANEL_LABELS[key]);
+  }
+
+  drawPanelLabel(ctx, CUSTOM_LAYOUT.title, PANEL_LABELS.title);
+  drawPanelLabel(ctx, CUSTOM_LAYOUT.xp, 'نقاط الخبرة');
 }
 
 /**
@@ -486,7 +501,7 @@ function drawCustomChrome(ctx) {
   }
 
   drawPanelLabel(ctx, CUSTOM_LAYOUT.title, PANEL_LABELS.title);
-  drawPanelLabel(ctx, CUSTOM_LAYOUT.xp, 'XP');
+  drawPanelLabel(ctx, CUSTOM_LAYOUT.xp, 'نقاط الخبرة');
 }
 
 /**
@@ -611,7 +626,7 @@ function drawName(ctx, member) {
 }
 
 function drawTitle(ctx, title) {
-  const value = title?.trim() || 'No Title';
+  const value = title?.trim() || 'بدون عنوان';
   const fitted = fitText(ctx, value, {
     size: 42,
     weight: 600,
@@ -688,33 +703,33 @@ function drawXpBar(ctx, progress, accent = FILL_COLOR) {
   ctx.fillText(`${progress} / 100`, TRACK.x + TRACK.width, TRACK.y - 18);
 }
 
-/** "05 Nov 2026" in the bot's time zone. */
+/** "5 نوفمبر 2026" in the bot's time zone. */
 function formatCardDate(ms) {
   if (!ms) return '—';
 
   const { year, month, day } = zonedDate(new Date(ms), config.timezone);
-  return formatListDate(year, month, day);
+  return formatArabicDate(year, month, day);
 }
 
-/** "12 min ago", "3 days ago", or the date when it is older than a month. */
+/** "قبل 12 دقيقة", "قبل 3 أيام", or the date when it is older than a month. */
 function formatAgo(ms, now = Date.now()) {
-  if (!ms) return 'No activity yet';
+  if (!ms) return 'ما فيه نشاط بعد';
 
   const diff = Math.max(0, now - ms);
   const minutes = Math.floor(diff / 60_000);
 
-  if (minutes < 1) return 'Just now';
-  if (minutes < 60) return `${minutes} min ago`;
+  if (minutes < 1) return 'الآن';
+  if (minutes < 60) return `قبل ${formatArabicCount(minutes, 'minute')}`;
 
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+  if (hours < 24) return `قبل ${formatArabicCount(hours, 'hour')}`;
 
   const days = Math.floor(hours / 24);
-  if (days < 7) return `${days} day${days === 1 ? '' : 's'} ago`;
+  if (days < 7) return `قبل ${formatArabicCount(days, 'day')}`;
 
   if (days < 30) {
     const weeks = Math.floor(days / 7);
-    return `${weeks} week${weeks === 1 ? '' : 's'} ago`;
+    return `قبل ${formatArabicCount(weeks, 'week')}`;
   }
 
   return formatCardDate(ms);
@@ -724,15 +739,16 @@ function formatAgo(ms, now = Date.now()) {
 function formatCardVoice(seconds) {
   const total = Math.max(0, Math.round(Number(seconds) || 0));
 
-  if (total < 60) return `${total}s`;
+  if (!total) return '—';
+  if (total < 60) return formatArabicCount(total, 'second');
 
   const days = Math.floor(total / 86_400);
   const hours = Math.floor((total % 86_400) / 3_600);
   const minutes = Math.floor((total % 3_600) / 60);
 
-  if (days > 0) return `${days}d ${hours}h`;
-  if (hours > 0) return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
-  return `${minutes}m`;
+  if (days > 0) return formatArabicCount(days, 'day');
+  if (hours > 0) return formatArabicCount(hours, 'hour');
+  return formatArabicCount(Math.max(1, minutes), 'minute');
 }
 
 /** Age today, not the age the member turns at their next birthday. */
@@ -863,10 +879,10 @@ function drawStatusPanel(ctx, status) {
   const presence = PRESENCE[streaming ? 'streaming' : presenceStatus];
   const active = presenceStatus !== 'offline';
   const lastSeen = active
-    ? 'Active now'
+    ? 'نشط الآن'
     : formatAgo(status.lastActiveAt ?? status.lastMessageAt, now);
 
-  drawInkText(ctx, 'MEMBER STATUS', STATUS_LEFT, 346, {
+  drawInkText(ctx, 'حالة العضو', STATUS_LEFT, 346, {
     size: 19,
     weight: 700,
     color: STATUS_LABEL,
@@ -938,19 +954,19 @@ function drawStatusPanel(ctx, status) {
   const tileY = 512;
   const tileWidth = (STATUS_WIDTH - 14) / 2;
 
-  drawStatTile(ctx, { x: STATUS_LEFT, y: tileY }, 'MESSAGES', formatNumber(status.messages));
+  drawStatTile(ctx, { x: STATUS_LEFT, y: tileY }, 'الرسائل', formatNumber(status.messages));
   drawStatTile(
     ctx,
     { x: STATUS_LEFT + tileWidth + 14, y: tileY },
-    'VOICE TIME',
+    'وقت الصوت',
     formatCardVoice(status.voiceSeconds),
   );
 
   let rowY = 664;
 
   for (const [labelText, value] of [
-    ['JOINED', formatCardDate(status.joinedAt)],
-    ['ACCOUNT CREATED', formatCardDate(status.createdAt)],
+    ['الانضمام', formatCardDate(status.joinedAt)],
+    ['إنشاء الحساب', formatCardDate(status.createdAt)],
   ]) {
     drawInkText(ctx, labelText, STATUS_LEFT, rowY, {
       size: 19,
@@ -1012,7 +1028,7 @@ function drawStatusPanel(ctx, status) {
   const rolesHeight = rows > 0 ? 14 + rows * 42 : 48;
   const rolesStart = rolesTop + Math.max(0, (rolesBottom - rolesTop - rolesHeight) / 2);
 
-  drawInkText(ctx, 'TOP ROLES', STATUS_LEFT, rolesStart + 6, {
+  drawInkText(ctx, 'أعلى الرتب', STATUS_LEFT, rolesStart + 6, {
     size: 19,
     weight: 700,
     color: STATUS_LABEL,
@@ -1027,7 +1043,7 @@ function drawStatusPanel(ctx, status) {
   }
 
   if (drawn === 0) {
-    drawInkText(ctx, 'No roles', STATUS_LEFT, rolesStart + 40, {
+    drawInkText(ctx, 'ما فيه رتب', STATUS_LEFT, rolesStart + 40, {
       size: 20,
       weight: 500,
       color: STATUS_DIM,
@@ -1036,14 +1052,14 @@ function drawStatusPanel(ctx, status) {
 
   drawStatusDivider(ctx, blockTop);
 
-  drawInkText(ctx, 'BIRTHDAY', STATUS_LEFT, blockTop + 24, {
+  drawInkText(ctx, 'عيد الميلاد', STATUS_LEFT, blockTop + 24, {
     size: 18,
     weight: 700,
     color: STATUS_LABEL,
   });
 
   if (!hasBirthday) {
-    const placeholder = status.birthdayHidden ? 'Hidden by member' : 'Not shared';
+    const placeholder = status.birthdayHidden ? 'مخفي من العضو' : 'ما انشارك';
 
     drawInkText(ctx, placeholder, STATUS_LEFT, blockTop + 58, {
       size: 22,
@@ -1053,7 +1069,7 @@ function drawStatusPanel(ctx, status) {
     return;
   }
 
-  const date = formatListDate(birthday.year ?? null, birthday.month, birthday.day);
+  const date = formatArabicDate(birthday.year ?? null, birthday.month, birthday.day);
   const age =
     birthday.year && birthday.timezone
       ? currentAge(birthday.year, birthday.month, birthday.day, birthday.timezone, now)
@@ -1071,7 +1087,7 @@ function drawStatusPanel(ctx, status) {
   });
 
   if (age !== null) {
-    drawInkText(ctx, `${age} years`, STATUS_RIGHT, blockTop + 58, {
+    drawInkText(ctx, formatArabicCount(age, 'year'), STATUS_RIGHT, blockTop + 58, {
       size: 21,
       weight: 600,
       color: STATUS_LABEL,
@@ -1275,6 +1291,9 @@ async function renderProfileCardNow({ member, stats, status = null, background =
   }
 
   drawCardContent(ctx, { member, avatar, stats, status, background, coin });
+
+  // The bundled template no longer bakes its labels, so draw them here.
+  if (!custom && !authored) drawTemplateLabels(ctx);
 
   return { buffer: canvas.toBuffer('image/png'), extension: 'png' };
 }

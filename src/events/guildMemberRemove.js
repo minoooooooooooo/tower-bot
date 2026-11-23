@@ -23,7 +23,7 @@ export default {
         guildId: member.guild.id,
         userId: member.id,
         releasedBy: client?.user?.id ?? null,
-        reason: 'Member left the server',
+        reason: 'العضو طلع من السيرفر',
       });
 
       await sendExileLog(member.guild, {
@@ -32,10 +32,10 @@ export default {
         actorId: client?.user?.id ?? active.createdBy,
         level: active.level,
         roleId: active.roleId,
-        reason: 'Member left the server (automatic release)',
+        reason: 'العضو طلع من السيرفر (رفع تلقائي)',
         at: active.createdAt,
         releasedAt: Date.now(),
-        footer: 'Automatic: the member is no longer in the server',
+        footer: 'تلقائي: العضو ما عاد موجود في السيرفر',
       });
     } catch (error) {
       logger.error(`Could not release the exile of ${member.id} after they left`, error);

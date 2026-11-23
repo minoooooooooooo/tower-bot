@@ -53,15 +53,15 @@ export async function announceActivityUrl(client, url) {
   try {
     await channel.send({
       content: [
-        '**Store address updated**',
+        '**تحدّث عنوان المتجر**',
         '',
         '```',
         address,
         '```',
         '',
-        'Developer Portal → **Activities → URL Mappings** → prefix `/` → paste the address above.',
+        'روح لبوابة المطورين، **Activities → URL Mappings**، اختر البادئة `/`، والصق العنوان فوق.',
         '',
-        '-# The free tunnel address changes every time the bot restarts.',
+        '-# عنوان النفق المجاني يتغيّر مع كل إعادة تشغيل للبوت.',
       ].join('\n'),
       allowedMentions: { parse: [] },
     });

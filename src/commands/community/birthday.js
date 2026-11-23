@@ -826,8 +826,8 @@ async function handleTimezone(ctx) {
 
   if (!isValidTimeZone(input.zone)) {
     await ctx.reply(errorReply(
-          'Invalid time zone',
-          `"${input.zone}" is not a valid IANA time zone. Try something like \`Europe/Berlin\` or \`America/New_York\`.`,
+          'المنطقة الزمنية غير صحيحة',
+          `\`${input.zone}\` ما هي منطقة IANA معروفة. جرّب مثل \`Asia/Riyadh\` أو \`Europe/Berlin\`.`,
         ),);
     return;
   }

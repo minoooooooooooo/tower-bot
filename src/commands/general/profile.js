@@ -30,11 +30,11 @@ import { ownedBackgroundIds } from '../../services/store.js';
 const logger = createLogger('profile');
 
 const ACTIVITY_LABELS = {
-  0: 'Playing',
-  1: 'Streaming',
-  2: 'Listening to',
-  3: 'Watching',
-  5: 'Competing in',
+  0: 'يلعب',
+  1: 'يبث',
+  2: 'يستمع إلى',
+  3: 'يشاهد',
+  5: 'ينافس في',
 };
 
 function timestampOf(value) {
@@ -55,7 +55,7 @@ function presenceFor(member) {
   const activities = Array.isArray(presence.activities) ? presence.activities : [];
   const custom = activities.find((activity) => activity.type === 4);
   const current = activities.find((activity) => activity.type !== 4);
-  const verb = ACTIVITY_LABELS[current?.type] ?? 'Playing';
+  const verb = ACTIVITY_LABELS[current?.type] ?? 'يلعب';
 
   return {
     status: presence.status ?? 'offline',

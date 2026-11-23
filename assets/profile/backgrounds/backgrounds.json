@@ -4,12 +4,12 @@
   "backgrounds": [
     {
       "id": "default",
-      "name": "Classic",
+      "name": "كلاسيكي",
       "level": 1
     },
     {
       "id": "tier-05",
-      "name": "Ember",
+      "name": "جمر",
       "level": 5,
       "price": 0,
       "artMode": "wallpaper",
@@ -21,7 +21,7 @@
     },
     {
       "id": "tier-10",
-      "name": "Verdant",
+      "name": "مروج",
       "level": 10,
       "price": 0,
       "artMode": "wallpaper",
@@ -33,7 +33,7 @@
     },
     {
       "id": "tier-15",
-      "name": "Tide",
+      "name": "مدّ",
       "level": 15,
       "price": 0,
       "artMode": "wallpaper",
@@ -45,7 +45,7 @@
     },
     {
       "id": "tier-20",
-      "name": "Amethyst",
+      "name": "جمشت",
       "level": 20,
       "price": 0,
       "artMode": "wallpaper",
@@ -57,7 +57,7 @@
     },
     {
       "id": "tier-25",
-      "name": "Rose",
+      "name": "ورد",
       "level": 25,
       "price": 0,
       "artMode": "wallpaper",
@@ -69,7 +69,7 @@
     },
     {
       "id": "tier-30",
-      "name": "Solar",
+      "name": "شمسي",
       "level": 30,
       "price": 0,
       "artMode": "wallpaper",
@@ -81,7 +81,7 @@
     },
     {
       "id": "tier-35",
-      "name": "Frost",
+      "name": "صقيع",
       "level": 35,
       "price": 0,
       "artMode": "wallpaper",
@@ -93,7 +93,7 @@
     },
     {
       "id": "tier-40",
-      "name": "Void",
+      "name": "فراغ",
       "level": 40,
       "price": 0,
       "artMode": "wallpaper",
@@ -105,7 +105,7 @@
     },
     {
       "id": "tier-45",
-      "name": "Prismatic",
+      "name": "طيف",
       "level": 45,
       "price": 0,
       "artMode": "wallpaper",
@@ -117,7 +117,7 @@
     },
     {
       "id": "tier-50",
-      "name": "Celestial",
+      "name": "سماوي",
       "level": 50,
       "price": 0,
       "artMode": "wallpaper",
@@ -129,7 +129,7 @@
     },
     {
       "id": "bg-01-sakura-dusk",
-      "name": "Sakura Dusk",
+      "name": "غروب الساكورا",
       "level": 1,
       "price": 130,
       "artMode": "wallpaper",
@@ -141,7 +141,7 @@
     },
     {
       "id": "bg-02-golden-hour",
-      "name": "Golden Hour",
+      "name": "الساعة الذهبية",
       "level": 1,
       "price": 140,
       "artMode": "wallpaper",
@@ -153,7 +153,7 @@
     },
     {
       "id": "bg-03-arctic-aurora",
-      "name": "Arctic Aurora",
+      "name": "شفق القطب",
       "level": 1,
       "price": 150,
       "artMode": "wallpaper",
@@ -165,7 +165,7 @@
     },
     {
       "id": "bg-04-emerald-night",
-      "name": "Emerald Night",
+      "name": "ليل الزمرد",
       "level": 1,
       "price": 140,
       "artMode": "wallpaper",
@@ -177,7 +177,7 @@
     },
     {
       "id": "bg-05-violet-storm",
-      "name": "Violet Storm",
+      "name": "عاصفة بنفسجية",
       "level": 1,
       "price": 200,
       "artMode": "wallpaper",
@@ -189,7 +189,7 @@
     },
     {
       "id": "bg-06-crimson-eclipse",
-      "name": "Crimson Eclipse",
+      "name": "كسوف قرمزي",
       "level": 1,
       "price": 210,
       "artMode": "wallpaper",
@@ -201,7 +201,7 @@
     },
     {
       "id": "bg-07-ocean-depths",
-      "name": "Ocean Depths",
+      "name": "أعماق المحيط",
       "level": 1,
       "price": 130,
       "artMode": "wallpaper",
@@ -213,7 +213,7 @@
     },
     {
       "id": "bg-08-cotton-candy",
-      "name": "Cotton Candy",
+      "name": "غزل البنات",
       "level": 1,
       "price": 70,
       "artMode": "wallpaper",
@@ -225,7 +225,7 @@
     },
     {
       "id": "bg-09-desert-mirage",
-      "name": "Desert Mirage",
+      "name": "سراب الصحراء",
       "level": 1,
       "price": 120,
       "artMode": "wallpaper",
@@ -237,7 +237,7 @@
     },
     {
       "id": "bg-10-neon-tokyo",
-      "name": "Neon Tokyo",
+      "name": "طوكيو النيون",
       "level": 1,
       "price": 220,
       "artMode": "wallpaper",
@@ -249,7 +249,7 @@
     },
     {
       "id": "bg-11-autumn-maple",
-      "name": "Autumn Maple",
+      "name": "قيقب الخريف",
       "level": 1,
       "price": 135,
       "artMode": "wallpaper",
@@ -261,7 +261,7 @@
     },
     {
       "id": "bg-12-winter-silence",
-      "name": "Winter Silence",
+      "name": "صمت الشتاء",
       "level": 1,
       "price": 65,
       "artMode": "wallpaper",
@@ -273,7 +273,7 @@
     },
     {
       "id": "bg-13-mint-sorbet",
-      "name": "Mint Sorbet",
+      "name": "نعناع مثلج",
       "level": 1,
       "price": 60,
       "artMode": "wallpaper",
@@ -285,7 +285,7 @@
     },
     {
       "id": "bg-14-lava-core",
-      "name": "Lava Core",
+      "name": "قلب الحمم",
       "level": 1,
       "price": 230,
       "artMode": "wallpaper",
@@ -297,7 +297,7 @@
     },
     {
       "id": "bg-15-lavender-field",
-      "name": "Lavender Field",
+      "name": "حقل اللافندر",
       "level": 1,
       "price": 65,
       "artMode": "wallpaper",
@@ -309,7 +309,7 @@
     },
     {
       "id": "bg-16-midnight-gold",
-      "name": "Midnight Gold",
+      "name": "ذهب منتصف الليل",
       "level": 1,
       "price": 150,
       "artMode": "wallpaper",
@@ -321,7 +321,7 @@
     },
     {
       "id": "bg-17-peach-fizz",
-      "name": "Peach Fizz",
+      "name": "خوخ فوّار",
       "level": 1,
       "price": 60,
       "artMode": "wallpaper",
@@ -333,7 +333,7 @@
     },
     {
       "id": "bg-18-toxic-slime",
-      "name": "Toxic Slime",
+      "name": "وحل سام",
       "level": 1,
       "price": 210,
       "artMode": "wallpaper",
@@ -345,7 +345,7 @@
     },
     {
       "id": "bg-19-royal-indigo",
-      "name": "Royal Indigo",
+      "name": "نيلي ملكي",
       "level": 1,
       "price": 200,
       "artMode": "wallpaper",
@@ -357,7 +357,7 @@
     },
     {
       "id": "bg-20-rose-gold",
-      "name": "Rose Gold",
+      "name": "ذهب وردي",
       "level": 1,
       "price": 80,
       "artMode": "wallpaper",
@@ -369,7 +369,7 @@
     },
     {
       "id": "bg-21-cyber-sunset",
-      "name": "Cyber Sunset",
+      "name": "غروب سايبراني",
       "level": 1,
       "price": 220,
       "artMode": "wallpaper",
@@ -381,7 +381,7 @@
     },
     {
       "id": "bg-22-moonlit-teal",
-      "name": "Moonlit Teal",
+      "name": "فيروزي قمري",
       "level": 1,
       "price": 140,
       "artMode": "wallpaper",
@@ -393,7 +393,7 @@
     },
     {
       "id": "bg-23-blood-orange",
-      "name": "Blood Orange",
+      "name": "برتقالي دموي",
       "level": 1,
       "price": 210,
       "artMode": "wallpaper",
@@ -405,7 +405,7 @@
     },
     {
       "id": "bg-24-lilac-dream",
-      "name": "Lilac Dream",
+      "name": "حلم الليلك",
       "level": 1,
       "price": 70,
       "artMode": "wallpaper",
@@ -417,7 +417,7 @@
     },
     {
       "id": "bg-25-glacier",
-      "name": "Glacier",
+      "name": "نهر جليدي",
       "level": 1,
       "price": 75,
       "artMode": "wallpaper",
@@ -429,7 +429,7 @@
     },
     {
       "id": "bg-26-honey-amber",
-      "name": "Honey Amber",
+      "name": "عنبر عسلي",
       "level": 1,
       "price": 125,
       "artMode": "wallpaper",
@@ -441,7 +441,7 @@
     },
     {
       "id": "bg-27-coral-reef",
-      "name": "Coral Reef",
+      "name": "شعاب مرجانية",
       "level": 1,
       "price": 135,
       "artMode": "wallpaper",
@@ -453,7 +453,7 @@
     },
     {
       "id": "bg-28-plum-smoke",
-      "name": "Plum Smoke",
+      "name": "دخان البرقوق",
       "level": 1,
       "price": 190,
       "artMode": "wallpaper",
@@ -465,7 +465,7 @@
     },
     {
       "id": "bg-29-spring-meadow",
-      "name": "Spring Meadow",
+      "name": "مرج الربيع",
       "level": 1,
       "price": 70,
       "artMode": "wallpaper",
@@ -477,7 +477,7 @@
     },
     {
       "id": "bg-30-steel-dawn",
-      "name": "Steel Dawn",
+      "name": "فجر فولاذي",
       "level": 1,
       "price": 120,
       "artMode": "wallpaper",
@@ -489,7 +489,7 @@
     },
     {
       "id": "bg-31-candy-rainbow",
-      "name": "Candy Rainbow",
+      "name": "قوس حلوى",
       "level": 1,
       "price": 320,
       "artMode": "wallpaper",
@@ -501,7 +501,7 @@
     },
     {
       "id": "bg-32-sapphire-rain",
-      "name": "Sapphire Rain",
+      "name": "مطر الياقوت",
       "level": 1,
       "price": 145,
       "artMode": "wallpaper",
@@ -513,7 +513,7 @@
     },
     {
       "id": "bg-33-sunflower",
-      "name": "Sunflower",
+      "name": "عبّاد الشمس",
       "level": 1,
       "price": 220,
       "artMode": "wallpaper",
@@ -525,7 +525,7 @@
     },
     {
       "id": "bg-34-black-ink",
-      "name": "Black Ink",
+      "name": "حبر أسود",
       "level": 1,
       "price": 340,
       "artMode": "wallpaper",
@@ -537,7 +537,7 @@
     },
     {
       "id": "bg-35-sepia-memory",
-      "name": "Sepia Memory",
+      "name": "ذكرى قديمة",
       "level": 1,
       "price": 65,
       "artMode": "wallpaper",
@@ -549,7 +549,7 @@
     },
     {
       "id": "bg-36-pink-lemonade",
-      "name": "Pink Lemonade",
+      "name": "ليمونادة وردية",
       "level": 1,
       "price": 75,
       "artMode": "wallpaper",
@@ -561,7 +561,7 @@
     },
     {
       "id": "bg-37-deep-space",
-      "name": "Deep Space",
+      "name": "فضاء سحيق",
       "level": 1,
       "price": 350,
       "artMode": "wallpaper",
@@ -573,7 +573,7 @@
     },
     {
       "id": "bg-38-fire-opal",
-      "name": "Fire Opal",
+      "name": "أوبال ناري",
       "level": 1,
       "price": 220,
       "artMode": "wallpaper",
@@ -585,7 +585,7 @@
     },
     {
       "id": "bg-39-jade-temple",
-      "name": "Jade Temple",
+      "name": "معبد اليشم",
       "level": 1,
       "price": 130,
       "artMode": "wallpaper",
@@ -597,7 +597,7 @@
     },
     {
       "id": "bg-40-twilight-peach",
-      "name": "Twilight Peach",
+      "name": "خوخ الغروب",
       "level": 1,
       "price": 80,
       "artMode": "wallpaper",
@@ -609,7 +609,7 @@
     },
     {
       "id": "bg-41-electric-lime",
-      "name": "Electric Lime",
+      "name": "ليمون كهربائي",
       "level": 1,
       "price": 300,
       "artMode": "wallpaper",
@@ -621,7 +621,7 @@
     },
     {
       "id": "bg-42-ruby-snow",
-      "name": "Ruby Snow",
+      "name": "ثلج ياقوتي",
       "level": 1,
       "price": 200,
       "artMode": "wallpaper",
@@ -633,7 +633,7 @@
     },
     {
       "id": "bg-43-copper-storm",
-      "name": "Copper Storm",
+      "name": "عاصفة نحاسية",
       "level": 1,
       "price": 125,
       "artMode": "wallpaper",
@@ -645,7 +645,7 @@
     },
     {
       "id": "bg-44-ultraviolet",
-      "name": "Ultraviolet",
+      "name": "فوق بنفسجي",
       "level": 1,
       "price": 230,
       "artMode": "wallpaper",
@@ -657,7 +657,7 @@
     },
     {
       "id": "bg-45-daybreak-mist",
-      "name": "Daybreak Mist",
+      "name": "ضباب الفجر",
       "level": 1,
       "price": 60,
       "artMode": "wallpaper",
@@ -669,7 +669,7 @@
     },
     {
       "id": "bg-46-tropical-punch",
-      "name": "Tropical Punch",
+      "name": "بونش استوائي",
       "level": 1,
       "price": 140,
       "artMode": "wallpaper",
@@ -681,7 +681,7 @@
     },
     {
       "id": "bg-47-silver-moon",
-      "name": "Silver Moon",
+      "name": "قمر فضي",
       "level": 1,
       "price": 75,
       "artMode": "wallpaper",
@@ -693,7 +693,7 @@
     },
     {
       "id": "bg-48-volcano-ash",
-      "name": "Volcano Ash",
+      "name": "رماد البركان",
       "level": 1,
       "price": 310,
       "artMode": "wallpaper",
@@ -705,7 +705,7 @@
     },
     {
       "id": "bg-49-spectrum-wave",
-      "name": "Spectrum Wave",
+      "name": "موجة الطيف",
       "level": 1,
       "price": 360,
       "artMode": "wallpaper",
@@ -717,7 +717,7 @@
     },
     {
       "id": "bg-50-pearl-sea",
-      "name": "Pearl Sea",
+      "name": "بحر اللؤلؤ",
       "level": 1,
       "price": 60,
       "artMode": "wallpaper",
