@@ -6,7 +6,7 @@ optional and replaces the treatment for that id. The ten tier pictures ship in
 this folder as `tier-05.jpg` … and `tier-50.png`, and every tier is set to
 `"artMode": "wallpaper"`.
 
-The bundled manifest now holds **11 free designs** (Classic plus the ten tiers)
+The bundled manifest now holds **11 free designs** (كلاسيكي plus the ten tiers)
 and **50 shop designs** (`bg-01-sakura-dusk` … `bg-50-pearl-sea`). All 50 use
 `artMode: "wallpaper"`, a generated `theme` from their palette, and a price from
 60 to 360 coins. Paid designs are sold as `design:<id>`; they never auto-equip
@@ -25,10 +25,15 @@ work) and set `artMode` on that design in `backgrounds.json`.
 So a raw background **is** enough — but only in `wallpaper` mode. In the default
 `template` mode a raw picture would leave the panels and labels missing.
 
+The bundled `card.png` ships **without** any label text; the renderer draws the
+Arabic labels (`العنوان`, `الكوينز`, `المستوى`, …) itself at fixed positions.
+`template` artwork is expected to bring its own labels, because the renderer
+only adds values to authored cards.
+
 ```json
 {
   "id": "tier-05",
-  "name": "Ember",
+  "name": "جمر",
   "level": 5,
   "artMode": "wallpaper",
   "theme": { "from": "#ff7a1a", "to": "#ffd166", "accent": "#ffb347" }
@@ -45,6 +50,9 @@ matches the art.
 - Keep the six value panels at the positions in `card.png`: rank `622,292`,
   level `1222,292`, vex `622,482`, nightmare `1222,482`, punishments `622,676`,
   behavior `1222,676`, each about `576 × 166`.
+- **Draw your own panel labels** (about 24 px, at `panel.x + 44`,
+  baseline `panel.y + 56`): the bundled template no longer has any, and the
+  renderer only adds the Arabic labels to that template, not to authored art.
 - Keep the title baseline at `198` and the XP track at `681,980` size
   `1059 × 49`.
 - Leave the lower-left area fairly open: the member-status block draws light
@@ -70,7 +78,7 @@ A **Manage Server** member can use the Activity store → **Backgrounds**:
 - **Edit** changes the name, price, level or artwork of an existing design.
 - **Delete** hides a bundled design with `{ "id": "...", "deleted": true }` in
   `data/backgrounds.json`, or removes an uploaded design and its art. Members
-  still using it fall back to Classic.
+  still using it fall back to كلاسيكي.
 
 `data/backgrounds.json` is an **overlay**, not a replacement: entries merge over
 the bundled manifest by id, new ids are appended, and `deleted: true` hides a
@@ -88,16 +96,16 @@ thumbnails, and an Activity upload generates one automatically.
 
 | Id | Level | Design |
 |---|---|---|
-| `tier-05` | 5 | Ember |
-| `tier-10` | 10 | Verdant |
-| `tier-15` | 15 | Tide |
-| `tier-20` | 20 | Amethyst |
-| `tier-25` | 25 | Rose |
-| `tier-30` | 30 | Solar |
-| `tier-35` | 35 | Frost |
-| `tier-40` | 40 | Void |
-| `tier-45` | 45 | Prismatic |
-| `tier-50` | 50 | Celestial |
+| `tier-05` | 5 | جمر |
+| `tier-10` | 10 | مروج |
+| `tier-15` | 15 | مدّ |
+| `tier-20` | 20 | جمشت |
+| `tier-25` | 25 | ورد |
+| `tier-30` | 30 | شمسي |
+| `tier-35` | 35 | صقيع |
+| `tier-40` | 40 | فراغ |
+| `tier-45` | 45 | طيف |
+| `tier-50` | 50 | سماوي |
 
 A custom wallpaper uploaded by a member is always treated as a raw picture and
 gets the runtime glass panels. Any size from 64 x 64 up to 6000 px per side is

@@ -279,18 +279,18 @@ A new free design unlocks every five levels and **equips itself automatically** 
 
 | Level | Design | Points needed |
 |---|---|---|
-| 5 | Ember | 2,000 |
-| 10 | Verdant | 4,500 |
-| 15 | Tide | 7,000 |
-| 20 | Amethyst | 9,500 |
-| 25 | Rose | 12,000 |
-| 30 | Solar | 14,500 |
-| 35 | Frost | 17,000 |
-| 40 | Void | 19,500 |
-| 45 | Prismatic | 22,000 |
-| 50 | Celestial + custom wallpaper | 24,500 |
+| 5 | جمر (`tier-05`) | 2,000 |
+| 10 | مروج (`tier-10`) | 4,500 |
+| 15 | مدّ (`tier-15`) | 7,000 |
+| 20 | جمشت (`tier-20`) | 9,500 |
+| 25 | ورد (`tier-25`) | 12,000 |
+| 30 | شمسي (`tier-30`) | 14,500 |
+| 35 | صقيع (`tier-35`) | 17,000 |
+| 40 | فراغ (`tier-40`) | 19,500 |
+| 45 | طيف (`tier-45`) | 22,000 |
+| 50 | سماوي (`tier-50`) + custom wallpaper | 24,500 |
 
-The ladder is data, not code: edit [`assets/profile/backgrounds/backgrounds.json`](assets/profile/backgrounds/backgrounds.json) and push, or create `data/backgrounds.json` on the host. The data file is now an **overlay**: entries merge over the bundled ones by id, new ids are appended, and `{ "id": "...", "deleted": true }` hides a bundled design. Each entry has `id`, `name`, `level`, an optional `price`, an optional `auto`, an optional `artMode`, and a `theme` (`from`, `to`, `accent`). To move Ember to level 3, change its `level` to `3`. A design with `"price": 250` is sold in the [store](#store) as `design:<id>`: it never equips itself and requires a purchase even at a high level.
+The ladder is data, not code: edit [`assets/profile/backgrounds/backgrounds.json`](assets/profile/backgrounds/backgrounds.json) and push, or create `data/backgrounds.json` on the host. The data file is now an **overlay**: entries merge over the bundled ones by id, new ids are appended, and `{ "id": "...", "deleted": true }` hides a bundled design. Each entry has `id`, `name`, `level`, an optional `price`, an optional `auto`, an optional `artMode`, and a `theme` (`from`, `to`, `accent`). To move `tier-05` to level 3, change its `level` to `3`. A design with `"price": 250` is sold in the [store](#store) as `design:<id>`: it never equips itself and requires a purchase even at a high level.
 
 The manifest ships **50 shop designs** (`bg-01-sakura-dusk` … `bg-50-pearl-sea`), priced from 60 to 360 coins by visual rarity — soft pastel palettes at the low end, vivid/legendary palettes at the top. They use `artMode: "wallpaper"`, so the bot adds the panels itself. Buy one in the store's **Backgrounds** tab; it stays in your collection and can be equipped at any level.
 
@@ -301,21 +301,21 @@ Each tier now ships with its own picture in `assets/profile/backgrounds/` (`tier
 Artwork files are named `<id>.png`, `.jpg`, `.jpeg` or `.webp`. Two modes:
 
 - `"artMode": "wallpaper"` — supply only the **raw picture**; the bot cover-crops it and draws the glass panels, labels and XP track itself. The bundled tiers use this.
-- `"artMode": "template"` — supply the **whole card** with the panels, labels and XP track, exactly where `card.png` has them.
+- `"artMode": "template"` — supply the **whole card** with the panels, labels and XP track, exactly where `card.png` has them. The bundled `card.png` itself ships without label text: the bot draws the Arabic labels at render time.
 
 A member's custom upload is always treated as a raw picture. `assets/profile/backgrounds/README.md` has the exact positions and rules.
 
-At **level 50** the Celestial design still equips automatically like every other tier; the member can then upload a custom wallpaper to replace it, and `/background set custom` switches back later. The same feature is one item in the store's **Backgrounds** tab: **Custom background** shows a preview once an image exists, offers **Equip**, and has a file picker to upload or replace the image. It stays in the collection after switching to a normal design, so a member can re-equip it later. Set a different minimum with `BACKGROUND_CUSTOM_LEVEL=5` in `.env` (restart required). The image is downloaded, checked, cover-cropped to 1868×1200 and re-encoded as a JPEG under `data/profile-backgrounds/<guild>/<user>.jpg` (PNG, JPEG, WebP and GIF are accepted; 10 MB limit, 64×64 minimum, 6000×6000 maximum). Re-encoding strips metadata and bounds file size. **A GIF wallpaper animates the card**: it is normalised once to an 800×514 looping GIF (up to 16 frames / 6 seconds, under 6 MB) next to the JPEG, and `/profile` rebuilds the whole card over every frame. Rendering is serialized and yields to the event loop between frames, so two members opening animated profiles at the same time no longer starve the Discord gateway. Finished cards are also cached for 60 seconds, so reopening the same profile does not re-encode the GIF at all; points, title and wallpaper changes invalidate the entry immediately. If the animation cannot be read or the result would be too large, the card falls back to the still first frame. A custom wallpaper stays selectable once it exists, even if points are later corrected downward. `reset` removes both files and returns the card to Classic.
+At **level 50** the سماوي design still equips automatically like every other tier; the member can then upload a custom wallpaper to replace it, and `/background set custom` switches back later. The same feature is one item in the store's **Backgrounds** tab: **Custom background** shows a preview once an image exists, offers **Equip**, and has a file picker to upload or replace the image. It stays in the collection after switching to a normal design, so a member can re-equip it later. Set a different minimum with `BACKGROUND_CUSTOM_LEVEL=5` in `.env` (restart required). The image is downloaded, checked, cover-cropped to 1868×1200 and re-encoded as a JPEG under `data/profile-backgrounds/<guild>/<user>.jpg` (PNG, JPEG, WebP and GIF are accepted; 10 MB limit, 64×64 minimum, 6000×6000 maximum). Re-encoding strips metadata and bounds file size. **A GIF wallpaper animates the card**: it is normalised once to an 800×514 looping GIF (up to 16 frames / 6 seconds, under 6 MB) next to the JPEG, and `/profile` rebuilds the whole card over every frame. Rendering is serialized and yields to the event loop between frames, so two members opening animated profiles at the same time no longer starve the Discord gateway. Finished cards are also cached for 60 seconds, so reopening the same profile does not re-encode the GIF at all; points, title and wallpaper changes invalidate the entry immediately. If the animation cannot be read or the result would be too large, the card falls back to the still first frame. A custom wallpaper stays selectable once it exists, even if points are later corrected downward. `reset` removes both files and returns the card to Classic.
 
 `BACKGROUND_AUTO_EQUIP=0` disables automatic equipping without changing anything else.
 
 ```
 :-background                 list the ladder and your unlocks
-:-background set 15          choose Tide
-:-background set Tide        the name works too
+:-background set 15          choose مدّ
+:-background set مدّ         the Arabic name works too
 :-background custom          attach an image to upload or replace it
 :-background custom @member  Manage Server: upload it for someone else
-:-background reset           back to Classic and delete the upload
+:-background reset           back to كلاسيكي and delete the upload
 ```
 
 **Manage Server** can use custom wallpapers at any level, without waiting for level 50: `/background custom image:<file> [user:@member]` uploads for yourself or someone else. Level designs still follow the ladder — giving one to a low-level member would only fall back to Classic on their card. `/background reset user:@member` (Manage Server) clears someone else's wallpaper. Wallpapers live under `data/`, so include that folder when moving servers or redeploying.
