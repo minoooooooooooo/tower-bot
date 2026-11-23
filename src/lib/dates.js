@@ -188,14 +188,22 @@ const ARABIC_MONTHS = [
 ];
 
 /**
- * "5 نوفمبر 2026" for Arabic prose (cards, greetings). The birthday list keeps
- * `formatListDate` because its column is aligned on the English month width.
+ * "14 مايو" for an Arabic sentence. The birthday list keeps `formatListDate`
+ * because its column is aligned on the English month width.
+ */
+export function formatArabicMonthDay(month, day) {
+  const index = Math.min(11, Math.max(0, Number(month ?? 1) - 1));
+
+  return `${day} ${ARABIC_MONTHS[index]}`;
+}
+
+/**
+ * "5 نوفمبر 2026" for Arabic prose (cards, greetings).
  */
 export function formatArabicDate(year, month, day) {
-  const index = Math.min(11, Math.max(0, Number(month ?? 1) - 1));
-  const name = ARABIC_MONTHS[index];
+  const label = formatArabicMonthDay(month, day);
 
-  return `${day} ${name}${year ? ` ${year}` : ''}`;
+  return `${label}${year ? ` ${year}` : ''}`;
 }
 
 /**

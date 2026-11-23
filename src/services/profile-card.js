@@ -203,6 +203,10 @@ const COIN_ICON_FILTER = 'saturate(1.35) contrast(1.08)';
 // from both the whites and the panel before the encoder sees it.
 const ANIMATED_COIN_FILTER = 'saturate(2.2) contrast(1.3) hue-rotate(6deg)';
 const ARABIC = /[\u0600-\u06ff\u0750-\u077f\u08a0-\u08ff]/;
+// Canvas lays a digit-first string out left-to-right unless the base direction is
+// explicit, which turned "5 نوفمبر 2026" into month-first. A right-to-left mark
+// in front of Arabic text fixes the order without touching the stored string.
+const RLM = '\u200F';
 
 // A custom wallpaper replaces the whole artwork, so its glass panels are drawn
 // here instead of coming from the template. The rectangles mirror the baked
@@ -788,15 +792,17 @@ function drawInkText(
   y,
   { size, weight, color = STATUS_INK, align = 'left', baseline = 'alphabetic' },
 ) {
+  const text = ARABIC.test(String(value)) ? `${RLM}${value}` : String(value);
+
   ctx.save();
   ctx.textAlign = align;
   ctx.textBaseline = baseline;
   ctx.fillStyle = color;
-  ctx.font = fontOf(size, weight, value);
+  ctx.font = fontOf(size, weight, text);
   ctx.shadowColor = 'rgba(0, 0, 0, 0.55)';
   ctx.shadowBlur = 10;
   ctx.shadowOffsetY = 1;
-  ctx.fillText(value, x, y);
+  ctx.fillText(text, x, y);
   ctx.restore();
 }
 

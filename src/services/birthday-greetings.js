@@ -1,6 +1,6 @@
 import { PermissionFlagsBits } from 'discord.js';
 import { config } from '../config.js';
-import { ageTurning, dateKey, formatMonthDay, isBirthdayToday, zonedDate } from '../lib/dates.js';
+import { ageTurning, dateKey, formatArabicMonthDay, isBirthdayToday, zonedDate } from '../lib/dates.js';
 import { COLORS, embed } from '../lib/embeds.js';
 import { createLogger } from '../lib/logger.js';
 import { MAX_IMAGE_URL_LENGTH } from '../lib/media.js';
@@ -109,7 +109,7 @@ export function buildGreetingPayload({
     name,
     age: age ?? 0,
     server: guildName,
-    date: formatMonthDay(today.month, today.day),
+    date: formatArabicMonthDay(today.month, today.day),
   });
 
   const mention = `<@${userId}>`;

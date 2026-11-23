@@ -13,8 +13,8 @@ import {
   daysInMonth,
   daysUntil,
   describeNow,
+  formatArabicMonthDay,
   formatListDate,
-  formatMonthDay,
   isBirthdayToday,
   isValidTimeZone,
   nextOccurrence,
@@ -250,7 +250,7 @@ async function handleSet(ctx) {
   await ctx.reply(
     ephemeral(okReply(
           isSelf ? 'انحفظ عيد الميلاد' : `انحفظ عيد ميلاد ${who}`,
-          [`**${formatMonthDay(input.month, input.day)}**`, when, `المنطقة الزمنية: ${zoneLabel}`].join(
+          [`**${formatArabicMonthDay(input.month, input.day)}**`, when, `المنطقة الزمنية: ${zoneLabel}`].join(
             '\n',
           ),
         ),),
