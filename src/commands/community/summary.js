@@ -1,12 +1,14 @@
 import {
   InteractionContextType,
-  MessageFlags,
   PermissionFlagsBits,
   SlashCommandBuilder,
 } from 'discord.js';
 import { config } from '../../config.js';
-import { COLORS, embed, errorEmbed, infoEmbed, successEmbed } from '../../lib/embeds.js';
+import { formatDurationArabic } from '../../lib/durations.js';
+import { COLORS, embed } from '../../lib/embeds.js';
 import { createLogger } from '../../lib/logger.js';
+import { permissionName } from '../../lib/permissions.js';
+import { ephemeral, errorReply, infoReply, okReply } from '../../lib/replies.js';
 import { AiError, aiConfigured, aiProblemHint } from '../../lib/ai.js';
 import { getGuildSettings } from '../../services/birthday-store.js';
 import {
@@ -28,34 +30,26 @@ const logger = createLogger('summary');
 const MAX_HOURS = 168;
 const DEFAULT_HOURS = 24;
 
-function ephemeral(payload) {
-  return { ...payload, flags: MessageFlags.Ephemeral };
-}
-
 function kindChoices() {
-  return KIND_KEYS.map((key) => ({ name: SUMMARY_KINDS[key].brief, value: key }));
+  return KIND_KEYS.map((key) => ({
+    name: `${SUMMARY_KINDS[key].arLabel} (${key}) — ${SUMMARY_KINDS[key].arBrief}`,
+    value: key,
+  }));
 }
 
-function styleList() {
-  return KIND_KEYS.map((key) => `\`${key}\``).join(', ');
+function kindList() {
+  return KIND_KEYS.map((key) => SUMMARY_KINDS[key].arLabel).join('، ');
 }
 
 function durationLabel(hours) {
-  if (hours % 24 === 0) {
-    const days = hours / 24;
-    return `${days} day${days === 1 ? '' : 's'}`;
-  }
-
-  return `${hours} hour${hours === 1 ? '' : 's'}`;
+  return formatDurationArabic(hours * 60 * 60 * 1000);
 }
 
 async function requireManageGuild(ctx) {
   if (ctx.member?.permissions?.has(PermissionFlagsBits.ManageGuild)) return true;
 
-  await ctx.reply(
-    ephemeral({
-      embeds: [errorEmbed('Missing permissions', 'You need **Manage Server** to change this setting.')],
-    }),
+  await ctx.fail(
+    ephemeral(errorReply('صلاحيات ناقصة', 'تحتاج **إدارة السيرفر** عشان تغيّر هذا الإعداد.')),
   );
 
   return false;
@@ -135,24 +129,22 @@ function parsePrefix(ctx) {
 
 async function handleRun(ctx) {
   if (!aiConfigured()) {
-    await ctx.reply(
-      ephemeral({
-        embeds: [
-          errorEmbed(
-            'AI is not configured',
-            [
-              'Add these to the server environment, then restart:',
-              '```',
-              'AI_API_KEY=your-key',
-              'AI_MODEL=gemini-3.6-flash',
-              '# optional, defaults to Google:',
-              'AI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai',
-              '```',
-              'Any OpenAI-compatible provider works (OpenAI, OpenRouter, Groq, DeepSeek, local).',
-            ].join('\n'),
-          ),
-        ],
-      }),
+    await ctx.fail(
+      ephemeral(
+        errorReply(
+          'الذكاء الاصطناعي غير مضبوط',
+          [
+            'أضف هذي لمتغيرات بيئة السيرفر، وبعدها أعد التشغيل:',
+            '```',
+            'AI_API_KEY=your-key',
+            'AI_MODEL=gemini-3.6-flash',
+            '# optional, defaults to Google:',
+            'AI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai',
+            '```',
+            'أي مزوّد متوافق مع OpenAI يشتغل (OpenAI، OpenRouter، Groq، DeepSeek، محلي).',
+          ].join('\n'),
+        ),
+      ),
     );
     return;
   }
@@ -161,33 +153,32 @@ async function handleRun(ctx) {
   const hours = params.hours;
 
   if (!Number.isInteger(hours) || hours < 1 || hours > MAX_HOURS) {
-    await ctx.reply(
-      ephemeral({
-        embeds: [
-          errorEmbed('Invalid time window', `Use 1 to ${MAX_HOURS} hours, for example \`24\` or \`2d\`.`),
-        ],
-      }),
+    await ctx.fail(
+      ephemeral(
+        errorReply(
+          'مدة غير صالحة',
+          `استخدم من 1 إلى ${MAX_HOURS} ساعة، مثلاً \`24\` أو \`2d\`.`,
+        ),
+      ),
     );
     return;
   }
 
   if (!KIND_KEYS.includes(params.kind)) {
-    await ctx.reply(
-      ephemeral({ embeds: [errorEmbed('Unknown summary type', `Pick one of: ${styleList()}.`)] }),
+    await ctx.fail(
+      ephemeral(errorReply('نوع ملخص غير معروف', `اختر واحد من: ${kindList()}.`)),
     );
     return;
   }
 
   if (params.kind === 'targeted' && !params.prompt?.trim()) {
-    await ctx.reply(
-      ephemeral({
-        embeds: [
-          errorEmbed(
-            'What should I look for?',
-            'A targeted summary needs a focus, e.g. `/summary run kind:Targeted prompt:the new spawn rules`.',
-          ),
-        ],
-      }),
+    await ctx.fail(
+      ephemeral(
+        errorReply(
+          'عن أي شي أدوّر؟',
+          'الملخص الموجّه يحتاج تركيز، مثلاً `/summary run kind:Targeted prompt:قوانين السبان الجديدة`.',
+        ),
+      ),
     );
     return;
   }
@@ -195,7 +186,9 @@ async function handleRun(ctx) {
   const channel = await resolveChannel(ctx, params.channelId);
 
   if (!channel) {
-    await ctx.reply(ephemeral({ embeds: [errorEmbed('Channel not found', 'Pick a channel I can see.')] }));
+    await ctx.fail(
+      ephemeral(errorReply('ما لقيت القناة', 'اختر قناة أقدر أشوفها.')),
+    );
     return;
   }
 
@@ -206,15 +199,15 @@ async function handleRun(ctx) {
     !permissions?.has(PermissionFlagsBits.ViewChannel) ||
     !permissions?.has(PermissionFlagsBits.ReadMessageHistory)
   ) {
-    await ctx.reply(
-      ephemeral({
-        embeds: [
-          errorEmbed(
-            'Missing permissions',
-            `I need **View Channel** and **Read Message History** in ${channel}.`,
-          ),
-        ],
-      }),
+    await ctx.fail(
+      ephemeral(
+        errorReply(
+          'صلاحيات ناقصة',
+          `أحتاج **${permissionName(PermissionFlagsBits.ViewChannel)}** و**${permissionName(
+            PermissionFlagsBits.ReadMessageHistory,
+          )}** في ${channel}.`,
+        ),
+      ),
     );
     return;
   }
@@ -222,7 +215,7 @@ async function handleRun(ctx) {
   const now = Date.now();
   const since = now - hours * 60 * 60 * 1000;
   const timeZone = getGuildSettings(ctx.guildId).timezone ?? config.timezone;
-  const working = { content: `🔎 Reading ${channel}…`, allowedMentions: { parse: [] } };
+  const working = { content: `🔎 أقرأ رسائل ${channel}…`, allowedMentions: { parse: [] } };
 
   if (ctx.isSlash) {
     await ctx.defer({ ephemeral: params.isPrivate });
@@ -237,7 +230,7 @@ async function handleRun(ctx) {
     if (Date.now() - lastUpdate < 2500) return;
     lastUpdate = Date.now();
     await ctx
-      .editReply({ content: `🧠 Summarizing part ${part}/${total}…`, allowedMentions: { parse: [] } })
+      .editReply({ content: `🧠 ألخّص الجزء ${part}/${total}…`, allowedMentions: { parse: [] } })
       .catch(() => {});
   };
 
@@ -258,28 +251,26 @@ async function handleRun(ctx) {
     });
   } catch (error) {
     if (error instanceof AiError) {
-      await ctx.editReply({ embeds: [errorEmbed('Summary failed', aiProblemHint(error))] });
+      await ctx.editReply(errorReply('فشل التلخيص', aiProblemHint(error)));
       return;
     }
 
     logger.warn(`Could not read #${channel.name}: ${error.message}`);
-    await ctx.editReply({
-      embeds: [errorEmbed('Could not read messages', "I was unable to fetch that channel's history.")],
-    });
+    await ctx.editReply(
+      errorReply('ما قدرت أقرأ الرسائل', 'ما قدرت أجيب سجل هذي القناة.'),
+    );
     return;
   }
 
   if (!result.data) {
-    await ctx.editReply({
-      embeds: [
-        errorEmbed(
-          'Nothing to summarize',
-          result.reason === 'empty-summary'
-            ? `${channel} had messages, but the model found nothing worth reporting — no topics, decisions, requests or questions. Try a longer window, or a Targeted summary with a focus.`
-            : `No messages in ${channel} in the last ${durationLabel(hours)}.`,
-        ),
-      ],
-    });
+    await ctx.editReply(
+      errorReply(
+        'ما فيه شي ينلخّص',
+        result.reason === 'empty-summary'
+          ? `${channel} فيه رسائل، بس النموذج ما لقى شي يستاهل التقرير — لا مواضيع ولا قرارات ولا طلبات. جرّب فترة أطول، أو ملخص موجّه بتركيز.`
+          : `ما فيه رسائل في ${channel} خلال آخر ${durationLabel(hours)}.`,
+      ),
+    );
     return;
   }
 
@@ -307,38 +298,32 @@ async function handleRun(ctx) {
       await ctx.editReply(payloads[0]);
 
       for (const payload of payloads.slice(1)) {
-        await ctx.followUp(
-          params.isPrivate ? { ...payload, flags: MessageFlags.Ephemeral } : payload,
-        );
+        await ctx.followUp(params.isPrivate ? ephemeral(payload) : payload);
       }
       return;
     }
 
     for (const payload of payloads) await destination.send(payload);
 
-    await ctx.editReply({
-      embeds: [
-        successEmbed(
-          'Summary posted',
-          `${SUMMARY_KINDS[params.kind].label} summary of ${channel} sent to ${destination}.`,
-        ),
-      ],
-    });
+    await ctx.editReply(
+      okReply(
+        'اننشر الملخص',
+        `ملخص ${SUMMARY_KINDS[params.kind].arLabel} لقناة ${channel} انرسل إلى ${destination}.`,
+      ),
+    );
   } catch (error) {
     logger.warn(`Could not deliver the summary: ${error.message}`);
-    await ctx.editReply({
-      embeds: [
-        errorEmbed(
-          'Could not deliver the summary',
-          [
-            error.message ? `Discord said: **${String(error.message).slice(0, 500)}**` : '',
-            'Check that I can **View Channel**, **Send Messages** and **Embed Links** in the destination channel.',
-          ]
-            .filter(Boolean)
-            .join('\n\n'),
-        ),
-      ],
-    });
+    await ctx.editReply(
+      errorReply(
+        'ما قدرت أوصل الملخص',
+        [
+          error.message ? `ديسكورد قال: **${String(error.message).slice(0, 500)}**` : '',
+          'تأكد إني أقدر **عرض القنوات**، **إرسال الرسائل** و**إرفاق الروابط** في قناة الوجهة.',
+        ]
+          .filter(Boolean)
+          .join('\n\n'),
+      ),
+    );
   }
 }
 
@@ -352,16 +337,14 @@ async function handleChannel(ctx) {
     const current = getSummaryChannel(ctx.guildId);
 
     await ctx.reply(
-      ephemeral({
-        embeds: [
-          infoEmbed(
-            'Summary channel',
-            current
-              ? `Reports are delivered to <#${current}>.\nChange it with \`/summary channel channel:#room\` or clear it with \`/summary channel\`.`
-              : 'No summary channel is set, so each report is posted where the command was run.\nSet one with `/summary channel channel:#management`.',
-          ),
-        ],
-      }),
+      ephemeral(
+        infoReply(
+          'قناة الملخصات',
+          current
+            ? `التقارير تنرسل إلى <#${current}>.\nغيّرها بـ \`/summary channel channel:#room\` أو امسحها بـ \`/summary channel\`.`
+            : 'ما فيه قناة ملخصات مضبوطة، فكل تقرير ينشر في القناة اللي انكتب فيها الأمر.\nاضبطها بـ `/summary channel channel:#management`.',
+        ),
+      ),
     );
     return;
   }
@@ -369,16 +352,14 @@ async function handleChannel(ctx) {
   const channel = await resolveChannel(ctx, mention);
 
   if (!channel) {
-    await ctx.reply(ephemeral({ embeds: [errorEmbed('Channel not found', 'Pick a text channel.')] }));
+    await ctx.fail(ephemeral(errorReply('ما لقيت القناة', 'اختر قناة نصية.')));
     return;
   }
 
   setSummaryChannel(ctx.guildId, channel.id);
 
   await ctx.reply(
-    ephemeral({
-      embeds: [successEmbed('Summary channel set', `Reports are now delivered to ${channel}.`)],
-    }),
+    ephemeral(okReply('انضبطت قناة الملخصات', `التقارير الحين تنرسل إلى ${channel}.`)),
   );
 }
 
@@ -390,17 +371,15 @@ async function handleExport(ctx) {
     : listSummaries(ctx.guildId, 1)[0] ?? null;
 
   if (!summary) {
-    await ctx.reply(
-      ephemeral({
-        embeds: [
-          errorEmbed(
-            'No report found',
-            id
-              ? `There is no report #${id} in this server.`
-              : 'Run `/summary run` first, then export it.',
-          ),
-        ],
-      }),
+    await ctx.fail(
+      ephemeral(
+        errorReply(
+          'ما لقيت تقرير',
+          id
+            ? `ما فيه تقرير #${id} في هذا السيرفر.`
+            : 'شغّل `/summary run` أول، بعدها صدّره.',
+        ),
+      ),
     );
     return;
   }
@@ -415,22 +394,24 @@ async function handleHistory(ctx) {
   const reports = listSummaries(ctx.guildId, 10);
 
   if (reports.length === 0) {
-    await ctx.reply(ephemeral({ embeds: [infoEmbed('No reports yet', 'Run `/summary run` to make one.')] }));
+    await ctx.reply(
+      ephemeral(infoReply('ما فيه تقارير بعد', 'شغّل `/summary run` عشان تسوي واحد.')),
+    );
     return;
   }
 
   const lines = reports.map(
     (report) =>
-      `\`#${report.id}\` · ${SUMMARY_KINDS[report.kind]?.emoji ?? ''} ${SUMMARY_KINDS[report.kind]?.label ?? report.kind} · <#${report.channelId}> · ${report.messageCount} msg · <t:${Math.floor(report.createdAt / 1000)}:R>`,
+      `\`#${report.id}\` · ${SUMMARY_KINDS[report.kind]?.emoji ?? ''} ${SUMMARY_KINDS[report.kind]?.arLabel ?? report.kind} · <#${report.channelId}> · ${report.messageCount} رسالة · <t:${Math.floor(report.createdAt / 1000)}:R>`,
   );
 
   await ctx.reply(
     ephemeral({
       embeds: [
         embed({
-          title: 'Recent reports',
+          title: 'أحدث التقارير',
           description: lines.join('\n'),
-          footer: 'Export any of them with /summary export id:<n>',
+          footer: 'صدّر أي واحد بـ /summary export id:<n>',
           color: COLORS.primary,
         }),
       ],
@@ -441,20 +422,20 @@ async function handleHistory(ctx) {
 export default {
   data: new SlashCommandBuilder()
     .setName('summary')
-    .setDescription('Summarize a channel with AI and post the report to your management channel')
+    .setDescription('لخّص قناة بالذكاء الاصطناعي وانشر التقرير في قناة الإدارة')
     .setContexts(InteractionContextType.Guild)
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
     .addSubcommand((sub) =>
       sub
         .setName('run')
-        .setDescription('Summarize a window of a channel')
+        .setDescription('لخّص فترة من قناة')
         .addChannelOption((option) =>
-          option.setName('channel').setDescription('Channel to summarize').setRequired(true),
+          option.setName('channel').setDescription('القناة اللي تبي تلخّصها').setRequired(true),
         )
         .addIntegerOption((option) =>
           option
             .setName('hours')
-            .setDescription(`How far back to look (1-${MAX_HOURS}, default ${DEFAULT_HOURS})`)
+            .setDescription(`كم ترجع ورا (1-${MAX_HOURS}، الافتراضي ${DEFAULT_HOURS})`)
             .setRequired(false)
             .setMinValue(1)
             .setMaxValue(MAX_HOURS),
@@ -462,44 +443,44 @@ export default {
         .addStringOption((option) =>
           option
             .setName('kind')
-            .setDescription('What kind of summary (default: General)')
+            .setDescription('نوع الملخص (الافتراضي: عام)')
             .setRequired(false)
             .addChoices(...kindChoices()),
         )
         .addStringOption((option) =>
           option
             .setName('prompt')
-            .setDescription('For Targeted summaries: what should I look for?')
+            .setDescription('للملخص الموجّه: عن أي شي أدوّر؟')
             .setRequired(false)
             .setMaxLength(500),
         )
         .addBooleanOption((option) =>
-          option.setName('private').setDescription('Only show the report to me').setRequired(false),
+          option.setName('private').setDescription('اعرض التقرير لي بس').setRequired(false),
         ),
     )
     .addSubcommand((sub) =>
       sub
         .setName('channel')
-        .setDescription('Pick the channel that receives reports (empty shows the current one)')
+        .setDescription('اختر القناة اللي تستقبل التقارير (فاضي يعرض الحالية)')
         .addChannelOption((option) =>
-          option.setName('channel').setDescription('Where reports are delivered').setRequired(false),
+          option.setName('channel').setDescription('وين تنرسل التقارير').setRequired(false),
         ),
     )
     .addSubcommand((sub) =>
       sub
         .setName('export')
-        .setDescription('Download a report as an HTML file (print it to PDF)')
+        .setDescription('نزّل التقرير كملف HTML (اطبعه PDF)')
         .addIntegerOption((option) =>
-          option.setName('id').setDescription('Report id (default: the latest)').setRequired(false),
+          option.setName('id').setDescription('رقم التقرير (الافتراضي: الأحدث)').setRequired(false),
         ),
     )
     .addSubcommand((sub) =>
-      sub.setName('history').setDescription('List the most recent reports'),
+      sub.setName('history').setDescription('اعرض أحدث التقارير'),
     ),
 
   name: 'summary',
   aliases: ['summarize', 'report'],
-  description: 'Summarize a channel and deliver the report to your management channel',
+  description: 'لخّص قناة وأرسل التقرير إلى قناة الإدارة',
   category: 'Community',
   usage: 'summary [#channel] [24h] [general|tasks|ask <focus>] [private]',
   cooldown: 5,
@@ -511,8 +492,9 @@ export default {
 
     if (focused.name !== 'kind') return;
 
+    const query = String(focused.value).toLowerCase();
     const matches = kindChoices().filter((choice) =>
-      choice.name.toLowerCase().includes(String(focused.value).toLowerCase()),
+      choice.name.toLowerCase().includes(query),
     );
 
     await interaction.respond(matches.slice(0, 25));

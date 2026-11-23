@@ -5,7 +5,8 @@ import {
   PermissionFlagsBits,
   SlashCommandBuilder,
 } from 'discord.js';
-import { COLORS, embed, errorEmbed, successEmbed, warningEmbed } from '../../lib/embeds.js';
+import { COLORS, embed } from '../../lib/embeds.js';
+import { errorReply, infoReply, okReply, warnReply } from '../../lib/replies.js';
 import { resolveChannel, resolveMember, resolveRole } from '../../lib/resolve.js';
 import { parseColor } from '../general/color.js';
 import {
@@ -56,10 +57,8 @@ function isAdmin(ctx) {
 async function requireAdmin(ctx) {
   if (isAdmin(ctx)) return true;
 
-  await ctx.reply(
-    ephemeral({
-      embeds: [errorEmbed('Missing permissions', 'You need **Manage Server** to configure tickets.')],
-    }),
+  await ctx.fail(
+    ephemeral(errorReply('صلاحيات ناقصة', 'تحتاج **إدارة السيرفر** عشان تضبط التذاكر.')),
   );
 
   return false;
@@ -84,7 +83,7 @@ function parseDesignColor(value) {
   const parsed = parseColor(String(value));
 
   if (!parsed) {
-    throw new TicketError(`\`${value}\` is not a color. Try \`#5865f2\`, \`red\` or \`none\`.`);
+    throw new TicketError(`\`${value}\` مو لون. جرّب \`#5865f2\`، \`red\` أو \`none\`.`);
   }
 
   return parsed.value;
@@ -96,7 +95,7 @@ function parseButtonStyle(value) {
   const style = String(value).toLowerCase();
 
   if (!BUTTON_STYLES.includes(style)) {
-    throw new TicketError(`Use a button style: ${BUTTON_STYLES.join(', ')} or none.`);
+    throw new TicketError(`اختر نمط زر: ${BUTTON_STYLES.join('، ')} أو none.`);
   }
 
   return style;
@@ -108,8 +107,8 @@ async function resolveTextChannel(guild, value) {
 
   const channel = await resolveChannel(guild, value);
 
-  if (!channel) throw new TicketError(`Unknown channel: \`${value}\`.`);
-  if (channel.isTextBased?.() === false) throw new TicketError(`<#${channel.id}> is not a text channel.`);
+  if (!channel) throw new TicketError(`قناة غير معروفة: \`${value}\`.`);
+  if (channel.isTextBased?.() === false) throw new TicketError(`<#${channel.id}> مو قناة نصية.`);
 
   return channel;
 }
@@ -120,9 +119,9 @@ async function resolveCategory(guild, value) {
 
   const channel = await resolveChannel(guild, value);
 
-  if (!channel) throw new TicketError(`Unknown category: \`${value}\`.`);
+  if (!channel) throw new TicketError(`فئة غير معروفة: \`${value}\`.`);
   if (channel.type !== ChannelType.GuildCategory) {
-    throw new TicketError(`<#${channel.id}> is not a category.`);
+    throw new TicketError(`<#${channel.id}> مو فئة.`);
   }
 
   return channel;
@@ -141,7 +140,7 @@ async function resolveRoleList(guild, value) {
   for (const token of tokens) {
     const role = await resolveRole(guild, token);
 
-    if (!role) throw new TicketError(`Unknown role: \`${token}\`.`);
+    if (!role) throw new TicketError(`رتبة غير معروفة: \`${token}\`.`);
     ids.push(role.id);
   }
 
@@ -149,11 +148,11 @@ async function resolveRoleList(guild, value) {
 }
 
 function roleList(ids) {
-  return ids?.length ? ids.map((id) => `<@&${id}>`).join(', ') : 'none';
+  return ids?.length ? ids.map((id) => `<@&${id}>`).join('، ') : 'ما فيه';
 }
 
 function channelLabel(guild, id) {
-  return id ? guild?.channels?.cache?.get(id)?.toString?.() ?? `<#${id}>` : 'not set';
+  return id ? guild?.channels?.cache?.get(id)?.toString?.() ?? `<#${id}>` : 'غير مضبوطة';
 }
 
 function parseFlagTokens(args) {
@@ -176,11 +175,11 @@ function parseFlagTokens(args) {
 function buttonLine(button) {
   return [
     `**${button.buttonLabel || button.label}** · \`${button.key}\``,
-    `Panel: \`${button.panelKey}\` · Category: ${button.categoryId ? `<#${button.categoryId}>` : '⚠️ not set'}`,
-    `Closed tickets: ${button.closedCategoryId ? `moved to <#${button.closedCategoryId}>` : 'stay in the ticket category'}`,
-    `Style: ${button.buttonStyle ?? 'primary'} · Max open: ${button.maxOpen} · Close: ${button.closeAction}`,
-    `Numbering: ${button.numberStart ? `starts at ${button.numberStart}` : 'from 1'}`,
-    `Support: ${roleList(button.supportRoleIds)} · Ping: ${roleList(button.pingRoleIds)}`,
+    `اللوحة: \`${button.panelKey}\` · الفئة: ${button.categoryId ? `<#${button.categoryId}>` : '⚠️ غير مضبوطة'}`,
+    `التذاكر المقفلة: ${button.closedCategoryId ? `تنقل إلى <#${button.closedCategoryId}>` : 'تبقى في فئة التذاكر'}`,
+    `النمط: ${button.buttonStyle ?? 'primary'} · الحد المفتوح: ${button.maxOpen} · الإغلاق: ${button.closeAction}`,
+    `الترقيم: ${button.numberStart ? `يبدأ من ${button.numberStart}` : 'من 1'}`,
+    `الدعم: ${roleList(button.supportRoleIds)} · المنشن: ${roleList(button.pingRoleIds)}`,
   ].join('\n');
 }
 
@@ -188,47 +187,47 @@ function panelLine(guild, panel) {
   const buttons = countPanelButtons(guild.id, panel.key);
 
   return [
-    `Buttons: **${buttons}**`,
-    `Message: ${panel.messageId ? `${channelLabel(guild, panel.channelId)} ([jump](https://discord.com/channels/${guild.id}/${panel.channelId}/${panel.messageId}))` : 'not posted'}`,
-    `Title: ${panel.title || 'default'}`,
+    `الأزرار: **${buttons}**`,
+    `الرسالة: ${panel.messageId ? `${channelLabel(guild, panel.channelId)} ([انتقال](https://discord.com/channels/${guild.id}/${panel.channelId}/${panel.messageId}))` : 'ما اننشرت'}`,
+    `العنوان: ${panel.title || 'افتراضي'}`,
   ].join('\n');
 }
 
 function overviewEmbed() {
   return embed({
-    title: 'Tickets',
+    title: 'التذاكر',
     description: [
-      'Fully customizable ticket panels. Each panel has its own embed, and you choose which buttons belong to it.',
+      'لوحات تذاكر قابلة للتخصيص بالكامل. كل لوحة لها تضمينها الخاص، وأنت تختار الأزرار اللي تنتمي لها.',
       '',
-      '**Member commands**',
-      '`/ticket close [reason]` — close the ticket you are in',
-      '`/ticket reopen` — reopen the closed ticket you are in (support team)',
-      '`/ticket claim` — claim or unclaim a ticket (support team)',
-      '`/ticket transcript` — save the transcript (opener or support team)',
-      '`/ticket add user:@member` / `/ticket remove user:@member` — manage access (support team)',
-      '`/ticket open [key] [user]` — open a ticket for a member (support team)',
-      '`/ticket rename name:...` — rename this ticket (support team)',
-      '`/ticket delete confirm:true` — delete this channel without a transcript (support team)',
+      '**أوامر الأعضاء**',
+      '`/ticket close [reason]` — اقفل التذكرة اللي أنت فيها',
+      '`/ticket reopen` — رجّع التذكرة المقفلة اللي أنت فيها (فريق الدعم)',
+      '`/ticket claim` — استلم تذكرة أو اتركها (فريق الدعم)',
+      '`/ticket transcript` — احفظ نسخة المحادثة (صاحب التذكرة أو فريق الدعم)',
+      '`/ticket add user:@member` / `/ticket remove user:@member` — إدارة الوصول (فريق الدعم)',
+      '`/ticket open [key] [user]` — افتح تذكرة لعضو (فريق الدعم)',
+      '`/ticket rename name:...` — غيّر اسم التذكرة (فريق الدعم)',
+      '`/ticket delete confirm:true` — احذف هذي القناة بدون نسخة (فريق الدعم)',
       '',
-      '**Panels**',
-      '`/ticket panel add key:support label:Support channel:#support` — create a panel',
-      '`/ticket panel edit key:support title:"Need help?"` — change its embed',
-      '`/ticket panel post key:support` — post or refresh it',
-      '`/ticket panel list` — show every panel',
+      '**اللوحات**',
+      '`/ticket panel add key:support label:Support channel:#support` — سوِّ لوحة',
+      '`/ticket panel edit key:support title:"Need help?"` — عدّل تضمينها',
+      '`/ticket panel post key:support` — انشرها أو حدّثها',
+      '`/ticket panel list` — اعرض كل اللوحات',
       '',
-      '**Buttons**',
-      '`/ticket button add key:help label:Help panel:support category:#tickets closed_category:#closed` — create a button',
-      '`/ticket button edit key:help panel:support ...` — change it or move it',
-      '`/ticket button remove key:help confirm:true` — delete it',
-      '`/ticket number key:help start:100` — start that button’s tickets at 100',
+      '**الأزرار**',
+      '`/ticket button add key:help label:Help panel:support category:#tickets closed_category:#closed` — سوِّ زر',
+      '`/ticket button edit key:help panel:support ...` — عدّله أو انقله',
+      '`/ticket button remove key:help confirm:true` — احذفه',
+      '`/ticket number key:help start:100` — خلّ تذاكر هذا الزر تبدأ من 100',
       '',
-      '**Shared setup**',
-      '`/ticket list` — show every panel and button',
-      '`/ticket log #channel` — where transcripts and ticket events go',
+      '**إعداد مشترك**',
+      '`/ticket list` — اعرض كل لوحة وزر',
+      '`/ticket log #channel` — وين تروح النسخ وأحداث التذاكر',
       '',
-      'Every value can be changed later. Nothing is predefined.',
+      'كل قيمة تنقدر تتغيّر بعدين. ما فيه شي ثابت من البداية.',
     ].join('\n'),
-    footer: 'Each panel supports up to 25 buttons, five per row',
+    footer: 'كل لوحة تتحمل 25 زر، خمسة في كل صف',
   });
 }
 
@@ -262,7 +261,7 @@ async function readButtonOptions(ctx, startIndex) {
     const category = ctx.getChannel('category');
     if (category) {
       if (category.type !== ChannelType.GuildCategory) {
-        throw new TicketError('Pick a Discord category for the ticket channel.');
+        throw new TicketError('اختر فئة ديسكورد لقناة التذكرة.');
       }
 
       patch.categoryId = category.id;
@@ -271,7 +270,7 @@ async function readButtonOptions(ctx, startIndex) {
     const closedCategory = ctx.getChannel('closed_category');
     if (closedCategory) {
       if (closedCategory.type !== ChannelType.GuildCategory) {
-        throw new TicketError('Pick a Discord category for closed tickets.');
+        throw new TicketError('اختر فئة ديسكورد للتذاكر المقفلة.');
       }
 
       patch.closedCategoryId = closedCategory.id;
@@ -285,7 +284,7 @@ async function readButtonOptions(ctx, startIndex) {
 
     const log = ctx.getChannel('log_channel');
     if (log) {
-      if (log.isTextBased?.() === false) throw new TicketError('Pick a text channel for the log.');
+      if (log.isTextBased?.() === false) throw new TicketError('اختر قناة نصية للسجل.');
       patch.logChannelId = log.id;
     }
 
@@ -356,7 +355,7 @@ async function readButtonOptions(ctx, startIndex) {
       const value = Number(flags.max ?? flags.max_open);
 
       if (!Number.isFinite(value) || value < 1) {
-        throw new TicketError('max_open must be a number from 1 to 10.');
+        throw new TicketError('max_open لازم يكون رقم من 1 إلى 10.');
       }
 
       patch.maxOpen = value;
@@ -365,7 +364,7 @@ async function readButtonOptions(ctx, startIndex) {
       const value = String(flags.close ?? flags.close_action).toLowerCase();
 
       if (!CLOSE_ACTIONS.includes(value)) {
-        throw new TicketError(`close_action must be ${CLOSE_ACTIONS.join(' or ')}.`);
+        throw new TicketError(`close_action لازم يكون ${CLOSE_ACTIONS.join(' أو ')}.`);
       }
 
       patch.closeAction = value;
@@ -376,7 +375,7 @@ async function readButtonOptions(ctx, startIndex) {
       const value = Number(flags.position);
 
       if (!Number.isFinite(value)) {
-        throw new TicketError('position must be a number from 0 to 99.');
+        throw new TicketError('position لازم يكون رقم من 0 إلى 99.');
       }
 
       patch.position = Math.max(0, Math.min(99, Math.trunc(value)));
@@ -389,7 +388,7 @@ async function readButtonOptions(ctx, startIndex) {
 /** Resolves the panel a button belongs to, creating the default one if needed. */
 function resolvePanelForButton(guildId, rawKey, { create = true } = {}) {
   if (rawKey !== undefined && !normalizePanelKey(rawKey)) {
-    throw new TicketError('A panel key needs letters, numbers, `-` or `_`.');
+    throw new TicketError('مفتاح اللوحة يحتاج حروف أو أرقام أو `-` أو `_`.');
   }
 
   const normalized = normalizePanelKey(rawKey ?? '') || DEFAULT_PANEL_KEY;
@@ -409,26 +408,42 @@ async function handleButtonAdd(ctx) {
     const normalized = normalizeTypeKey(key);
 
     if (!normalized) {
-      await ctx.fail({ embeds: [errorEmbed('No key given', 'Use `/ticket button add key:general label:Support panel:main category:#tickets`.')] });
+      await ctx.fail(
+        ephemeral(
+          errorReply(
+            'ما فيه مفتاح',
+            'استخدم `/ticket button add key:general label:Support panel:main category:#tickets`.',
+          ),
+        ),
+      );
       return;
     }
 
     if (getTicketType(ctx.guildId, normalized)) {
-      await ctx.fail({
-        embeds: [errorEmbed('That key already exists', `Edit it with \`/ticket button edit key:${normalized} ...\`.` )],
-      });
+      await ctx.fail(
+        ephemeral(
+          errorReply(
+            'هذا المفتاح موجود',
+            `عدّله بـ \`/ticket button edit key:${normalized} ...\`.`,
+          ),
+        ),
+      );
       return;
     }
 
     if (!String(label ?? '').trim()) {
-      await ctx.fail({ embeds: [errorEmbed('No label given', 'A button needs a label, for example `label:Support`.')] });
+      await ctx.fail(
+        ephemeral(errorReply('ما فيه اسم', 'الزر يحتاج اسم، مثلاً `label:Support`.')),
+      );
       return;
     }
 
     if (!patch.categoryId) {
-      await ctx.fail({
-        embeds: [errorEmbed('No category given', 'Choose where this button creates ticket channels with `category:#category`.')],
-      });
+      await ctx.fail(
+        ephemeral(
+          errorReply('ما فيه فئة', 'حدد وين هذا الزر يسوي قنوات التذاكر بـ `category:#category`.'),
+        ),
+      );
       return;
     }
 
@@ -439,25 +454,21 @@ async function handleButtonAdd(ctx) {
     await refreshPostedPanels(ctx);
 
     await ctx.reply(
-      ephemeral({
-        embeds: [
-          successEmbed(
-            `Button added · ${button.buttonLabel || button.label}`,
-            [
-              buttonLine(button),
-              '',
-              created
-                ? `Panel \`${panel.key}\` was created for it. Style it with \`/ticket panel edit key:${panel.key} title:"..."\` and post it with \`/ticket panel post key:${panel.key} channel:#channel\`.`
-                : 'The posted panel was refreshed automatically. Edit the button with `/ticket button edit`.',
-            ].join('\n'),
-          ),
-        ],
-      }),
+      ephemeral(
+        okReply(
+          `انضاف الزر · ${button.buttonLabel || button.label}`,
+          [
+            buttonLine(button),
+            '',
+            created
+              ? `ان سوّت له لوحة \`${panel.key}\`. زيّنها بـ \`/ticket panel edit key:${panel.key} title:"..."\` وانشرها بـ \`/ticket panel post key:${panel.key} channel:#channel\`.`
+              : 'تحدّثت اللوحة المنشورة تلقائيًا. عدّل الزر بـ `/ticket button edit`.',
+          ].join('\n'),
+        ),
+      ),
     );
   } catch (error) {
-    await ctx.fail({
-      embeds: [errorEmbed('Could not add the button', error instanceof TicketError ? error.message : error.message)],
-    });
+    await ctx.fail(ephemeral(errorReply('ما قدرت أضيف الزر', error.message)));
   }
 }
 
@@ -470,7 +481,14 @@ async function handleButtonEdit(ctx) {
     const existing = normalized ? getTicketType(ctx.guildId, normalized) : null;
 
     if (!existing) {
-      await ctx.fail({ embeds: [errorEmbed('Unknown button', `No button called \`${key || '?'}\`. Add it first with \`/ticket button add\`.`)] });
+      await ctx.fail(
+        ephemeral(
+          errorReply(
+            'زر غير معروف',
+            `ما فيه زر اسمه \`${key || '?'}\`. أضفه أول بـ \`/ticket button add\`.`,
+          ),
+        ),
+      );
       return;
     }
 
@@ -484,19 +502,15 @@ async function handleButtonEdit(ctx) {
     await refreshPostedPanels(ctx);
 
     await ctx.reply(
-      ephemeral({
-        embeds: [
-          successEmbed(
-            `Button saved · ${button.buttonLabel || button.label}`,
-            `${buttonLine(button)}\n\nThe posted panels were refreshed automatically.`,
-          ),
-        ],
-      }),
+      ephemeral(
+        okReply(
+          `انحفظ الزر · ${button.buttonLabel || button.label}`,
+          `${buttonLine(button)}\n\nتحدّثت اللوحات المنشورة تلقائيًا.`,
+        ),
+      ),
     );
   } catch (error) {
-    await ctx.fail({
-      embeds: [errorEmbed('Could not save the button', error instanceof TicketError ? error.message : error.message)],
-    });
+    await ctx.fail(ephemeral(errorReply('ما قدرت أحفظ الزر', error.message)));
   }
 }
 
@@ -509,39 +523,44 @@ async function handleButtonRemove(ctx) {
   const button = normalized ? getTicketType(ctx.guildId, normalized) : null;
 
   if (!button) {
-    await ctx.fail({ embeds: [errorEmbed('Unknown button', `No button called \`${key || '?'}\`.`)] });
+    await ctx.fail(
+      ephemeral(errorReply('زر غير معروف', `ما فيه زر اسمه \`${key || '?'}\`.`)),
+    );
     return;
   }
 
   if (!confirmed) {
-    await ctx.fail({
-      embeds: [
-        warningEmbed(
-          'Confirmation needed',
-          `This deletes \`${button.key}\`. Run \`/ticket button remove key:${button.key} confirm:true\`.`,
+    await ctx.fail(
+      ephemeral(
+        warnReply(
+          'يحتاج تأكيد',
+          `هذا يحذف \`${button.key}\`. شغّل \`/ticket button remove key:${button.key} confirm:true\`.`,
         ),
-      ],
-    });
+      ),
+    );
     return;
   }
 
   const open = openTicketsFor(ctx.guildId, null, button.key).length;
 
   if (open > 0) {
-    await ctx.fail({
-      embeds: [
-        warningEmbed('Open tickets still exist', `Close the ${open} open ticket(s) of this button before deleting it.`),
-      ],
-    });
+    await ctx.fail(
+      ephemeral(
+        warnReply(
+          'فيه تذاكر مفتوحة',
+          `اقفل ${open} تذكرة مفتوحة لهذا الزر قبل ما تحذفه.`,
+        ),
+      ),
+    );
     return;
   }
 
   deleteTicketType(ctx.guildId, button.key);
   await refreshPostedPanels(ctx);
 
-  await ctx.reply({
-    embeds: [successEmbed('Button deleted', `\`${button.key}\` was removed from panel \`${button.panelKey}\`.`)],
-  });
+  await ctx.reply(
+    okReply('انحذف الزر', `انشال \`${button.key}\` من اللوحة \`${button.panelKey}\`.`),
+  );
 }
 
 async function handleNumber(ctx) {
@@ -568,16 +587,16 @@ async function handleNumber(ctx) {
     await ctx.reply({
       embeds: [
         embed({
-          title: 'Button ticket numbers',
+          title: 'أرقام تذاكر الأزرار',
           description: buttons.length
-            ? 'Each button counts on its own. Pick one with `/ticket number key:<key> start:<n>`.'
-            : 'No buttons yet. Add one with `/ticket button add ...`.',
+            ? 'كل زر يعدّ لحاله. اختر واحد بـ `/ticket number key:<key> start:<n>`.'
+            : 'ما فيه أزرار بعد. أضف واحد بـ `/ticket button add ...`.',
           fields: buttons.slice(0, 25).map((button) => ({
             name: `${button.buttonLabel || button.label} · ${button.key}`,
-            value: `Starts at **${button.numberStart}** · next ticket **#${padTicketNumber(nextTicketNumber(ctx.guildId, button.key))}**`,
+            value: `يبدأ من **${button.numberStart}** · التذكرة الجاية **#${padTicketNumber(nextTicketNumber(ctx.guildId, button.key))}**`,
           })),
           color: COLORS.primary,
-          footer: `Start numbers go from 0 to ${MAX_NUMBER_START}; 0 means counting from 1`,
+          footer: `أرقام البداية من 0 إلى ${MAX_NUMBER_START}؛ 0 يعني العد من 1`,
         }),
       ],
     });
@@ -587,14 +606,14 @@ async function handleNumber(ctx) {
   const button = getTicketType(ctx.guildId, key);
 
   if (!button) {
-    await ctx.fail({
-      embeds: [
-        errorEmbed(
-          'Unknown button',
-          `No button called \`${rawKey || '?'}\`. Add it with \`/ticket button add key:${key} label:... category:#category\`.`,
+    await ctx.fail(
+      ephemeral(
+        errorReply(
+          'زر غير معروف',
+          `ما فيه زر اسمه \`${rawKey || '?'}\`. أضفه بـ \`/ticket button add key:${key} label:... category:#category\`.`,
         ),
-      ],
-    });
+      ),
+    );
     return;
   }
 
@@ -602,13 +621,13 @@ async function handleNumber(ctx) {
     await ctx.reply({
       embeds: [
         embed({
-          title: `Ticket numbers · ${button.buttonLabel || button.label}`,
+          title: `أرقام التذاكر · ${button.buttonLabel || button.label}`,
           description: [
-            `Key: \`${button.key}\``,
-            `Starts at: **${button.numberStart}**${button.numberStart ? '' : ' (counts from 1)'}`,
-            `Next ticket: **#${padTicketNumber(nextTicketNumber(ctx.guildId, button.key))}**`,
+            `المفتاح: \`${button.key}\``,
+            `يبدأ من: **${button.numberStart}**${button.numberStart ? '' : ' (يعد من 1)'}`,
+            `التذكرة الجاية: **#${padTicketNumber(nextTicketNumber(ctx.guildId, button.key))}**`,
             '',
-            `Change it with \`/ticket number key:${button.key} start:100\`.`,
+            `غيّره بـ \`/ticket number key:${button.key} start:100\`.`,
           ].join('\n'),
           color: COLORS.primary,
         }),
@@ -620,34 +639,32 @@ async function handleNumber(ctx) {
   const start = Number(rawStart);
 
   if (!Number.isInteger(start) || start < 0 || start > MAX_NUMBER_START) {
-    await ctx.fail({
-      embeds: [
-        errorEmbed(
-          'Invalid number',
-          `Use a whole number from 0 to ${MAX_NUMBER_START}. \`0\` counts from 1.`,
+    await ctx.fail(
+      ephemeral(
+        errorReply(
+          'رقم غير صالح',
+          `استخدم رقم صحيح من 0 إلى ${MAX_NUMBER_START}. \`0\` يعد من 1.`,
         ),
-      ],
-    });
+      ),
+    );
     return;
   }
 
   const updated = upsertTicketType(ctx.guildId, key, { numberStart: start });
   const next = nextTicketNumber(ctx.guildId, updated.key);
 
-  await ctx.reply({
-    embeds: [
-      successEmbed(
-        `Numbering set · ${updated.buttonLabel || updated.label}`,
-        [
-          start === 0
-            ? `\`${updated.key}\` now counts from 1.`
-            : `\`${updated.key}\` now starts at **${start}**.`,
-          `The next ticket from this button will be **#${padTicketNumber(next)}**.`,
-          `Existing tickets keep their numbers. Run \`/ticket number key:${updated.key}\` to check it.`,
-        ].join('\n'),
-      ),
-    ],
-  });
+  await ctx.reply(
+    okReply(
+      `انضبط الترقيم · ${updated.buttonLabel || updated.label}`,
+      [
+        start === 0
+          ? `\`${updated.key}\` الحين يعد من 1.`
+          : `\`${updated.key}\` الحين يبدأ من **${start}**.`,
+        `التذكرة الجاية من هذا الزر بتكون **#${padTicketNumber(next)}**.`,
+        `التذاكر الموجودة تحتفظ بأرقامها. شغّل \`/ticket number key:${updated.key}\` عشان تتأكد.`,
+      ].join('\n'),
+    ),
+  );
 }
 
 async function handleButtonList(ctx) {
@@ -659,16 +676,16 @@ async function handleButtonList(ctx) {
   await ctx.reply({
     embeds: [
       embed({
-        title: 'Panel buttons',
+        title: 'أزرار اللوحات',
         description: buttons.length
-          ? `**${buttons.length}** button(s) across **${panels.length}** panel(s). Each button appears only on its own panel.`
-          : 'No buttons yet. Add one with `/ticket button add key:general label:Support panel:main category:#tickets`.',
+          ? `**${buttons.length}** زر موزّعين على **${panels.length}** لوحة. كل زر يظهر في لوحته بس.`
+          : 'ما فيه أزرار بعد. أضف واحد بـ `/ticket button add key:general label:Support panel:main category:#tickets`.',
         fields: buttons.map((button) => ({
           name: `${button.emoji ? `${button.emoji} ` : ''}${button.buttonLabel || button.label} · ${button.key}`,
           value: buttonLine(button),
         })),
         color: COLORS.primary,
-        footer: `Up to ${MAX_PANELS} panels, 25 buttons per panel`,
+        footer: `حتى ${MAX_PANELS} لوحة، و25 زر في كل لوحة`,
       }),
     ],
   });
@@ -725,7 +742,7 @@ function readPanelDesign(ctx, startIndex) {
       const value = Number(flags.position);
 
       if (!Number.isFinite(value)) {
-        throw new TicketError('position must be a number from 0 to 99.');
+        throw new TicketError('position لازم يكون رقم من 0 إلى 99.');
       }
 
       patch.position = Math.max(0, Math.min(99, Math.trunc(value)));
@@ -734,7 +751,7 @@ function readPanelDesign(ctx, startIndex) {
 
   for (const field of ['image', 'thumbnail']) {
     if (patch[field] && !isHttpUrl(patch[field])) {
-      throw new TicketError(`The ${field} must be an http(s) image URL.`);
+      throw new TicketError(`حقل ${field} لازم يكون رابط صورة http(s).`);
     }
   }
 
@@ -779,28 +796,30 @@ async function handlePanelAdd(ctx) {
     const key = normalizePanelKey(rawKey);
 
     if (!key) {
-      await ctx.fail({
-        embeds: [errorEmbed('No key given', 'Use `/ticket panel add key:support label:Support`.')],
-      });
+      await ctx.fail(
+        ephemeral(errorReply('ما فيه مفتاح', 'استخدم `/ticket panel add key:support label:Support`.')),
+      );
       return;
     }
 
     if (getTicketPanel(ctx.guildId, key)) {
-      await ctx.fail({
-        embeds: [
-          errorEmbed(
-            'That panel already exists',
-            `Change it with \`/ticket panel edit key:${key} ...\`.`,
+      await ctx.fail(
+        ephemeral(
+          errorReply(
+            'هذي اللوحة موجودة',
+            `غيّرها بـ \`/ticket panel edit key:${key} ...\`.`,
           ),
-        ],
-      });
+        ),
+      );
       return;
     }
 
     if (listTicketPanels(ctx.guildId).length >= MAX_PANELS) {
-      await ctx.fail({
-        embeds: [errorEmbed('Too many panels', `A server can have at most ${MAX_PANELS} panels.`)],
-      });
+      await ctx.fail(
+        ephemeral(
+          errorReply('لوحات كثيرة', `السيرفر يقدر يكون فيه ${MAX_PANELS} لوحات كحد أقصى.`),
+        ),
+      );
       return;
     }
 
@@ -812,30 +831,21 @@ async function handlePanelAdd(ctx) {
     if (channel) message = await publishPanel(ctx.guild, channel, key);
 
     await ctx.reply(
-      ephemeral({
-        embeds: [
-          successEmbed(
-            `Panel created · ${panel.label}`,
-            [
-              `Key: \`${panel.key}\` · Buttons: **${countPanelButtons(ctx.guildId, key)}**`,
-              message
-                ? `It is live in ${channel} ([jump](${message.url ?? '#'})).`
-                : `Post it with \`/ticket panel post key:${panel.key} channel:#channel\`.`,
-              `Add buttons with \`/ticket button add key:help label:Help panel:${panel.key} category:#tickets\`.`,
-            ].join('\n'),
-          ),
-        ],
-      }),
+      ephemeral(
+        okReply(
+          `ان سوّت اللوحة · ${panel.label}`,
+          [
+            `المفتاح: \`${panel.key}\` · الأزرار: **${countPanelButtons(ctx.guildId, key)}**`,
+            message
+              ? `الحين شغالة في ${channel} ([انتقال](${message.url ?? '#'})).`
+              : `انشرها بـ \`/ticket panel post key:${panel.key} channel:#channel\`.`,
+            `أضف أزرار بـ \`/ticket button add key:help label:Help panel:${panel.key} category:#tickets\`.`,
+          ].join('\n'),
+        ),
+      ),
     );
   } catch (error) {
-    await ctx.fail({
-      embeds: [
-        errorEmbed(
-          'Could not create the panel',
-          error instanceof TicketError ? error.message : error.message,
-        ),
-      ],
-    });
+    await ctx.fail(ephemeral(errorReply('ما قدرت أسوي اللوحة', error.message)));
   }
 }
 
@@ -847,23 +857,25 @@ async function handlePanelEdit(ctx) {
     const key = normalizePanelKey(rawKey);
 
     if (!key) {
-      await ctx.fail({
-        embeds: [errorEmbed('No panel given', 'Use `/ticket panel edit key:support title:"..."`.')],
-      });
+      await ctx.fail(
+        ephemeral(
+          errorReply('ما فيه لوحة', 'استخدم `/ticket panel edit key:support title:"..."`.'),
+        ),
+      );
       return;
     }
 
     const existing = getTicketPanel(ctx.guildId, key);
 
     if (!existing) {
-      await ctx.fail({
-        embeds: [
-          errorEmbed(
-            'Unknown panel',
-            `No panel called \`${rawKey || '?'}\`. Create it with \`/ticket panel add key:${key || 'key'}\`.`,
+      await ctx.fail(
+        ephemeral(
+          errorReply(
+            'لوحة غير معروفة',
+            `ما فيه لوحة اسمها \`${rawKey || '?'}\`. سوّها بـ \`/ticket panel add key:${key || 'key'}\`.`,
           ),
-        ],
-      });
+        ),
+      );
       return;
     }
 
@@ -881,29 +893,20 @@ async function handlePanelEdit(ctx) {
     }
 
     await ctx.reply(
-      ephemeral({
-        embeds: [
-          successEmbed(
-            `Panel saved · ${panel.label}`,
-            [
-              `Key: \`${panel.key}\` · Buttons: **${countPanelButtons(ctx.guildId, key)}**`,
-              message
-                ? `The posted panel was refreshed ([jump](${message.url ?? '#'})).`
-                : `Post it with \`/ticket panel post key:${panel.key} channel:#channel\`.`,
-            ].join('\n'),
-          ),
-        ],
-      }),
+      ephemeral(
+        okReply(
+          `انحفظت اللوحة · ${panel.label}`,
+          [
+            `المفتاح: \`${panel.key}\` · الأزرار: **${countPanelButtons(ctx.guildId, key)}**`,
+            message
+              ? `تحدّثت اللوحة المنشورة ([انتقال](${message.url ?? '#'})).`
+              : `انشرها بـ \`/ticket panel post key:${panel.key} channel:#channel\`.`,
+          ].join('\n'),
+        ),
+      ),
     );
   } catch (error) {
-    await ctx.fail({
-      embeds: [
-        errorEmbed(
-          'Could not save the panel',
-          error instanceof TicketError ? error.message : error.message,
-        ),
-      ],
-    });
+    await ctx.fail(ephemeral(errorReply('ما قدرت أحفظ اللوحة', error.message)));
   }
 }
 
@@ -940,7 +943,9 @@ async function handlePanelPost(ctx) {
     if (!channel) channel = ctx.channel;
 
     if (!channel?.isTextBased?.()) {
-      await ctx.fail({ embeds: [errorEmbed('No channel', 'Pick a text channel for the panel.')] });
+      await ctx.fail(
+        ephemeral(errorReply('ما فيه قناة', 'اختر قناة نصية للوحة.')),
+      );
       return;
     }
 
@@ -948,31 +953,29 @@ async function handlePanelPost(ctx) {
     const message = await publishPanel(ctx.guild, channel, key);
 
     await ctx.reply(
-      ephemeral({
-        embeds: [
-          successEmbed(
-            `Panel posted · ${panel.label}`,
-            [
-              `It is live in ${channel} ([jump](${message.url ?? '#'})).`,
-              buttons.length
-                ? `It has **${buttons.length}** button(s) and uses your custom embed.`
-                : `It has no buttons yet. Add one with \`/ticket button add ... panel:${key}\`.`,
-            ].join('\n'),
-          ),
-        ],
-      }),
+      ephemeral(
+        okReply(
+          `اننشرت اللوحة · ${panel.label}`,
+          [
+            `الحين شغالة في ${channel} ([انتقال](${message.url ?? '#'})).`,
+            buttons.length
+              ? `فيها **${buttons.length}** زر وتستخدم تضمينك المخصص.`
+              : `ما فيها أزرار بعد. أضف واحد بـ \`/ticket button add ... panel:${key}\`.`,
+          ].join('\n'),
+        ),
+      ),
     );
   } catch (error) {
-    await ctx.fail({
-      embeds: [
-        errorEmbed(
-          'Could not post the panel',
+    await ctx.fail(
+      ephemeral(
+        errorReply(
+          'ما قدرت أنشر اللوحة',
           error instanceof TicketError
             ? error.message
-            : `Check that I can **View Channel**, **Send Messages** and **Embed Links** in the channel. ${error.message}`,
+            : `تأكد إني أقدر **عرض القنوات**، **إرسال الرسائل** و**إرفاق الروابط** في القناة. ${error.message}`,
         ),
-      ],
-    });
+      ),
+    );
   }
 }
 
@@ -985,13 +988,13 @@ async function handlePanelList(ctx) {
   await ctx.reply({
     embeds: [
       embed({
-        title: 'Ticket panels',
+        title: 'لوحات التذاكر',
         description: panels.length
           ? [
-              `**${panels.length}** panel(s) · **${buttons.length}** button(s).`,
-              `Log channel: ${channelLabel(ctx.guild, getTicketSettings(ctx.guildId).logChannelId)}`,
+              `**${panels.length}** لوحة · **${buttons.length}** زر.`,
+              `قناة السجل: ${channelLabel(ctx.guild, getTicketSettings(ctx.guildId).logChannelId)}`,
             ].join('\n')
-          : 'No panels yet. Create one with `/ticket panel add key:main label:Main`.',
+          : 'ما فيه لوحات بعد. سوِّ واحدة بـ `/ticket panel add key:main label:Main`.',
         fields: panels.map((panel) => {
           const members = buttons.filter((button) => button.panelKey === panel.key);
 
@@ -1003,14 +1006,14 @@ async function handlePanelList(ctx) {
                 ? members
                     .map((button) => `• ${button.buttonLabel || button.label} (\`${button.key}\`)`)
                     .join('\n')
-                : '• no buttons yet',
+                : '• ما فيه أزرار بعد',
             ]
               .join('\n')
               .slice(0, 1024),
           };
         }),
         color: COLORS.primary,
-        footer: 'Edit a panel with /ticket panel edit, or a button with /ticket button edit',
+        footer: 'عدّل لوحة بـ /ticket panel edit، أو زر بـ /ticket button edit',
       }),
     ],
   });
@@ -1028,9 +1031,9 @@ async function handlePanelRemove(ctx) {
     : flags.confirm !== undefined || ctx.args.includes('confirm');
 
   if (!panel) {
-    await ctx.fail({
-      embeds: [errorEmbed('Unknown panel', `No panel called \`${rawKey || '?'}\`.` )],
-    });
+    await ctx.fail(
+      ephemeral(errorReply('لوحة غير معروفة', `ما فيه لوحة اسمها \`${rawKey || '?'}\`.`)),
+    );
     return;
   }
 
@@ -1040,28 +1043,28 @@ async function handlePanelRemove(ctx) {
     .filter((entry) => entry.count > 0);
 
   if (open.length > 0) {
-    await ctx.fail({
-      embeds: [
-        warningEmbed(
-          'Open tickets still exist',
-          `Close the open tickets before deleting this panel:\n${open
+    await ctx.fail(
+      ephemeral(
+        warnReply(
+          'فيه تذاكر مفتوحة',
+          `اقفل التذاكر المفتوحة قبل ما تحذف هذي اللوحة:\n${open
             .map((entry) => `• \`${entry.button.key}\` (${entry.count})`)
             .join('\n')}`,
         ),
-      ],
-    });
+      ),
+    );
     return;
   }
 
   if (!confirmed) {
-    await ctx.fail({
-      embeds: [
-        warningEmbed(
-          'Confirmation needed',
-          `This deletes panel \`${panel.key}\` and its **${buttons.length}** button(s). Run \`/ticket panel remove key:${panel.key} confirm:true\`.`,
+    await ctx.fail(
+      ephemeral(
+        warnReply(
+          'يحتاج تأكيد',
+          `هذا يحذف اللوحة \`${panel.key}\` و**${buttons.length}** زر. شغّل \`/ticket panel remove key:${panel.key} confirm:true\`.`,
         ),
-      ],
-    });
+      ),
+    );
     return;
   }
 
@@ -1077,14 +1080,12 @@ async function handlePanelRemove(ctx) {
   for (const button of buttons) deleteTicketType(ctx.guildId, button.key);
   deleteTicketPanel(ctx.guildId, panel.key);
 
-  await ctx.reply({
-    embeds: [
-      successEmbed(
-        'Panel deleted',
-        `\`${panel.key}\` and its **${buttons.length}** button(s) were removed.`,
-      ),
-    ],
-  });
+  await ctx.reply(
+    okReply(
+      'انحذفت اللوحة',
+      `انشالت \`${panel.key}\` و**${buttons.length}** زر معها.`,
+    ),
+  );
 }
 
 async function handleList(ctx) {
@@ -1098,21 +1099,21 @@ async function handleList(ctx) {
   await ctx.reply({
     embeds: [
       embed({
-        title: 'Ticket setup',
+        title: 'إعداد التذاكر',
         description: [
-          `Panels: **${panels.length}** · buttons: **${buttons.length}** · open: **${counts.open}** · archived: **${counts.closed}** · deleted: **${counts.deleted}**`,
-          `Log channel: ${channelLabel(ctx.guild, settings.logChannelId)}`,
+          `اللوحات: **${panels.length}** · الأزرار: **${buttons.length}** · المفتوحة: **${counts.open}** · المؤرشفة: **${counts.closed}** · المحذوفة: **${counts.deleted}**`,
+          `قناة السجل: ${channelLabel(ctx.guild, settings.logChannelId)}`,
         ].join('\n'),
         fields: panels.map((panel) => {
           const members = buttons.filter((button) => button.panelKey === panel.key);
 
           return {
-            name: `${panel.label} · ${panel.key} · ${members.length} button(s)`,
+            name: `${panel.label} · ${panel.key} · ${members.length} أزرار`,
             value: [
               panelLine(ctx.guild, panel),
               ...members.map(
                 (button) =>
-                  `• ${button.emoji ? `${button.emoji} ` : ''}${button.buttonLabel || button.label} (\`${button.key}\`) → ${button.categoryId ? `<#${button.categoryId}>` : '⚠️ no category'}`,
+                  `• ${button.emoji ? `${button.emoji} ` : ''}${button.buttonLabel || button.label} (\`${button.key}\`) → ${button.categoryId ? `<#${button.categoryId}>` : '⚠️ بدون فئة'}`,
               ),
             ]
               .join('\n')
@@ -1120,7 +1121,7 @@ async function handleList(ctx) {
           };
         }),
         footer:
-          'Edit a panel with /ticket panel edit, or a button with /ticket button edit. Up to 25 buttons per panel.',
+          'عدّل لوحة بـ /ticket panel edit، أو زر بـ /ticket button edit. حتى 25 زر في اللوحة.',
       }),
     ],
   });
@@ -1140,8 +1141,8 @@ async function handleLog(ctx) {
         ephemeral({
           embeds: [
             embed({
-              title: 'Ticket log',
-              description: `Current log channel: ${channelLabel(ctx.guild, settings.logChannelId)}`,
+              title: 'سجل التذاكر',
+              description: `قناة السجل الحالية: ${channelLabel(ctx.guild, settings.logChannelId)}`,
               color: COLORS.primary,
             }),
           ],
@@ -1151,15 +1152,15 @@ async function handleLog(ctx) {
     }
 
     if (channel.isTextBased?.() === false) {
-      await ctx.fail({ embeds: [errorEmbed('Invalid channel', 'Pick a text channel.')] });
+      await ctx.fail(ephemeral(errorReply('قناة غير صالحة', 'اختر قناة نصية.')));
       return;
     }
 
     updateTicketSettings(ctx.guildId, { logChannelId: channel.id });
     await ctx.reply(
-      ephemeral({
-        embeds: [successEmbed('Ticket log set', `Transcripts and ticket events now go to ${channel}.`)],
-      }),
+      ephemeral(
+        okReply('انضبط سجل التذاكر', `النسخ وأحداث التذاكر الحين تروح إلى ${channel}.`),
+      ),
     );
     return;
   }
@@ -1168,8 +1169,8 @@ async function handleLog(ctx) {
     await ctx.reply({
       embeds: [
         embed({
-          title: 'Ticket log',
-          description: `Current log channel: ${channelLabel(ctx.guild, settings.logChannelId)}`,
+          title: 'سجل التذاكر',
+          description: `قناة السجل الحالية: ${channelLabel(ctx.guild, settings.logChannelId)}`,
           color: COLORS.primary,
         }),
       ],
@@ -1180,25 +1181,23 @@ async function handleLog(ctx) {
   try {
     const channel = await resolveTextChannel(ctx.guild, raw);
     updateTicketSettings(ctx.guildId, { logChannelId: channel?.id ?? null });
-    await ctx.reply({
-      embeds: [
-        successEmbed(
-          channel ? 'Ticket log set' : 'Ticket log cleared',
-          channel
-            ? `Transcripts and ticket events now go to ${channel}.`
-            : 'Closed tickets will now be archived instead of deleted.',
-        ),
-      ],
-    });
+    await ctx.reply(
+      okReply(
+        channel ? 'انضبط سجل التذاكر' : 'انمسح سجل التذاكر',
+        channel
+          ? `النسخ وأحداث التذاكر الحين تروح إلى ${channel}.`
+          : 'التذاكر المقفلة الحين تنؤرشف بدال ما تنحذف.',
+      ),
+    );
   } catch (error) {
-    await ctx.fail({ embeds: [errorEmbed('Could not set the log channel', error.message)] });
+    await ctx.fail(ephemeral(errorReply('ما قدرت أضبط قناة السجل', error.message)));
   }
 }
 
 function ticketContext(ctx) {
   const ticket = getTicketByChannel(ctx.guildId, ctx.channelId);
 
-  if (!ticket) throw new TicketError('This channel is not a ticket.');
+  if (!ticket) throw new TicketError('هذي القناة مو تذكرة.');
 
   return { ticket, type: getTicketType(ctx.guildId, ticket.typeKey) };
 }
@@ -1212,28 +1211,28 @@ async function handleOpen(ctx) {
   const current = getTicketByChannel(ctx.guildId, ctx.channelId);
 
   if (current) {
-    await ctx.fail({
-      embeds: [
-        errorEmbed(
-          'Already in a ticket',
-          'Use `/ticket reopen` to reopen this ticket, or `/ticket close` to close it. `/ticket open` creates a ticket in a normal channel.',
+    await ctx.fail(
+      ephemeral(
+        errorReply(
+          'أنت داخل تذكرة أصلًا',
+          'استخدم `/ticket reopen` عشان ترجّع هذي التذكرة، أو `/ticket close` عشان تقفلها. `/ticket open` يسوي تذكرة في قناة عادية.',
         ),
-      ],
-    });
+      ),
+    );
     return;
   }
 
   const buttons = listTicketTypes(ctx.guildId);
 
   if (buttons.length === 0) {
-    await ctx.fail({
-      embeds: [
-        errorEmbed(
-          'No ticket buttons yet',
-          'Create one with `/ticket button add key:help label:Help category:#tickets`.',
+    await ctx.fail(
+      ephemeral(
+        errorReply(
+          'ما فيه أزرار تذاكر',
+          'سوِّ واحد بـ `/ticket button add key:help label:Help category:#tickets`.',
         ),
-      ],
-    });
+      ),
+    );
     return;
   }
 
@@ -1256,7 +1255,9 @@ async function handleOpen(ctx) {
       );
 
       if (!target) {
-        await ctx.fail({ embeds: [errorEmbed('Member not found', 'Mention the member the ticket is for.')] });
+        await ctx.fail(
+          ephemeral(errorReply('ما لقيت العضو', 'اذكر العضو اللي التذكرة له.')),
+        );
         return;
       }
     } else {
@@ -1272,21 +1273,21 @@ async function handleOpen(ctx) {
       : null;
 
   if (!type) {
-    await ctx.fail({
-      embeds: [
-        errorEmbed(
-          'Pick a button',
-          `This server has several ticket buttons. Use \`/ticket open key:<key>\` with one of: ${buttons.map((button) => `\`${button.key}\``).join(', ')}.`,
+    await ctx.fail(
+      ephemeral(
+        errorReply(
+          'اختر زر',
+          `هذا السيرفر فيه أكثر من زر تذاكر. استخدم \`/ticket open key:<key>\` مع واحد من: ${buttons.map((button) => `\`${button.key}\``).join('، ')}.`,
         ),
-      ],
-    });
+      ),
+    );
     return;
   }
 
   if (!isStaffMember(ctx.guild, ctx.member, type)) {
-    await ctx.fail({
-      embeds: [errorEmbed('Missing permissions', 'Only the support team can open a ticket for someone.')],
-    });
+    await ctx.fail(
+      ephemeral(errorReply('صلاحيات ناقصة', 'فريق الدعم بس يقدر يفتح تذكرة لعضو.')),
+    );
     return;
   }
 
@@ -1301,25 +1302,23 @@ async function handleOpen(ctx) {
       typeKey: type.key,
     });
     const payload = {
-      embeds: [
-        successEmbed(
-          'Ticket opened',
-          `Ticket #${padTicketNumber(ticket.number)} for <@${opener.id}>: <#${channel.id}>.`,
-        ),
-      ],
+      ...okReply(
+        'انفتحت التذكرة',
+        `تذكرة #${padTicketNumber(ticket.number)} لـ <@${opener.id}>: <#${channel.id}>.`,
+      ),
       allowedMentions: { parse: [] },
     };
 
     if (ctx.isSlash) await ctx.editReply(payload);
     else await ctx.reply(payload);
   } catch (error) {
-    const embed = errorEmbed(
-      'Could not open the ticket',
-      error instanceof TicketError ? error.message : 'Something went wrong.',
+    const embed = errorReply(
+      'ما قدرت أفتح التذكرة',
+      error instanceof TicketError ? error.message : 'صار خطأ.',
     );
 
-    if (ctx.isSlash) await ctx.editReply({ embeds: [embed] }).catch(() => null);
-    else await ctx.reply({ embeds: [embed] }).catch(() => null);
+    if (ctx.isSlash) await ctx.editReply(embed).catch(() => null);
+    else await ctx.reply(embed).catch(() => null);
   }
 }
 
@@ -1333,23 +1332,25 @@ async function handleReopen(ctx) {
   try {
     context = ticketContext(ctx);
   } catch (error) {
-    await ctx.fail({ embeds: [errorEmbed('Not a ticket', error.message)] });
+    await ctx.fail(ephemeral(errorReply('مو تذكرة', error.message)));
     return;
   }
 
   const { ticket, type } = context;
 
   if (!isStaffMember(ctx.guild, ctx.member, type)) {
-    await ctx.fail({
-      embeds: [errorEmbed('Missing permissions', 'Only the support team can reopen a ticket.')],
-    });
+    await ctx.fail(
+      ephemeral(errorReply('صلاحيات ناقصة', 'فريق الدعم بس يقدر يرجّع تذكرة.')),
+    );
     return;
   }
 
   if (ticket.status === 'open') {
-    await ctx.fail({
-      embeds: [errorEmbed('Already open', 'This ticket is already open. Use `/ticket close` to close it.')],
-    });
+    await ctx.fail(
+      ephemeral(
+        errorReply('مفتوحة أصلًا', 'هذي التذكرة مفتوحة. استخدم `/ticket close` عشان تقفلها.'),
+      ),
+    );
     return;
   }
 
@@ -1364,24 +1365,20 @@ async function handleReopen(ctx) {
       type,
     });
   } catch (error) {
-    const embed = errorEmbed(
-      'Could not reopen the ticket',
-      error instanceof TicketError ? error.message : 'Something went wrong.',
+    const payload = errorReply(
+      'ما قدرت أرجّع التذكرة',
+      error instanceof TicketError ? error.message : 'صار خطأ.',
     );
 
-    if (ctx.isSlash) await ctx.editReply({ embeds: [embed] }).catch(() => null);
-    else await ctx.reply({ embeds: [embed] }).catch(() => null);
+    if (ctx.isSlash) await ctx.editReply(payload).catch(() => null);
+    else await ctx.reply(payload).catch(() => null);
     return;
   }
 
-  const payload = {
-    embeds: [
-      successEmbed(
-        'Ticket reopened',
-        `Ticket #${padTicketNumber(ticket.number)} is open again.`,
-      ),
-    ],
-  };
+  const payload = okReply(
+    'رجعت التذكرة',
+    `تذكرة #${padTicketNumber(ticket.number)} صارت مفتوحة من جديد.`,
+  );
 
   if (ctx.isSlash) await ctx.editReply(payload);
   else await ctx.reply(payload);
@@ -1398,16 +1395,16 @@ async function handleTicketDelete(ctx) {
   try {
     context = ticketContext(ctx);
   } catch (error) {
-    await ctx.fail({ embeds: [errorEmbed('Not a ticket', error.message)] });
+    await ctx.fail(ephemeral(errorReply('مو تذكرة', error.message)));
     return;
   }
 
   const { ticket, type } = context;
 
   if (!isStaffMember(ctx.guild, ctx.member, type)) {
-    await ctx.fail({
-      embeds: [errorEmbed('Missing permissions', 'Only the support team can delete a ticket.')],
-    });
+    await ctx.fail(
+      ephemeral(errorReply('صلاحيات ناقصة', 'فريق الدعم بس يقدر يحذف تذكرة.')),
+    );
     return;
   }
 
@@ -1417,14 +1414,14 @@ async function handleTicketDelete(ctx) {
       parseFlagTokens(ctx.args.slice(1)).flags.confirm !== undefined;
 
   if (!confirmed) {
-    await ctx.fail({
-      embeds: [
-        warningEmbed(
-          'Confirmation needed',
-          `This deletes ticket #${padTicketNumber(ticket.number)} without a transcript. Run \`/ticket delete confirm:true\` (prefix \`:-ticket delete confirm\`) to delete it.`,
+    await ctx.fail(
+      ephemeral(
+        warnReply(
+          'يحتاج تأكيد',
+          `هذا يحذف تذكرة #${padTicketNumber(ticket.number)} بدون نسخة. شغّل \`/ticket delete confirm:true\` (بالبادئة \`:-ticket delete confirm\`) عشان تحذفها.`,
         ),
-      ],
-    });
+      ),
+    );
     return;
   }
 
@@ -1434,17 +1431,16 @@ async function handleTicketDelete(ctx) {
   try {
     await ctx.channel.delete(`Ticket deleted by ${ctx.user.tag ?? ctx.user.id}`);
   } catch (error) {
-    await ctx.fail({ embeds: [errorEmbed('Could not delete the ticket', error.message)] });
+    await ctx.fail(ephemeral(errorReply('ما قدرت أحذف التذكرة', error.message)));
     return;
   }
 
   markTicketDeleted(ticket.id);
 
-  const payload = {
-    embeds: [
-      successEmbed('Ticket deleted', `Ticket #${padTicketNumber(ticket.number)} was deleted.`),
-    ],
-  };
+  const payload = okReply(
+    'انحذفت التذكرة',
+    `تذكرة #${padTicketNumber(ticket.number)} انحذفت.`,
+  );
 
   if (ctx.isSlash) await ctx.editReply(payload).catch(() => null);
   else if (ctx.user.send) await ctx.user.send(payload).catch(() => null);
@@ -1456,16 +1452,16 @@ async function handleClose(ctx) {
   try {
     context = ticketContext(ctx);
   } catch (error) {
-    await ctx.fail({ embeds: [errorEmbed('Not a ticket', error.message)] });
+    await ctx.fail(ephemeral(errorReply('مو تذكرة', error.message)));
     return;
   }
 
   const { ticket, type } = context;
 
   if (!isStaffMember(ctx.guild, ctx.member, type)) {
-    await ctx.fail({
-      embeds: [errorEmbed('Missing permissions', 'Only the support team can close tickets.')],
-    });
+    await ctx.fail(
+      ephemeral(errorReply('صلاحيات ناقصة', 'فريق الدعم بس يقدر يقفل التذاكر.')),
+    );
     return;
   }
 
@@ -1484,22 +1480,20 @@ async function handleClose(ctx) {
 
     const message =
       result.mode === 'delete'
-        ? `Ticket #${String(ticket.number).padStart(4, '0')} closed and deleted. The transcript was saved.`
+        ? `تذكرة #${String(ticket.number).padStart(4, '0')} انقفلت وانحذفت. النسخة انحفظت.`
         : result.logged
-          ? `Ticket #${String(ticket.number).padStart(4, '0')} closed and archived. The transcript was saved.`
-          : 'Ticket closed and archived. No log channel is set, so no transcript was stored.';
+          ? `تذكرة #${String(ticket.number).padStart(4, '0')} انقفلت وانؤرشفت. النسخة انحفظت.`
+          : 'انقفلت التذكرة وانؤرشفت. ما فيه قناة سجل مضبوطة، فما انحفظت نسخة.';
 
-    await ctx.editReply({ embeds: [successEmbed('Ticket closed', message)] }).catch(() => null);
+    await ctx.editReply(okReply('انقفلت التذكرة', message)).catch(() => null);
   } catch (error) {
     await ctx
-      .editReply({
-        embeds: [
-          errorEmbed(
-            'Could not close the ticket',
-            error instanceof TicketError ? error.message : 'Something went wrong.',
-          ),
-        ],
-      })
+      .editReply(
+        errorReply(
+          'ما قدرت أقفل التذكرة',
+          error instanceof TicketError ? error.message : 'صار خطأ.',
+        ),
+      )
       .catch(() => null);
   }
 }
@@ -1510,14 +1504,16 @@ async function handleClaim(ctx) {
   try {
     context = ticketContext(ctx);
   } catch (error) {
-    await ctx.fail({ embeds: [errorEmbed('Not a ticket', error.message)] });
+    await ctx.fail(ephemeral(errorReply('مو تذكرة', error.message)));
     return;
   }
 
   const { ticket, type } = context;
 
   if (!isStaffMember(ctx.guild, ctx.member, type)) {
-    await ctx.fail({ embeds: [errorEmbed('Missing permissions', 'Only the support team can claim tickets.')] });
+    await ctx.fail(
+      ephemeral(errorReply('صلاحيات ناقصة', 'فريق الدعم بس يقدر يستلم التذاكر.')),
+    );
     return;
   }
 
@@ -1527,19 +1523,19 @@ async function handleClaim(ctx) {
     claimTicket(ticket.id, null);
     await ctx.channel
       .send({
-        embeds: [embed({ title: 'Ticket unclaimed', description: 'Anyone on the team can pick it up again.', color: COLORS.muted })],
+        embeds: [embed({ title: 'التذكرة صارت غير مستلمة', description: 'أي أحد من الفريق يقدر يستلمها من جديد.', color: COLORS.muted })],
         allowedMentions: { parse: [] },
       })
       .catch(() => null);
-    await ctx.editReply({ content: 'This ticket is unclaimed again.' }).catch(() => null);
+    await ctx.editReply({ content: 'رجعناها غير مستلمة.' }).catch(() => null);
     return;
   }
 
   if (ticket.claimedBy) {
     await ctx
-      .editReply({
-        embeds: [errorEmbed('Already claimed', `This ticket is claimed by <@${ticket.claimedBy}>.`)],
-      })
+      .editReply(
+        errorReply('مستلمة من قبل', `هذي التذكرة مستلمها <@${ticket.claimedBy}>.`),
+      )
       .catch(() => null);
     return;
   }
@@ -1549,15 +1545,15 @@ async function handleClaim(ctx) {
     .send({
       embeds: [
         embed({
-          title: 'Ticket claimed',
-          description: `This ticket is now handled by <@${ctx.user.id}>.`,
+          title: 'التذكرة صارت مستلمة',
+          description: `الحين يتابعها <@${ctx.user.id}>.`,
           color: COLORS.success,
         }),
       ],
       allowedMentions: { parse: [] },
     })
     .catch(() => null);
-  await ctx.editReply({ content: 'You claimed this ticket.' }).catch(() => null);
+  await ctx.editReply({ content: 'استلمت التذكرة.' }).catch(() => null);
 }
 
 async function ticketMember(ctx) {
@@ -1566,8 +1562,8 @@ async function ticketMember(ctx) {
     ? ctx.getMember('user') ?? (ctx.getUser('user') ? await ctx.guild.members.fetch(ctx.getUser('user').id).catch(() => null) : null)
     : await resolveMember(ctx.guild, token, ctx.message).catch(() => null);
 
-  if (!member) throw new TicketError('Member not found.');
-  if (member.user?.bot) throw new TicketError('Bots cannot be added to a ticket. Pick a person instead.');
+  if (!member) throw new TicketError('ما لقيت العضو.');
+  if (member.user?.bot) throw new TicketError('البوتات ما تنضاف لتذكرة. اختر شخص.');
 
   return member;
 }
@@ -1578,12 +1574,14 @@ async function handleAddRemove(ctx, add) {
   try {
     context = ticketContext(ctx);
   } catch (error) {
-    await ctx.fail({ embeds: [errorEmbed('Not a ticket', error.message)] });
+    await ctx.fail(ephemeral(errorReply('مو تذكرة', error.message)));
     return;
   }
 
   if (!isStaffMember(ctx.guild, ctx.member, context.type)) {
-    await ctx.fail({ embeds: [errorEmbed('Missing permissions', 'Only the support team can change ticket access.')] });
+    await ctx.fail(
+      ephemeral(errorReply('صلاحيات ناقصة', 'فريق الدعم بس يقدر يغيّر وصول التذكرة.')),
+    );
     return;
   }
 
@@ -1592,12 +1590,14 @@ async function handleAddRemove(ctx, add) {
   try {
     member = await ticketMember(ctx);
   } catch (error) {
-    await ctx.fail({ embeds: [errorEmbed('Invalid member', error.message)] });
+    await ctx.fail(ephemeral(errorReply('عضو غير صالح', error.message)));
     return;
   }
 
   if (!add && member.id === context.ticket.openerId) {
-    await ctx.fail({ embeds: [errorEmbed('Cannot remove the opener', 'The ticket opener always keeps access.')] });
+    await ctx.fail(
+      ephemeral(errorReply('ما ينشال صاحب التذكرة', 'صاحب التذكرة يحتفظ بالوصول دايمًا.')),
+    );
     return;
   }
 
@@ -1617,16 +1617,14 @@ async function handleAddRemove(ctx, add) {
     );
 
     await ctx.reply({
-      embeds: [
-        successEmbed(
-          add ? 'Member added' : 'Member removed',
-          `${member} ${add ? 'can now see and write in this ticket.' : 'can no longer see this ticket.'}`,
-        ),
-      ],
+      ...okReply(
+        add ? 'انضاف العضو' : 'انشال العضو',
+        `${member} ${add ? 'الحين يقدر يشوف التذكرة ويكتب فيها.' : 'ما عاد يقدر يشوف هذي التذكرة.'}`,
+      ),
       allowedMentions: { parse: [] },
     });
   } catch (error) {
-    await ctx.fail({ embeds: [errorEmbed('Could not update access', error.message)] });
+    await ctx.fail(ephemeral(errorReply('ما قدرت أحدّث الوصول', error.message)));
   }
 }
 
@@ -1636,12 +1634,14 @@ async function handleRename(ctx) {
   try {
     context = ticketContext(ctx);
   } catch (error) {
-    await ctx.fail({ embeds: [errorEmbed('Not a ticket', error.message)] });
+    await ctx.fail(ephemeral(errorReply('مو تذكرة', error.message)));
     return;
   }
 
   if (!isStaffMember(ctx.guild, ctx.member, context.type)) {
-    await ctx.fail({ embeds: [errorEmbed('Missing permissions', 'Only the support team can rename tickets.')] });
+    await ctx.fail(
+      ephemeral(errorReply('صلاحيات ناقصة', 'فريق الدعم بس يقدر يغيّر اسم التذكرة.')),
+    );
     return;
   }
 
@@ -1649,15 +1649,17 @@ async function handleRename(ctx) {
   const name = sanitizeChannelName(raw);
 
   if (!raw || name === 'ticket') {
-    await ctx.fail({ embeds: [errorEmbed('No name given', 'Use letters, numbers, `-` or `_`.')] });
+    await ctx.fail(
+      ephemeral(errorReply('ما فيه اسم', 'استخدم حروف أو أرقام أو `-` أو `_`.')),
+    );
     return;
   }
 
   try {
     await ctx.channel.setName(name, `Ticket renamed by ${ctx.user.tag ?? ctx.user.id}`);
-    await ctx.reply({ embeds: [successEmbed('Ticket renamed', `This ticket is now \`${name}\`.`)] });
+    await ctx.reply(okReply('انغيّر اسم التذكرة', `صارت \`${name}\`.`));
   } catch (error) {
-    await ctx.fail({ embeds: [errorEmbed('Could not rename the ticket', error.message)] });
+    await ctx.fail(ephemeral(errorReply('ما قدرت أغيّر الاسم', error.message)));
   }
 }
 
@@ -1667,16 +1669,18 @@ async function handleTranscript(ctx) {
   try {
     context = ticketContext(ctx);
   } catch (error) {
-    await ctx.fail({ embeds: [errorEmbed('Not a ticket', error.message)] });
+    await ctx.fail(ephemeral(errorReply('مو تذكرة', error.message)));
     return;
   }
 
   const { ticket, type } = context;
 
   if (ticket.openerId !== ctx.user.id && !isStaffMember(ctx.guild, ctx.member, type)) {
-    await ctx.fail({
-      embeds: [errorEmbed('Missing permissions', 'Only the opener or the support team can export a transcript.')],
-    });
+    await ctx.fail(
+      ephemeral(
+        errorReply('صلاحيات ناقصة', 'صاحب التذكرة أو فريق الدعم بس يقدر يصدّر نسخة.'),
+      ),
+    );
     return;
   }
 
@@ -1688,21 +1692,24 @@ async function handleTranscript(ctx) {
       channel: ctx.channel,
       ticket,
       type,
-      title: 'Ticket transcript',
+      title: 'نسخة التذكرة',
       color: COLORS.primary,
     });
 
     if (log) {
       await ctx
-        .editReply({
-          embeds: [successEmbed('Transcript saved', `It was sent to ${channelLabel(ctx.guild, log.channelId)} with ${transcript.messages} message(s).`)],
-        })
+        .editReply(
+          okReply(
+            'انحفظت النسخة',
+            `انرسلت إلى ${channelLabel(ctx.guild, log.channelId)} ومعها ${transcript.messages} رسالة.`,
+          ),
+        )
         .catch(() => null);
       return;
     }
 
     const payload = {
-      content: 'No log channel is set, so here is the transcript directly.',
+      content: 'ما فيه قناة سجل مضبوطة، فهذي النسخة مباشرة.',
       files: [new AttachmentBuilder(Buffer.from(transcript.html, 'utf8'), { name: transcript.filename })],
     };
 
@@ -1710,14 +1717,12 @@ async function handleTranscript(ctx) {
     else await ctx.reply(payload).catch(() => null);
   } catch (error) {
     await ctx
-      .editReply({
-        embeds: [
-          errorEmbed(
-            'Could not create the transcript',
-            error instanceof TicketError ? error.message : 'Something went wrong.',
-          ),
-        ],
-      })
+      .editReply(
+        errorReply(
+          'ما قدرت أسوي النسخة',
+          error instanceof TicketError ? error.message : 'صار خطأ.',
+        ),
+      )
       .catch(() => null);
   }
 }
@@ -1725,87 +1730,87 @@ async function handleTranscript(ctx) {
 function addButtonOptions(sub, { requireLabel = false } = {}) {
   return sub
     .addStringOption((option) =>
-      option.setName('key').setDescription('Short id used in the button, for example help').setRequired(true).setAutocomplete(true),
+      option.setName('key').setDescription('مفتاح قصير للزر، مثل help').setRequired(true).setAutocomplete(true),
     )
     .addStringOption((option) =>
-      option.setName('label').setDescription('Name shown in the embed and ticket').setRequired(requireLabel),
+      option.setName('label').setDescription('الاسم اللي يظهر في التضمين والتذكرة').setRequired(requireLabel),
     )
     .addChannelOption((option) =>
       option
         .setName('category')
-        .setDescription('Category where this button creates ticket channels')
+        .setDescription('الفئة اللي ينشئ فيها هذا الزر قنوات التذاكر')
         .addChannelTypes(ChannelType.GuildCategory)
         .setRequired(requireLabel),
     )
     .addChannelOption((option) =>
       option
         .setName('closed_category')
-        .setDescription('Category that closed tickets are moved to (default: stay)')
+        .setDescription('الفئة اللي تنقل لها التذاكر المقفلة (الافتراضي: تبقى)')
         .addChannelTypes(ChannelType.GuildCategory)
         .setRequired(false),
     )
     .addStringOption((option) =>
       option
         .setName('panel')
-        .setDescription('Panel this button belongs to (default: main)')
+        .setDescription('اللوحة اللي ينتمي لها الزر (الافتراضي: main)')
         .setAutocomplete(true)
         .setRequired(false),
     )
     .addStringOption((option) =>
-      option.setName('emoji').setDescription('Button emoji, for example 🎫').setRequired(false),
+      option.setName('emoji').setDescription('إيموجي الزر، مثل 🎫').setRequired(false),
     )
     .addStringOption((option) =>
-      option.setName('button_label').setDescription('Text on the button if it differs from the label').setRequired(false),
+      option.setName('button_label').setDescription('نص الزر إذا يختلف عن الاسم').setRequired(false),
     )
     .addStringOption((option) =>
       option
         .setName('style')
-        .setDescription('Button color')
+        .setDescription('لون الزر')
         .addChoices(
-          { name: 'Blue (primary)', value: 'primary' },
-          { name: 'Gray (secondary)', value: 'secondary' },
-          { name: 'Green (success)', value: 'success' },
-          { name: 'Red (danger)', value: 'danger' },
+          { name: 'أزرق (أساسي)', value: 'primary' },
+          { name: 'رمادي (ثانوي)', value: 'secondary' },
+          { name: 'أخضر (نجاح)', value: 'success' },
+          { name: 'أحمر (خطر)', value: 'danger' },
         )
         .setRequired(false),
     )
     .addStringOption((option) =>
-      option.setName('support_roles').setDescription('Roles that can see and manage this ticket (comma-separated)').setRequired(false),
+      option.setName('support_roles').setDescription('رتب تشوف وتدير هذي التذكرة (بينها فاصلة)').setRequired(false),
     )
     .addStringOption((option) =>
-      option.setName('ping_roles').setDescription('Roles pinged when this ticket opens (comma-separated)').setRequired(false),
+      option.setName('ping_roles').setDescription('رتب تنمنشن لما تنفتح التذكرة (بينها فاصلة)').setRequired(false),
     )
     .addChannelOption((option) =>
       option
         .setName('log_channel')
-        .setDescription('Transcript and event log for this button')
+        .setDescription('سجل النسخ والأحداث لهذا الزر')
         .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
         .setRequired(false),
     )
     .addStringOption((option) =>
-      option.setName('welcome').setDescription('Welcome text; supports {mention}, {user}, {server}, {type}, {number}').setRequired(false),
+      option.setName('welcome').setDescription('نص الترحيب؛ يدعم {mention}، {user}، {server}، {type}، {number}').setRequired(false),
     )
     .addStringOption((option) =>
-      option.setName('name_template').setDescription('Channel name; supports {number}, {user}, {type}').setRequired(false),
+      option.setName('name_template').setDescription('اسم القناة؛ يدعم {number}، {user}، {type}').setRequired(false),
     )
     .addIntegerOption((option) =>
-      option.setName('max_open').setDescription('Open tickets per member (1–10, default 1)').setMinValue(1).setMaxValue(10).setRequired(false),
+      option.setName('max_open').setDescription('التذاكر المفتوحة لكل عضو (1–10، الافتراضي 1)').setMinValue(1).setMaxValue(10).setRequired(false),
     )
     .addStringOption((option) =>
       option
         .setName('close_action')
-        .setDescription('Delete the channel after closing, or archive it')
+        .setDescription('احذف القناة بعد الإغلاق أو أرشفها')
         .addChoices(
-          { name: 'Delete channel', value: 'delete' },
-          { name: 'Archive channel', value: 'archive' },
+          { name: 'احذف القناة', value: 'delete' },
+          { name: 'أرشف القناة', value: 'archive' },
         )
         .setRequired(false),
     )
     .addStringOption((option) =>
-      option.setName('color').setDescription('Embed color for this ticket, for example #5865f2 or red').setRequired(false),
+      option.setName('color').setDescription('لون تضمين التذكرة، مثل #5865f2 أو red').setRequired(false),
     )
     .addIntegerOption((option) =>
-      option.setName('position').setDescription('Order on the panel (lower first)').setMinValue(0).setMaxValue(99).setRequired(false),
+      option.setName('position').setDescription('الترتيب في اللوحة (الأصغر أول)').setMinValue(0).setMaxValue(99).setRequired(false),
     );
 }
 
@@ -1814,120 +1819,120 @@ function addPanelOptions(sub, { requireKey = false } = {}) {
     .addStringOption((option) =>
       option
         .setName('key')
-        .setDescription('Panel id, for example support')
+        .setDescription('مفتاح اللوحة، مثل support')
         .setRequired(requireKey)
         .setAutocomplete(true),
     )
     .addStringOption((option) =>
-      option.setName('label').setDescription('Name shown in /ticket panel list').setRequired(false),
+      option.setName('label').setDescription('الاسم اللي يظهر في /ticket panel list').setRequired(false),
     )
     .addChannelOption((option) =>
       option
         .setName('channel')
-        .setDescription('Where to post it (default: saved channel or this channel)')
+        .setDescription('وين تنشر (الافتراضي: القناة المحفوظة أو هذي القناة)')
         .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
         .setRequired(false),
     )
-    .addStringOption((option) => option.setName('title').setDescription('Embed title').setRequired(false))
+    .addStringOption((option) => option.setName('title').setDescription('عنوان التضمين').setRequired(false))
     .addStringOption((option) =>
-      option.setName('description').setDescription('Embed description').setRequired(false),
+      option.setName('description').setDescription('وصف التضمين').setRequired(false),
     )
     .addStringOption((option) =>
-      option.setName('color').setDescription('Embed color, for example #5865f2 or red').setRequired(false),
+      option.setName('color').setDescription('لون التضمين، مثل #5865f2 أو red').setRequired(false),
     )
-    .addStringOption((option) => option.setName('footer').setDescription('Embed footer').setRequired(false))
+    .addStringOption((option) => option.setName('footer').setDescription('تذييل التضمين').setRequired(false))
     .addStringOption((option) =>
-      option.setName('image').setDescription('Large image URL (http/https)').setRequired(false),
+      option.setName('image').setDescription('رابط الصورة الكبيرة (http/https)').setRequired(false),
     )
     .addStringOption((option) =>
-      option.setName('thumbnail').setDescription('Thumbnail URL (http/https)').setRequired(false),
+      option.setName('thumbnail').setDescription('رابط الصورة المصغّرة (http/https)').setRequired(false),
     )
     .addIntegerOption((option) =>
-      option.setName('position').setDescription('Order in /ticket panel list (lower first)').setMinValue(0).setMaxValue(99).setRequired(false),
+      option.setName('position').setDescription('الترتيب في /ticket panel list (الأصغر أول)').setMinValue(0).setMaxValue(99).setRequired(false),
     );
 }
 
 export default {
   data: new SlashCommandBuilder()
     .setName('ticket')
-    .setDescription('A fully customizable ticket panel with private channels and transcripts')
+    .setDescription('لوحات تذاكر قابلة للتخصيص، بقنوات خاصة ونسخ محادثة')
     .setContexts(InteractionContextType.Guild)
     .addSubcommandGroup((group) =>
       group
         .setName('button')
-        .setDescription('Admin: add, edit or remove panel buttons')
+        .setDescription('إدارة: ضيف أو عدّل أو احذف أزرار اللوحة')
         .addSubcommand((sub) =>
           addButtonOptions(
-            sub.setName('add').setDescription('Admin: add a customizable button to the panel'),
+            sub.setName('add').setDescription('إدارة: ضيف زر قابل للتخصيص للوحة'),
             { requireLabel: true },
           ),
         )
         .addSubcommand((sub) =>
-          addButtonOptions(sub.setName('edit').setDescription('Admin: change one button')),
+          addButtonOptions(sub.setName('edit').setDescription('إدارة: عدّل زر واحد')),
         )
         .addSubcommand((sub) =>
           sub
             .setName('remove')
-            .setDescription('Admin: delete a button from the panel')
+            .setDescription('إدارة: احذف زر من اللوحة')
             .addStringOption((option) =>
-              option.setName('key').setDescription('Button key').setRequired(true).setAutocomplete(true),
+              option.setName('key').setDescription('مفتاح الزر').setRequired(true).setAutocomplete(true),
             )
             .addBooleanOption((option) =>
-              option.setName('confirm').setDescription('Set true to confirm deletion').setRequired(true),
+              option.setName('confirm').setDescription('اختر true للتأكيد').setRequired(true),
             ),
         ),
     )
     .addSubcommandGroup((group) =>
       group
         .setName('panel')
-        .setDescription('Admin: create, edit or post named ticket panels')
+        .setDescription('إدارة: سوِّ لوحات مسمّاة أو عدّلها أو انشرها')
         .addSubcommand((sub) =>
           addPanelOptions(
-            sub.setName('add').setDescription('Admin: create a named panel with its own embed'),
+            sub.setName('add').setDescription('إدارة: سوِّ لوحة مسمّاة بتضمينها الخاص'),
             { requireKey: true },
           ),
         )
         .addSubcommand((sub) =>
           addPanelOptions(
-            sub.setName('edit').setDescription('Admin: change a panel embed or move it'),
+            sub.setName('edit').setDescription('إدارة: عدّل تضمين لوحة أو انقلها'),
             { requireKey: true },
           ),
         )
         .addSubcommand((sub) =>
-          addPanelOptions(sub.setName('post').setDescription('Admin: post or refresh one panel')),
+          addPanelOptions(sub.setName('post').setDescription('إدارة: انشر لوحة أو حدّثها')),
         )
         .addSubcommand((sub) =>
-          sub.setName('list').setDescription('Admin: show every panel and its buttons'),
+          sub.setName('list').setDescription('إدارة: اعرض كل لوحة وأزرارها'),
         )
         .addSubcommand((sub) =>
           sub
             .setName('remove')
-            .setDescription('Admin: delete a panel and its buttons')
+            .setDescription('إدارة: احذف لوحة وأزرارها')
             .addStringOption((option) =>
-              option.setName('key').setDescription('Panel key').setRequired(true).setAutocomplete(true),
+              option.setName('key').setDescription('مفتاح اللوحة').setRequired(true).setAutocomplete(true),
             )
             .addBooleanOption((option) =>
-              option.setName('confirm').setDescription('Set true to confirm deletion').setRequired(true),
+              option.setName('confirm').setDescription('اختر true للتأكيد').setRequired(true),
             ),
         ),
     )
-    .addSubcommand((sub) => sub.setName('list').setDescription('Admin: show every panel and button'))
-    .addSubcommand((sub) => sub.setName('buttons').setDescription('Admin: list every panel button'))
+    .addSubcommand((sub) => sub.setName('list').setDescription('إدارة: اعرض كل لوحة وزر'))
+    .addSubcommand((sub) => sub.setName('buttons').setDescription('إدارة: اعرض كل أزرار اللوحات'))
     .addSubcommand((sub) =>
       sub
         .setName('number')
-        .setDescription('Admin: set the starting ticket number for one button')
+        .setDescription('إدارة: اضبط رقم بداية تذاكر زر')
         .addStringOption((option) =>
           option
             .setName('key')
-            .setDescription('Button key (empty shows every button)')
+            .setDescription('مفتاح الزر (فاضي يعرض كل الأزرار)')
             .setAutocomplete(true)
             .setRequired(false),
         )
         .addIntegerOption((option) =>
           option
             .setName('start')
-            .setDescription('First ticket number (0–999999; 0 counts from 1)')
+            .setDescription('رقم أول تذكرة (0–999999؛ 0 يعني العد من 1)')
             .setMinValue(0)
             .setMaxValue(MAX_NUMBER_START)
             .setRequired(false),
@@ -1936,11 +1941,11 @@ export default {
     .addSubcommand((sub) =>
       sub
         .setName('log')
-        .setDescription('Admin: set the transcript and event log channel')
+        .setDescription('إدارة: اضبط قناة النسخ وأحداث التذاكر')
         .addChannelOption((option) =>
           option
             .setName('channel')
-            .setDescription('Log channel (empty shows the current one)')
+            .setDescription('قناة السجل (فاضي يعرض الحالية)')
             .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
             .setRequired(false),
         ),
@@ -1948,65 +1953,65 @@ export default {
     .addSubcommand((sub) =>
       sub
         .setName('open')
-        .setDescription('Open a ticket for a member (support team)')
+        .setDescription('افتح تذكرة لعضو (فريق الدعم)')
         .addStringOption((option) =>
           option
             .setName('key')
-            .setDescription('Which ticket button (default: the only one)')
+            .setDescription('أي زر تذاكر (الافتراضي: الوحيد)')
             .setAutocomplete(true)
             .setRequired(false),
         )
         .addUserOption((option) =>
           option
             .setName('user')
-            .setDescription('Member the ticket is for (default: you)')
+            .setDescription('العضو اللي التذكرة له (الافتراضي: أنت)')
             .setRequired(false),
         ),
     )
     .addSubcommand((sub) =>
       sub
         .setName('close')
-        .setDescription('Close the ticket in this channel')
-        .addStringOption((option) => option.setName('reason').setDescription('Optional close reason').setRequired(false)),
+        .setDescription('اقفل التذكرة في هذي القناة')
+        .addStringOption((option) => option.setName('reason').setDescription('سبب الإغلاق (اختياري)').setRequired(false)),
     )
     .addSubcommand((sub) =>
-      sub.setName('reopen').setDescription('Reopen the closed ticket in this channel (support team)'),
+      sub.setName('reopen').setDescription('رجّع التذكرة المقفلة في هذي القناة (فريق الدعم)'),
     )
-    .addSubcommand((sub) => sub.setName('claim').setDescription('Claim or unclaim this ticket (support team)'))
+    .addSubcommand((sub) => sub.setName('claim').setDescription('استلم هذي التذكرة أو اتركها (فريق الدعم)'))
     .addSubcommand((sub) =>
       sub
         .setName('add')
-        .setDescription('Add a member to this ticket (support team)')
-        .addUserOption((option) => option.setName('user').setDescription('Member to add').setRequired(true)),
+        .setDescription('ضيف عضو لهذي التذكرة (فريق الدعم)')
+        .addUserOption((option) => option.setName('user').setDescription('العضو اللي تنضيفه').setRequired(true)),
     )
     .addSubcommand((sub) =>
       sub
         .setName('remove')
-        .setDescription('Remove a member from this ticket (support team)')
-        .addUserOption((option) => option.setName('user').setDescription('Member to remove').setRequired(true)),
+        .setDescription('شيل عضو من هذي التذكرة (فريق الدعم)')
+        .addUserOption((option) => option.setName('user').setDescription('العضو اللي تنشيله').setRequired(true)),
     )
     .addSubcommand((sub) =>
       sub
         .setName('rename')
-        .setDescription('Rename this ticket (support team)')
-        .addStringOption((option) => option.setName('name').setDescription('New channel name').setRequired(true)),
+        .setDescription('غيّر اسم هذي التذكرة (فريق الدعم)')
+        .addStringOption((option) => option.setName('name').setDescription('اسم القناة الجديد').setRequired(true)),
     )
-    .addSubcommand((sub) => sub.setName('transcript').setDescription('Save an HTML transcript of this ticket'))
+    .addSubcommand((sub) => sub.setName('transcript').setDescription('احفظ نسخة HTML لهذي التذكرة'))
     .addSubcommand((sub) =>
       sub
         .setName('delete')
-        .setDescription('Delete this ticket channel without a transcript (support team)')
+        .setDescription('احذف قناة التذكرة بدون نسخة (فريق الدعم)')
         .addBooleanOption((option) =>
           option
             .setName('confirm')
-            .setDescription('Set true to delete the channel now')
+            .setDescription('اختر true عشان تحذف القناة الحين')
             .setRequired(false),
         ),
     ),
 
   name: 'ticket',
   aliases: ['tickets', 'ticket-tool', 'support'],
-  description: 'A fully customizable ticket panel with private channels and transcripts',
+  description: 'لوحات تذاكر قابلة للتخصيص، بقنوات خاصة ونسخ محادثة',
   category: 'Community',
   usage: 'ticket [button add|edit|remove | panel add|edit|post|list|remove | number|list|buttons|log|open|close|reopen|claim|add|remove|rename|delete|transcript]',
   cooldown: 3,

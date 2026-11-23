@@ -23,14 +23,14 @@ export function exportButton(id) {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(`${EXPORT_BUTTON_PREFIX}${id}`)
-      .setLabel('Export as HTML')
+      .setLabel('تصدير HTML')
       .setEmoji('📄')
       .setStyle(ButtonStyle.Secondary),
   );
 }
 
 function requesterLabel(createdBy) {
-  return /^\d{17,20}$/.test(String(createdBy ?? '')) ? `<@${createdBy}>` : 'an automatic schedule';
+  return /^\d{17,20}$/.test(String(createdBy ?? '')) ? `<@${createdBy}>` : 'جدولة تلقائية';
 }
 
 export function exportPayload(summary, timeZone) {
@@ -54,8 +54,8 @@ export function exportPayload(summary, timeZone) {
   return {
     embeds: [
       infoEmbed(
-        'Report exported',
-        'The HTML file opens in any browser. Use **Print → Save as PDF** for a PDF copy.',
+        'انصدّر التقرير',
+        'ملف HTML يفتح في أي متصفح. استخدم **طباعة ← حفظ كـ PDF** لنسخة PDF.',
       ),
     ],
     files: [new AttachmentBuilder(buffer, { name: filename })],
@@ -71,7 +71,7 @@ export async function handleExportInteraction(interaction) {
   if (!interaction.guildId) {
     await interaction
       .reply({
-        embeds: [errorEmbed('Not available here', 'Report export buttons only work inside the server.')],
+        embeds: [errorEmbed('مو متاح هنا', 'أزرار تصدير التقارير تشتغل داخل السيرفر بس.')],
         flags: MessageFlags.Ephemeral,
       })
       .catch(() => {});
@@ -82,7 +82,7 @@ export async function handleExportInteraction(interaction) {
 
   if (!Number.isFinite(id)) {
     await interaction
-      .reply({ embeds: [errorEmbed('Unknown report', 'That button is not valid.')], flags: MessageFlags.Ephemeral })
+      .reply({ embeds: [errorEmbed('تقرير غير معروف', 'هذا الزر غير صالح.')], flags: MessageFlags.Ephemeral })
       .catch(() => {});
     return;
   }
@@ -93,7 +93,7 @@ export async function handleExportInteraction(interaction) {
     await interaction
       .reply({
         embeds: [
-          errorEmbed('Report not found', 'This report is no longer stored, so it cannot be exported.'),
+          errorEmbed('ما لقيت التقرير', 'هذا التقرير ما عاد محفوظ، فما ينقدر نصدّره.'),
         ],
         flags: MessageFlags.Ephemeral,
       })
@@ -107,7 +107,7 @@ export async function handleExportInteraction(interaction) {
   if (!isModerator && !isOwner) {
     await interaction
       .reply({
-        embeds: [errorEmbed('Not allowed', 'Only moderators or the person who scheduled this report can export it.')],
+        embeds: [errorEmbed('ما عندك صلاحية', 'يصدره المشرفون أو اللي جدولوا التقرير بس.')],
         flags: MessageFlags.Ephemeral,
       })
       .catch(() => {});
@@ -121,8 +121,8 @@ export async function handleExportInteraction(interaction) {
       .reply({
         embeds: [
           errorEmbed(
-            'Empty report',
-            'That report was saved before the empty-report fix and contains nothing to export. The next scheduled run will post a real one.',
+            'تقرير فاضي',
+            'هذا التقرير انحفظ قبل إصلاح التقارير الفاضية وما فيه شي ينصدّر. التشغيل المجدول الجاي بينشر تقرير حقيقي.',
           ),
         ],
         flags: MessageFlags.Ephemeral,
@@ -240,12 +240,12 @@ export function reportPayloads({ data, meta, id, collected }) {
   const notes = [];
 
   if (truncated) {
-    notes.push('The report outgrew Discord\'s message limit — the export has the full text.');
+    notes.push('التقرير طلع عن حد ديسكورد — ملف التصدير فيه النص كامل.');
   }
 
   if (collected?.truncated) {
     notes.push(
-      `Scanned the newest ${collected.scanned} messages only — narrow the window for full coverage.`,
+      `انقرأ أحدث ${collected.scanned} رسالة بس — ضيّق الفترة عشان تغطية كاملة.`,
     );
   }
 

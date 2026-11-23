@@ -226,7 +226,7 @@ function migrateTicketPanels(guildId) {
       .run(
         guildId,
         DEFAULT_PANEL_KEY,
-        'Main',
+        'الرئيسية',
         row.panel_channel_id || null,
         row.panel_message_id || null,
         row.panel_title || null,
@@ -292,7 +292,7 @@ export function ensureTicketPanel(guildId, key, patch = {}) {
 export function upsertTicketPanel(guildId, key, patch = {}) {
   const normalized = normalizePanelKey(key);
 
-  if (!normalized) throw new Error('A ticket panel needs a key');
+  if (!normalized) throw new Error('اللوحة تحتاج مفتاح.');
 
   const base = getTicketPanel(guildId, normalized);
   const clean = Object.fromEntries(
@@ -320,7 +320,7 @@ export function upsertTicketPanel(guildId, key, patch = {}) {
     );
 
     if (panelCount >= MAX_PANELS) {
-      throw new Error(`A server can have at most ${MAX_PANELS} panels.`);
+      throw new Error(`السيرفر يقدر يكون فيه ${MAX_PANELS} لوحات كحد أقصى.`);
     }
   }
 
@@ -455,7 +455,7 @@ export function getTicketType(guildId, key) {
  */
 export function upsertTicketType(guildId, key, patch = {}) {
   const normalized = normalizeTypeKey(key);
-  if (!normalized) throw new Error('A ticket button needs a key');
+  if (!normalized) throw new Error('الزر يحتاج مفتاح.');
 
   const base = getTicketType(guildId, normalized);
   const requestedPanel = normalizePanelKey(

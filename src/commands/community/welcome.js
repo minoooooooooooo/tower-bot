@@ -2,7 +2,6 @@ import {
   ActionRowBuilder,
   ChannelType,
   InteractionContextType,
-  MessageFlags,
   ModalBuilder,
   PermissionFlagsBits,
   SlashCommandBuilder,
@@ -10,8 +9,10 @@ import {
   TextInputStyle,
 } from 'discord.js';
 import { config } from '../../config.js';
-import { COLORS, embed, errorEmbed, successEmbed } from '../../lib/embeds.js';
+import { COLORS, embed } from '../../lib/embeds.js';
 import { isClearValue, validateImageUrl } from '../../lib/media.js';
+import { permissionName } from '../../lib/permissions.js';
+import { RLM, ephemeral, errorReply, okReply } from '../../lib/replies.js';
 import { getGuildSettings } from '../../services/birthday-store.js';
 import {
   STYLES,
@@ -37,14 +38,16 @@ import {
 } from '../../services/welcome-store.js';
 
 const MODE_LABELS = {
-  random: 'Random (never the same style twice in a row)',
-  rotate: 'Rotate (in the order below)',
-  single: 'Single style',
+  random: 'عشوائي',
+  rotate: 'بالتناوب',
+  single: 'نمط واحد',
 };
 
-function ephemeral(payload) {
-  return { ...payload, flags: MessageFlags.Ephemeral };
-}
+const MODE_NOTES = {
+  random: 'عشوائي، وما يتكرر نفس النمط مرتين ورا بعض',
+  rotate: 'بالتناوب حسب ترتيب الأنماط',
+  single: 'نمط واحد ثابت',
+};
 
 function isAdmin(ctx) {
   return Boolean(ctx.member?.permissions?.has(PermissionFlagsBits.ManageGuild));
@@ -58,11 +61,13 @@ function resolveStyle(raw) {
   const value = String(raw ?? '').trim().toLowerCase();
   if (!value) return null;
 
+  // Keys stay English (`ledger`, `classic`, …), so an old example like
+  // `style:Ledger` still works after the names became Arabic.
   return getStyle(value) ?? STYLES.find((style) => style.name.toLowerCase() === value) ?? null;
 }
 
 function styleList() {
-  return STYLES.map((style) => `\`${style.key}\``).join(', ');
+  return STYLES.map((style) => style.name).join('، ');
 }
 
 /** `<#123>`, a raw id, or `none` to clear. */
@@ -88,18 +93,14 @@ function channelIdFrom(ctx, name, index) {
 }
 
 function channelLabel(guild, id) {
-  if (!id) return 'not set';
+  if (!id) return 'غير مضبوطة';
   return guild?.channels?.cache?.get(id)?.toString?.() ?? `<#${id}>`;
 }
 
 async function requireAdmin(ctx) {
   if (isAdmin(ctx)) return true;
 
-  await ctx.reply(
-    ephemeral({
-      embeds: [errorEmbed('Missing permissions', 'You need the Manage Server permission.')],
-    }),
-  );
+  await ctx.fail(ephemeral(errorReply('صلاحيات ناقصة', 'تحتاج صلاحية إدارة السيرفر.')));
 
   return false;
 }
@@ -108,23 +109,23 @@ function overviewEmbed(ctx) {
   const settings = getWelcomeSettings(ctx.guildId);
 
   return embed({
-    title: 'Welcome cards',
+    title: 'بطاقات الترحيب',
     description: [
-      'Six card styles, chosen automatically when someone joins.',
+      'ستة أنماط بطاقات، تنختار تلقائيًا لما ينضم عضو.',
       '',
-      `\`/welcome channel [#channel]\` — where cards are posted *(${channelLabel(ctx.guild, settings.channelId)})*`,
-      '`/welcome mode <random|rotate|single> [style]` — how the style is picked',
-      '`/welcome toggle <style>` — turn one style on or off',
-      '`/welcome list` — current setup and which styles are on',
-      '`/welcome test [style]` — preview one card, only you see it',
-      '`/welcome gif [style] [url]` — GIF for one card (`none` removes it)',
-      '`/welcome edit <style>` — rewrite that style\'s text (admin)',
-      '`/welcome reset [style]` — restore the default text (admin)',
-      '`/welcome links [rules] [general]` — channels used by the cards (admin)',
+      `\`/welcome channel [#channel]\` — وين تنكتب البطاقات *(${channelLabel(ctx.guild, settings.channelId)})*`,
+      '`/welcome mode <random|rotate|single> [style]` — كيف ينختار النمط',
+      '`/welcome toggle <style>` — تشغّل نمط أو تطفي',
+      '`/welcome list` — الإعداد الحالي والأنماط الشغالة',
+      '`/welcome test [style]` — معاينة بطاقة، تشوفها أنت بس',
+      '`/welcome gif [style] [url]` — GIF لنمط (`none` يشيله)',
+      '`/welcome edit <style>` — تعدّل نص النمط (إدارة)',
+      '`/welcome reset [style]` — ترجّع النص الافتراضي (إدارة)',
+      '`/welcome links [rules] [general]` — القنوات اللي تستخدمها البطاقات (إدارة)',
       '',
-      `Placeholders: ${WELCOME_PLACEHOLDERS.map((placeholder) => `{${placeholder.key}}`).join(' ')}`,
+      `المتغيرات: ${WELCOME_PLACEHOLDERS.map((placeholder) => `{${placeholder.key}}`).join(' ')}`,
       '',
-      `Styles: ${styleList()}`,
+      `الأنماط: ${STYLES.map((style) => style.name).join('، ')}`,
     ].join('\n'),
   });
 }
@@ -135,12 +136,10 @@ async function handleChannel(ctx) {
   const channelId = channelIdFrom(ctx, 'channel', 1);
 
   if (channelId === undefined) {
-    await ctx.reply(
-      ephemeral({
-        embeds: [
-          errorEmbed('No channel given', 'Mention a channel, or use `none` to stop welcome cards.'),
-        ],
-      }),
+    await ctx.fail(
+      ephemeral(
+        errorReply('ما فيه قناة', 'اذكر قناة، أو اكتب `none` عشان توقف بطاقات الترحيب.'),
+      ),
     );
     return;
   }
@@ -151,9 +150,7 @@ async function handleChannel(ctx) {
       (await ctx.guild.channels.fetch(channelId).catch(() => null));
 
     if (!channel || channel.isTextBased?.() === false) {
-      await ctx.reply(
-        ephemeral({ embeds: [errorEmbed('Invalid channel', 'That is not a text channel.')] }),
-      );
+      await ctx.fail(ephemeral(errorReply('قناة غير صالحة', 'هذي مو قناة نصية.')));
       return;
     }
 
@@ -167,15 +164,15 @@ async function handleChannel(ctx) {
         permissions.has(PermissionFlagsBits.EmbedLinks)
       )
     ) {
-      await ctx.reply(
-        ephemeral({
-          embeds: [
-            errorEmbed(
-              'Missing permissions',
-              `I need **Send Messages** and **Embed Links** in ${channel}.`,
-            ),
-          ],
-        }),
+      await ctx.fail(
+        ephemeral(
+          errorReply(
+            'صلاحيات ناقصة',
+            `أحتاج **${permissionName(PermissionFlagsBits.SendMessages)}** و**${permissionName(
+              PermissionFlagsBits.EmbedLinks,
+            )}** في ${channel}.`,
+          ),
+        ),
       );
       return;
     }
@@ -184,16 +181,14 @@ async function handleChannel(ctx) {
   updateWelcomeSettings(ctx.guildId, { channelId });
 
   await ctx.reply(
-    ephemeral({
-      embeds: [
-        successEmbed(
-          channelId ? 'Welcome channel set' : 'Welcome cards disabled',
-          channelId
-            ? `New members are greeted in ${channelLabel(ctx.guild, channelId)}. Preview with \`/welcome test\`.`
-            : 'No channel is configured, so nobody will be greeted.',
-        ),
-      ],
-    }),
+    ephemeral(
+      okReply(
+        channelId ? 'انضبطت قناة الترحيب' : 'انطفت بطاقات الترحيب',
+        channelId
+          ? `الأعضاء الجدد ينرحبون في ${channelLabel(ctx.guild, channelId)}. عاين بـ \`/welcome test\`.`
+          : 'ما فيه قناة مضبوطة، فما أحد بينرحب به.',
+      ),
+    ),
   );
 }
 
@@ -204,12 +199,13 @@ async function handleMode(ctx) {
   const mode = raw === 'random' || raw === 'rotate' || raw === 'single' ? raw : null;
 
   if (!mode) {
-    await ctx.reply(
-      ephemeral({
-        embeds: [
-          errorEmbed('Invalid mode', `Use one of: ${MODES.map((item) => `\`${item}\``).join(', ')}.`),
-        ],
-      }),
+    await ctx.fail(
+      ephemeral(
+        errorReply(
+          'وضع غير صالح',
+          `اختر واحد من: ${MODES.map((item) => `\`${item}\``).join('، ')}.`,
+        ),
+      ),
     );
     return;
   }
@@ -220,15 +216,13 @@ async function handleMode(ctx) {
     const style = resolveStyle(ctx.isSlash ? ctx.getString('style') : ctx.args[2]);
 
     if (!style) {
-      await ctx.reply(
-        ephemeral({
-          embeds: [
-            errorEmbed(
-              'Pick a style',
-              'Single mode needs one style, for example `/welcome mode single style:Ledger`.',
-            ),
-          ],
-        }),
+      await ctx.fail(
+        ephemeral(
+          errorReply(
+            'اختر نمط',
+            'وضع النمط الواحد يحتاج نمط، مثل `/welcome mode single style:سجل`.',
+          ),
+        ),
       );
       return;
     }
@@ -239,16 +233,14 @@ async function handleMode(ctx) {
   updateWelcomeSettings(ctx.guildId, { mode, forcedStyle });
 
   await ctx.reply(
-    ephemeral({
-      embeds: [
-        successEmbed(
-          'Welcome mode updated',
-          forcedStyle
-            ? `Every new member gets the **${getStyle(forcedStyle).name}** card.`
-            : `Style is now chosen by **${MODE_LABELS[mode]}**.`,
-        ),
-      ],
-    }),
+    ephemeral(
+      okReply(
+        'انضبط وضع الترحيب',
+        forcedStyle
+          ? `كل عضو جديد تجيه بطاقة **${getStyle(forcedStyle).name}**.`
+          : `صار الاختيار **${MODE_NOTES[mode]}**.`,
+      ),
+    ),
   );
 }
 
@@ -258,10 +250,8 @@ async function handleToggle(ctx) {
   const style = resolveStyle(ctx.isSlash ? ctx.getString('style') : ctx.args[1]);
 
   if (!style) {
-    await ctx.reply(
-      ephemeral({
-        embeds: [errorEmbed('Unknown style', `Pick one of: ${styleList()}.`)],
-      }),
+    await ctx.fail(
+      ephemeral(errorReply('نمط غير معروف', `اختر واحد من: ${styleList()}.`)),
     );
     return;
   }
@@ -272,15 +262,13 @@ async function handleToggle(ctx) {
   const next = isOn ? current.filter((key) => key !== style.key) : [...current, style.key];
 
   if (next.length === 0) {
-    await ctx.reply(
-      ephemeral({
-        embeds: [
-          errorEmbed(
-            'Keep one style',
-            'Every style would be off. Turn another one on first, or use `/welcome mode single`.',
-          ),
-        ],
-      }),
+    await ctx.fail(
+      ephemeral(
+        errorReply(
+          'خلّ نمط واحد على الأقل',
+          'كل الأنماط بتنطفي. شغّل نمط ثاني أول، أو استخدم `/welcome mode single`.',
+        ),
+      ),
     );
     return;
   }
@@ -288,14 +276,12 @@ async function handleToggle(ctx) {
   updateWelcomeSettings(ctx.guildId, { enabled: next });
 
   await ctx.reply(
-    ephemeral({
-      embeds: [
-        successEmbed(
-          isOn ? `${style.name} disabled` : `${style.name} enabled`,
-          `${next.length} of ${STYLES.length} styles are in the rotation.`,
-        ),
-      ],
-    }),
+    ephemeral(
+      okReply(
+        isOn ? `انطفى ${style.name}` : `اشتغل ${style.name}`,
+        `${next.length} من ${STYLES.length} أنماط في التناوب.`,
+      ),
+    ),
   );
 }
 
@@ -311,7 +297,7 @@ async function handleList(ctx) {
     const marker = on ? '✅' : '⬜';
     const parts = [];
 
-    if (edited > 0) parts.push(`${edited} edited`);
+    if (edited > 0) parts.push(`${edited} معدّل`);
     if (gifs[style.key]) parts.push('GIF');
     const suffix = parts.length > 0 ? ` · ${parts.join(' · ')}` : '';
 
@@ -319,22 +305,22 @@ async function handleList(ctx) {
   });
 
   const description = [
-    `Channel: ${channelLabel(ctx.guild, settings.channelId)}`,
-    `Mode: ${MODE_LABELS[settings.mode] ?? settings.mode}${settings.forcedStyle ? ` (${getStyle(settings.forcedStyle)?.name ?? settings.forcedStyle})` : ''}`,
-    `Links: rules ${channelLabel(ctx.guild, settings.rulesChannelId)} · general ${channelLabel(ctx.guild, settings.generalChannelId)}`,
+    `القناة: ${channelLabel(ctx.guild, settings.channelId)}`,
+    `الوضع: ${MODE_LABELS[settings.mode] ?? settings.mode}${settings.forcedStyle ? ` (${getStyle(settings.forcedStyle)?.name ?? settings.forcedStyle})` : ''}`,
+    `الروابط: القوانين ${channelLabel(ctx.guild, settings.rulesChannelId)} · العام ${channelLabel(ctx.guild, settings.generalChannelId)}`,
     '',
-    `**Styles (${enabled.length} of ${STYLES.length} active)**`,
+    `**الأنماط (${enabled.length} من ${STYLES.length} مفعّلة)**`,
     ...lines,
   ];
 
-  if (!settings.channelId) description.unshift('⚠️ No welcome channel is set.', '');
+  if (!settings.channelId) description.unshift('⚠️ ما فيه قناة ترحيب مضبوطة.', '');
 
   await ctx.reply({
     embeds: [
       embed({
-        title: 'Welcome cards',
+        title: 'بطاقات الترحيب',
         description: description.join('\n'),
-        footer: 'Edit the text of a style with /welcome edit',
+        footer: 'عدّل نص أي نمط بـ /welcome edit',
       }),
     ],
   });
@@ -361,8 +347,8 @@ async function handleTest(ctx) {
     ephemeral({
       ...payload,
       content: payload.content
-        ? `${payload.content} — preview of the **${getStyle(styleKey).name}** card (nobody was pinged)`
-        : `Preview of the **${getStyle(styleKey).name}** card.`,
+        ? `${RLM}${payload.content} — معاينة بطاقة **${getStyle(styleKey).name}** (ما انمنشن أحد)`
+        : `معاينة بطاقة **${getStyle(styleKey).name}**.`,
     }),
   );
 }
@@ -391,10 +377,8 @@ async function handleGif(ctx) {
   const style = resolveStyle(styleArg ?? 'classic');
 
   if (!style) {
-    await ctx.reply(
-      ephemeral({
-        embeds: [errorEmbed('Unknown style', `Pick one of: ${styleList()}.`)],
-      }),
+    await ctx.fail(
+      ephemeral(errorReply('نمط غير معروف', `اختر واحد من: ${styleList()}.`)),
     );
     return;
   }
@@ -406,10 +390,10 @@ async function handleGif(ctx) {
       ephemeral({
         embeds: [
           embed({
-            title: `${style.name} GIF`,
+            title: `${style.name} · GIF`,
             description: current
-              ? `${current}\n\nRemove it with \`/welcome gif style:${style.name} url:none\`, or edit it in \`/welcome edit\`.`
-              : `No GIF is set for ${style.name}. Add one with \`/welcome gif style:${style.name} url:https://media.example.com/wave.gif\`, or edit it in \`/welcome edit\`.`,
+              ? `${current}\n\nتشيله بـ \`/welcome gif style:${style.name} url:none\`، أو عدّله من \`/welcome edit\`.`
+              : `ما فيه GIF مضبوط لـ ${style.name}. ضيفه بـ \`/welcome gif style:${style.name} url:https://media.example.com/wave.gif\`، أو عدّله من \`/welcome edit\`.`,
             image: current ?? undefined,
             color: current ? COLORS.primary : COLORS.muted,
           }),
@@ -423,9 +407,7 @@ async function handleGif(ctx) {
     setWelcomeGif(ctx.guildId, style.key, null);
 
     await ctx.reply(
-      ephemeral({
-        embeds: [successEmbed(`${style.name} GIF removed`, 'That card no longer has an image.')],
-      }),
+      ephemeral(okReply(`انشال GIF ${style.name}`, 'البطاقة ما عاد فيها صورة.')),
     );
     return;
   }
@@ -433,7 +415,7 @@ async function handleGif(ctx) {
   const problem = validateImageUrl(raw, 'GIF');
 
   if (problem) {
-    await ctx.reply(ephemeral({ embeds: [errorEmbed('Invalid GIF', problem)] }));
+    await ctx.fail(ephemeral(errorReply('GIF غير صالح', problem)));
     return;
   }
 
@@ -443,8 +425,8 @@ async function handleGif(ctx) {
     ephemeral({
       embeds: [
         embed({
-          title: `${style.name} GIF set`,
-          description: `It now appears on the ${style.name} card. Preview with \`/welcome test style:${style.name}\`.`,
+          title: `${style.name} · GIF انضبط`,
+          description: `صار يظهر في بطاقة ${style.name}. عاينه بـ \`/welcome test style:${style.name}\`.`,
           image: String(raw).trim(),
           color: COLORS.success,
         }),
@@ -459,24 +441,20 @@ async function handleEdit(ctx) {
   const style = resolveStyle(ctx.isSlash ? ctx.getString('style') : ctx.args[1]);
 
   if (!style) {
-    await ctx.reply(
-      ephemeral({
-        embeds: [errorEmbed('Unknown style', `Pick one of: ${styleList()}.`)],
-      }),
+    await ctx.fail(
+      ephemeral(errorReply('نمط غير معروف', `اختر واحد من: ${styleList()}.`)),
     );
     return;
   }
 
   if (!ctx.isSlash) {
-    await ctx.reply(
-      ephemeral({
-        embeds: [
-          errorEmbed(
-            'Use the slash command',
-            `Discord only opens edit forms from slash commands. Run \`/welcome edit style:${style.name}\`.`,
-          ),
-        ],
-      }),
+    await ctx.fail(
+      ephemeral(
+        errorReply(
+          'استخدم أمر السلاش',
+          `ديسكورد ما يفتح نماذج التعديل إلا من أوامر السلاش. شغّل \`/welcome edit style:${style.name}\`.`,
+        ),
+      ),
     );
     return;
   }
@@ -487,7 +465,7 @@ async function handleEdit(ctx) {
 
   const modal = new ModalBuilder()
     .setCustomId(`welcome:edit:${style.key}`)
-    .setTitle(`Edit the ${style.name} card`.slice(0, 45));
+    .setTitle(`تعديل بطاقة ${style.name}`.slice(0, 45));
 
   for (const input of modalInputs(style)) {
     const field = new TextInputBuilder()
@@ -512,10 +490,8 @@ async function handleReset(ctx) {
   const style = resolveStyle(ctx.isSlash ? ctx.getString('style') : ctx.args[1]);
 
   if ((ctx.isSlash ? ctx.getString('style') : ctx.args[1]) && !style) {
-    await ctx.reply(
-      ephemeral({
-        embeds: [errorEmbed('Unknown style', `Pick one of: ${styleList()}.`)],
-      }),
+    await ctx.fail(
+      ephemeral(errorReply('نمط غير معروف', `اختر واحد من: ${styleList()}.`)),
     );
     return;
   }
@@ -523,16 +499,14 @@ async function handleReset(ctx) {
   clearWelcomeTexts(ctx.guildId, style?.key ?? null);
 
   await ctx.reply(
-    ephemeral({
-      embeds: [
-        successEmbed(
-          style ? `${style.name} restored` : 'All welcome text restored',
-          style
-            ? 'Every piece is back to its default. Other styles were not touched.'
-            : 'Every style is back to its default text.',
-        ),
-      ],
-    }),
+    ephemeral(
+      okReply(
+        style ? `رجعت بطاقة ${style.name}` : 'رجعت كل نصوص الترحيب',
+        style
+          ? 'كل قطعة رجعت لافتراضيتها. باقي الأنماط ما انلمست.'
+          : 'كل الأنماط رجعت لنصها الافتراضي.',
+      ),
+    ),
   );
 }
 
@@ -543,15 +517,13 @@ async function handleLinks(ctx) {
   const general = channelIdFrom(ctx, 'general', 2);
 
   if (rules === undefined && general === undefined) {
-    await ctx.reply(
-      ephemeral({
-        embeds: [
-          errorEmbed(
-            'Nothing to change',
-            'Mention the channels to link, for example `/welcome links rules:#rules general:#general`.',
-          ),
-        ],
-      }),
+    await ctx.fail(
+      ephemeral(
+        errorReply(
+          'ما فيه شي يتغيّر',
+          'اذكر القنوات اللي تبي تربطها، مثل `/welcome links rules:#rules general:#general`.',
+        ),
+      ),
     );
     return;
   }
@@ -563,30 +535,28 @@ async function handleLinks(ctx) {
   const settings = updateWelcomeSettings(ctx.guildId, patch);
 
   await ctx.reply(
-    ephemeral({
-      embeds: [
-        successEmbed(
-          'Welcome links updated',
-          `Rules: ${channelLabel(ctx.guild, settings.rulesChannelId)} · General: ${channelLabel(ctx.guild, settings.generalChannelId)}`,
-        ),
-      ],
-    }),
+    ephemeral(
+      okReply(
+        'انحدّثت روابط الترحيب',
+        `القوانين: ${channelLabel(ctx.guild, settings.rulesChannelId)} · العام: ${channelLabel(ctx.guild, settings.generalChannelId)}`,
+      ),
+    ),
   );
 }
 
 export default {
   data: new SlashCommandBuilder()
     .setName('welcome')
-    .setDescription('Welcome cards for new members')
+    .setDescription('بطاقات ترحيب للأعضاء الجدد')
     .setContexts(InteractionContextType.Guild)
     .addSubcommand((sub) =>
       sub
         .setName('channel')
-        .setDescription('Admin: set the welcome channel (empty or "none" disables cards)')
+        .setDescription('إدارة: اضبط قناة الترحيب (فاضي أو "none" يطفي البطاقات)')
         .addChannelOption((option) =>
           option
             .setName('channel')
-            .setDescription('Where welcome cards are posted')
+            .setDescription('وين تنكتب بطاقات الترحيب')
             .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
             .setRequired(false),
         ),
@@ -594,22 +564,22 @@ export default {
     .addSubcommand((sub) =>
       sub
         .setName('mode')
-        .setDescription('Admin: choose how the card style is picked')
+        .setDescription('إدارة: اختر كيف ينختار نمط البطاقة')
         .addStringOption((option) =>
           option
             .setName('mode')
-            .setDescription('random, rotate, or a single style')
+            .setDescription('عشوائي، بالتناوب، أو نمط واحد')
             .setRequired(true)
             .addChoices(
-              { name: 'Random (no repeat)', value: 'random' },
-              { name: 'Rotate in order', value: 'rotate' },
-              { name: 'Single style', value: 'single' },
+              { name: 'عشوائي (بدون تكرار)', value: 'random' },
+              { name: 'بالتناوب', value: 'rotate' },
+              { name: 'نمط واحد', value: 'single' },
             ),
         )
         .addStringOption((option) =>
           option
             .setName('style')
-            .setDescription('The style to pin when mode is "single"')
+            .setDescription('النمط اللي يتثبت لما الوضع "single"')
             .setRequired(false)
             .addChoices(...styleChoices()),
         ),
@@ -617,24 +587,24 @@ export default {
     .addSubcommand((sub) =>
       sub
         .setName('toggle')
-        .setDescription('Admin: turn one card style on or off')
+        .setDescription('إدارة: شغّل نمط بطاقة أو اطفيه')
         .addStringOption((option) =>
           option
             .setName('style')
-            .setDescription('The style to toggle')
+            .setDescription('النمط اللي تبي تشغّله أو تطفي')
             .setRequired(true)
             .addChoices(...styleChoices()),
         ),
     )
-    .addSubcommand((sub) => sub.setName('list').setDescription('Show the welcome setup'))
+    .addSubcommand((sub) => sub.setName('list').setDescription('اعرض إعدادات الترحيب'))
     .addSubcommand((sub) =>
       sub
         .setName('test')
-        .setDescription('Preview a card, only you can see it')
+        .setDescription('عاين بطاقة، تشوفها أنت بس')
         .addStringOption((option) =>
           option
             .setName('style')
-            .setDescription('Leave empty for the next style in the rotation')
+            .setDescription('اتركه فاضي للنمط اللي بعده في التناوب')
             .setRequired(false)
             .addChoices(...styleChoices()),
         ),
@@ -642,29 +612,29 @@ export default {
     .addSubcommand((sub) =>
       sub
         .setName('gif')
-        .setDescription('Admin: GIF for one card (empty shows the current one)')
+        .setDescription('إدارة: GIF لنمط (فاضي يعرض الحالي)')
         .addStringOption((option) =>
           option
             .setName('style')
-            .setDescription('Which card (defaults to Classic)')
+            .setDescription('أي بطاقة (الافتراضي كلاسيكي)')
             .setRequired(false)
             .addChoices(...styleChoices()),
         )
         .addStringOption((option) =>
           option
             .setName('url')
-            .setDescription('Direct image/GIF URL, or "none" to remove it')
+            .setDescription('رابط صورة/GIF مباشر، أو "none" يشيله')
             .setRequired(false),
         ),
     )
     .addSubcommand((sub) =>
       sub
         .setName('edit')
-        .setDescription('Admin: rewrite the text of one style')
+        .setDescription('إدارة: عدّل نص نمط')
         .addStringOption((option) =>
           option
             .setName('style')
-            .setDescription('Which style to edit')
+            .setDescription('أي نمط تبي تعدّل')
             .setRequired(true)
             .addChoices(...styleChoices()),
         ),
@@ -672,11 +642,11 @@ export default {
     .addSubcommand((sub) =>
       sub
         .setName('reset')
-        .setDescription('Admin: restore the default text')
+        .setDescription('إدارة: رجّع النص الافتراضي')
         .addStringOption((option) =>
           option
             .setName('style')
-            .setDescription('Restore one style (empty restores all)')
+            .setDescription('رجّع نمط واحد (فاضي يرجّع الكل)')
             .setRequired(false)
             .addChoices(...styleChoices()),
         ),
@@ -684,18 +654,18 @@ export default {
     .addSubcommand((sub) =>
       sub
         .setName('links')
-        .setDescription('Admin: channels used by the cards')
+        .setDescription('إدارة: القنوات اللي تستخدمها البطاقات')
         .addChannelOption((option) =>
           option
             .setName('rules')
-            .setDescription('Rules channel, used by {rules}')
+            .setDescription('قناة القوانين، تستخدمها {rules}')
             .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement, ChannelType.GuildForum)
             .setRequired(false),
         )
         .addChannelOption((option) =>
           option
             .setName('general')
-            .setDescription('General channel, used by {general}')
+            .setDescription('القناة العامة، تستخدمها {general}')
             .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
             .setRequired(false),
         ),
@@ -703,7 +673,7 @@ export default {
 
   name: 'welcome',
   aliases: ['greet'],
-  description: 'Welcome cards for new members: six styles, editable text',
+  description: 'بطاقات ترحيب للأعضاء الجدد: ستة أنماط ونصوص قابلة للتعديل',
   category: 'Community',
   usage: 'welcome <channel|mode|toggle|list|test|gif|edit|reset|links>',
   cooldown: 3,
@@ -745,9 +715,7 @@ export default {
   async modal(interaction) {
     if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
       await interaction.reply(
-        ephemeral({
-          embeds: [errorEmbed('Missing permissions', 'You need the Manage Server permission.')],
-        }),
+        ephemeral(errorReply('صلاحيات ناقصة', 'تحتاج صلاحية إدارة السيرفر.')),
       );
       return;
     }
@@ -757,7 +725,7 @@ export default {
 
     if (!style) {
       await interaction.reply(
-        ephemeral({ embeds: [errorEmbed('Unknown style', 'That style no longer exists.')] }),
+        ephemeral(errorReply('نمط غير معروف', 'هذا النمط ما عاد موجود.')),
       );
       return;
     }
@@ -785,7 +753,7 @@ export default {
     // Validate before writing anything, so a bad GIF URL cannot half-save a card.
     if (problems.length > 0) {
       await interaction.reply(
-        ephemeral({ embeds: [errorEmbed('Nothing saved', problems.join('\n'))] }),
+        ephemeral(errorReply('ما انحفظ شي', problems.join('\n'))),
       );
       return;
     }
@@ -807,9 +775,9 @@ export default {
     const notes = [];
     if (unknown.size > 0) {
       notes.push(
-        `⚠️ Unknown placeholder${unknown.size === 1 ? '' : 's'}: ${[...unknown]
+        `⚠️ متغيرات غير معروفة: ${[...unknown]
           .map((key) => `\`{${key}}\``)
-          .join(', ')}. They will be printed literally.`,
+          .join('، ')}. بتنطبع كنص عادي.`,
       );
     }
 
@@ -821,16 +789,14 @@ export default {
 
     if (unrendered.length > 0) {
       notes.push(
-        `⚠️ Discord does not render mentions in ${unrendered.join(' or ')}. \`{user}\`, \`{rules}\` and \`{general}\` will appear as raw text there — use \`{name}\` instead, or move the mention into the description.`,
+        `⚠️ ديسكورد ما يعرض المنشنات في ${unrendered.join(' أو ')}. \`{user}\` و\`{rules}\` و\`{general}\` بتطلع نص عادي هناك — استخدم \`{name}\` بدالها، أو انقل المنشن للوصف.`,
       );
     }
 
-    notes.push(`Preview it with \`/welcome test style:${style.name}\`.`);
+    notes.push(`عاينه بـ \`/welcome test style:${style.name}\`.`);
 
     await interaction.reply(
-      ephemeral({
-        embeds: [successEmbed(`${style.name} card saved`, notes.join('\n\n'))],
-      }),
+      ephemeral(okReply(`انحفظت بطاقة ${style.name}`, notes.join('\n\n'))),
     );
   },
 };

@@ -1,5 +1,6 @@
 import { config } from '../config.js';
 import { chatJson } from '../lib/ai.js';
+import { formatDurationArabic } from '../lib/durations.js';
 import { COLORS, embed } from '../lib/embeds.js';
 import { chunkLines } from './summary-source.js';
 
@@ -9,6 +10,7 @@ export const SUMMARY_KINDS = {
     arLabel: 'ملخص عام',
     emoji: '🧭',
     brief: 'topics, news and decisions',
+    arBrief: 'المواضيع والأخبار والقرارات',
     emphasis:
       'Cover the topics discussed, news or announcements shared, decisions that were made, and anything that changed.',
   },
@@ -17,6 +19,7 @@ export const SUMMARY_KINDS = {
     arLabel: 'ملخص المهام',
     emoji: '📌',
     brief: 'requests, problems and owners',
+    arBrief: 'الطلبات والمشاكل والمسؤولين',
     emphasis:
       'Focus on actionable items: requests, suggestions, problems that need a solution, follow-ups, and who took each one. Ignore pure chatter.',
   },
@@ -25,6 +28,7 @@ export const SUMMARY_KINDS = {
     arLabel: 'ملخص موجّه',
     emoji: '🎯',
     brief: 'one topic, on request',
+    arBrief: 'موضوع واحد حسب طلبك',
     emphasis:
       'Answer the requested focus using only the transcript. Include every message that relates to it and ignore everything else. If the transcript never covers it, say so in "answer" and leave the arrays empty.',
   },
@@ -56,6 +60,15 @@ const MAX_LENGTH = {
   quote: 320,
   answer: 1000,
 };
+
+/** "رسالة واحدة" / "رسالتين" / "5 رسائل" / "12 رسالة". */
+function arabicMessages(count) {
+  if (count === 1) return 'رسالة واحدة';
+  if (count === 2) return 'رسالتين';
+  if (count >= 3 && count <= 10) return `${count} رسائل`;
+
+  return `${count} رسالة`;
+}
 
 /**
  * Section furniture. Labels follow the language of the report body, not the
@@ -97,7 +110,7 @@ export const LABELS = {
     sections: {
       answer: { field: '🎯 الإجابة', heading: 'الإجابة' },
       topics: { field: '📋 مناقشات رئيسية', heading: 'مناقشات رئيسية' },
-      decisions: { field: '✅ قرارات متخذه', heading: 'قرارات متخذه' },
+      decisions: { field: '✅ قرارات اتُّخذت', heading: 'قرارات اتُّخذت' },
       announcements: { field: '📢 إعلانات', heading: 'إعلانات' },
       tasks: { field: '📌 مهام', heading: 'مهام' },
       questions: { field: '❓ أسئلة مطروحة', heading: 'أسئلة مطروحة' },
@@ -105,14 +118,12 @@ export const LABELS = {
     },
     topicFallback: 'موضوع',
     continued: 'الجزء',
-    messages: (count) => `${count} رسالة`,
-    analyzed: (count) => `تم تحليل ${count} رسالة`,
+    messages: arabicMessages,
+    analyzed: (count) => `تم تحليل ${arabicMessages(count)}`,
     window: (hours) => {
       if (hours <= 1) return 'آخر ساعة';
-      if (hours >= 48 && hours % 24 === 0) {
-        const days = hours / 24;
-        return `آخر ${days} ${days >= 3 && days <= 10 ? 'أيام' : 'يوم'}`;
-      }
+      if (hours % 24 === 0 || hours < 24) return `آخر ${formatDurationArabic(hours * 3_600_000)}`;
+
       return `آخر ${hours} ساعة`;
     },
     channel: 'القناة',
@@ -508,9 +519,7 @@ export function renderSummary({ data, meta }) {
       : 24;
   const hours = meta.hours ?? computedHours;
   const windowText = meta.scheduleText ?? labels.window(hours);
-  const analyzedText = meta.scheduleText
-    ? `${meta.messageCount} message${meta.messageCount === 1 ? '' : 's'} analyzed`
-    : labels.analyzed(meta.messageCount);
+  const analyzedText = labels.analyzed(meta.messageCount);
   const footer = [windowText, analyzedText].filter(Boolean).join(' | ');
 
   const title = `${labels.overview}: #${meta.channelName ?? meta.channelId}`;

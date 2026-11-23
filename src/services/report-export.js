@@ -51,13 +51,14 @@ export function buildSummaryHtml({ data, meta }) {
   const labels = dir === 'rtl' ? LABELS.ar : LABELS.en;
   const timeZone = meta.timeZone ?? 'UTC';
   const kindLabel = dir === 'rtl' ? spec.arLabel : spec.label;
+  const jumpLabel = dir === 'rtl' ? 'انتقال' : 'Jump';
   const title = `${labels.overview}: #${meta.channelName ?? meta.channelId}`;
 
   const topics = data.topics
     .map(
       (topic) =>
         `<article class="topic"><h3 dir="auto">${strong(topic.title)}${
-          topic.url ? ` <a href="${escapeHtml(topic.url)}">Jump</a>` : ''
+          topic.url ? ` <a href="${escapeHtml(topic.url)}">${jumpLabel}</a>` : ''
         }</h3>${paragraph(topic.summary)}</article>`,
     )
     .join('');
@@ -146,7 +147,7 @@ export function buildSummaryHtml({ data, meta }) {
 <body>
 <header>
   <h1 dir="auto">${escapeHtml(title)}</h1>
-  <p class="subtitle" dir="auto">${escapeHtml(data.headline || spec.brief)}</p>
+  <p class="subtitle" dir="auto">${escapeHtml(data.headline || (dir === 'rtl' ? spec.arBrief : spec.brief))}</p>
   <div class="chips">
     <span class="chip">${escapeHtml(stamp(meta.rangeStart, timeZone))} → ${escapeHtml(stamp(meta.rangeEnd, timeZone))}</span>
     <span class="chip">${escapeHtml(labels.messages(meta.messageCount))}</span>

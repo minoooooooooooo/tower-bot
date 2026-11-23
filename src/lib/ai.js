@@ -23,48 +23,48 @@ export function aiLabel() {
 
 /** Plain-language hint for the admin when the request fails. */
 export function aiProblemHint(error) {
-  if (!(error instanceof AiError)) return 'The AI request failed. Check the bot log for details.';
+  if (!(error instanceof AiError)) return 'فشل طلب الذكاء الاصطناعي. راجع سجل البوت للتفاصيل.';
 
   if (error.status === 401 || error.status === 403) {
-    return 'The AI key was rejected. Check `AI_API_KEY` in the server environment.';
+    return 'مفتاح الذكاء الاصطناعي مرفوض. تأكد من `AI_API_KEY` في متغيرات السيرفر.';
   }
 
   if (error.status === 404) {
     const hint = config.ai.baseUrl.includes('googleapis.com')
-      ? 'On the free tier use `AI_MODEL=gemini-3.5-flash-lite`; larger models may need a billing account.'
+      ? 'في الباقة المجانية استخدم `AI_MODEL=gemini-3.5-flash-lite`؛ الموديلات الأكبر قد تحتاج حساب فواتير.'
       : config.ai.baseUrl.includes('deepseek.com')
-        ? 'Check the model id on the DeepSeek platform: `AI_MODEL=deepseek-flash`.'
-        : 'Check the model id and base URL for this provider.';
+        ? 'تحقق من معرّف الموديل في منصة DeepSeek: `AI_MODEL=deepseek-flash`.'
+        : 'تحقق من معرّف الموديل ورابط الأساس لهذا المزوّد.';
 
     return [
-      `The model \`${config.ai.model}\` is not available at \`${config.ai.baseUrl}\`.`,
-      `Provider said: ${error.message}`,
+      `الموديل \`${config.ai.model}\` مو متاح على \`${config.ai.baseUrl}\`.`,
+      `المزوّد قال: ${error.message}`,
       hint,
     ].join('\n');
   }
 
   if (error.status === 429) {
     const providerHint = config.ai.baseUrl.includes('googleapis.com')
-      ? 'On the Gemini free tier, use `AI_MODEL=gemini-3.5-flash-lite`; `gemini-3.6-flash` needs a billing account.'
+      ? 'في باقة Gemini المجانية استخدم `AI_MODEL=gemini-3.5-flash-lite`؛ `gemini-3.6-flash` يحتاج حساب فواتير.'
       : '';
 
     return [
-      'The AI provider is rate limiting the key.',
-      error.message ? `Provider said: ${String(error.message).slice(0, 300)}` : '',
-      error.retryAfter ? `Retry after about ${error.retryAfter} seconds.` : '',
+      'المزوّد يحد الطلبات على المفتاح.',
+      error.message ? `المزوّد قال: ${String(error.message).slice(0, 300)}` : '',
+      error.retryAfter ? `جرّب بعد حوالي ${error.retryAfter} ثانية.` : '',
       providerHint,
-      'Wait for the quota to reset, use a smaller time window, or use a paid key/model.',
+      'انتظر تجديد الحصة، أو استخدم فترة أقصر، أو مفتاح/موديل مدفوع.',
     ]
       .filter(Boolean)
       .join('\n');
   }
 
   if (error.status === 400) {
-    return `The AI provider rejected the request: ${error.message}`;
+    return `المزوّد رفض الطلب: ${error.message}`;
   }
 
   if (error.status >= 500) {
-    return 'The AI provider had a server error. Try again in a moment.';
+    return 'صار خطأ في سيرفر المزوّد. جرّب بعد لحظة.';
   }
 
   return error.message;

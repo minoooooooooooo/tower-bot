@@ -1,5 +1,6 @@
 import { config } from '../config.js';
 import { zonedDate, zonedMidnightUnix } from '../lib/dates.js';
+import { formatDurationArabic } from '../lib/durations.js';
 import { createLogger } from '../lib/logger.js';
 import { getGuildSettings } from './birthday-store.js';
 import {
@@ -158,9 +159,9 @@ export async function runScheduledReport(client, schedule, { now = Date.now() } 
       timeZone,
       scheduleText:
         schedule.mode === 'daily'
-          ? `Scheduled - Daily ${formatClock(schedule.minuteOfDay)} ${timeZone}`
-          : `Scheduled - Every ${formatInterval(schedule.intervalMs ?? MAX_INTERVAL_MS)}`,
-      requestedBy: 'an automatic schedule',
+          ? `مجدوَل — يوميًا الساعة ${formatClock(schedule.minuteOfDay)} ${timeZone}`
+          : `مجدوَل — كل ${formatDurationArabic(schedule.intervalMs ?? MAX_INTERVAL_MS)}`,
+      requestedBy: 'جدولة تلقائية',
     });
 
     // Mark first: a failed post must not make the next tick re-read the same

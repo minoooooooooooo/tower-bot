@@ -14,117 +14,117 @@ import { ordinal, renderMessage, unknownPlaceholders } from '../lib/template.js'
 export const STYLES = [
   {
     key: 'ledger',
-    name: 'Ledger',
-    summary: 'Aligned date-first rows, the same grammar as /birthday list',
+    name: 'سجل',
+    summary: 'صفوف مرتّبة تبدأ بالتاريخ، بنفس صيغة /birthday list',
     color: 0x5865f2,
     pieces: [
-      { key: 'title', label: 'Title', default: '🎫 Member Pass', max: 256 },
+      { key: 'title', label: 'العنوان', default: '🎫 بطاقة عضو', max: 256 },
       {
         key: 'rowLabels',
-        label: 'Row labels (Account | Next)',
-        default: 'account | next',
+        label: 'عناوين الصفوف (الحساب | التالي)',
+        default: 'الحساب | التالي',
         max: 80,
       },
-      { key: 'nextText', label: 'Next step', default: 'read {rules}, then say hi', max: 200 },
-      { key: 'footer', label: 'Footer', default: '{server} · {count} members', max: 200 },
+      { key: 'nextText', label: 'الخطوة التالية', default: 'اقرأ {rules}، وبعدها سلّم', max: 200 },
+      { key: 'footer', label: 'التذييل', default: '{server} · {count} عضو', max: 200 },
     ],
   },
   {
     key: 'classic',
-    name: 'Classic',
-    summary: 'Avatar, mention, two inline fields and an optional GIF',
+    name: 'كلاسيكي',
+    summary: 'الصورة والمنشن وخانتين وجيف اختياري',
     color: 0x57f287,
     pieces: [
-      { key: 'title', label: 'Title', default: 'Welcome to {server}', max: 256 },
+      { key: 'title', label: 'العنوان', default: 'أهلًا بك في {server}', max: 256 },
       {
         key: 'description',
-        label: 'Description',
+        label: 'الوصف',
         default:
-          '{user} just joined as member #{count}.\nMake yourself at home — the rules are in {rules}.',
+          '{user} انضم للتو كعضو رقم #{count}.\nاعتبر نفسك في بيتك — القوانين في {rules}.',
         max: 2000,
         paragraph: true,
       },
       // Two labels in one input: the modal has room for five inputs and the GIF
       // needs the fifth. Split on "|" — a single value is used for both fields.
-      { key: 'fieldLabels', label: 'Field labels (Account | Joined)', default: 'Created | Joined', max: 160 },
-      { key: 'footer', label: 'Footer', default: '{server} · {count} members', max: 200 },
+      { key: 'fieldLabels', label: 'عناوين الخانتين (الحساب | الانضمام)', default: 'أُنشئ | انضم', max: 160 },
+      { key: 'footer', label: 'التذييل', default: '{server} · {count} عضو', max: 200 },
     ],
   },
   {
     key: 'poster',
-    name: 'Poster',
-    summary: 'Full-width server banner with a single headline',
+    name: 'ملصق',
+    summary: 'بانر السيرفر بعرض كامل مع عنوان واحد',
     color: 0xeb459e,
     pieces: [
-      { key: 'headline', label: 'Headline', default: '**{user}** has entered.', max: 500 },
-      { key: 'links', label: 'Links line', default: '{rules} · {general}', max: 300 },
-      { key: 'footer', label: 'Footer', default: '{server}', max: 200 },
+      { key: 'headline', label: 'العنوان الرئيسي', default: '**{user}** وصل.', max: 500 },
+      { key: 'links', label: 'سطر الروابط', default: '{rules} · {general}', max: 300 },
+      { key: 'footer', label: 'التذييل', default: '{server}', max: 200 },
     ],
   },
   {
     key: 'story',
-    name: 'Story',
-    summary: 'Narrative welcome that turns the member count into floors',
+    name: 'قصة',
+    summary: 'ترحيب سردي يحوّل عدد الأعضاء إلى طوابق',
     color: 0x9b59b6,
     pieces: [
-      { key: 'title', label: 'Title', default: '🏰 Floor {count}', max: 256 },
+      { key: 'title', label: 'العنوان', default: '🏰 الطابق {count}', max: 256 },
       {
         key: 'body',
-        label: 'Body',
+        label: 'النص',
         default:
-          'The gate swings open. {user} steps inside.\n\nStart in {general} — they will make room.',
+          'البوابة تنفتح. {user} يدخل.\n\nابدأ في {general} — بيفتحون لك مكان.',
         max: 2000,
         paragraph: true,
       },
-      { key: 'footer', label: 'Footer', default: '{count} inside', max: 200 },
+      { key: 'footer', label: 'التذييل', default: '{count} داخل', max: 200 },
     ],
   },
   {
     key: 'whisper',
-    name: 'Whisper',
-    summary: 'Two quiet lines. No fields, no fuss.',
+    name: 'همسة',
+    summary: 'سطرين هادئين. بدون خانات ولا زحمة.',
     color: 0x99aab5,
     timestamp: false,
     pieces: [
-      { key: 'line1', label: 'First line', default: 'welcome, {name}.', max: 200 },
-      { key: 'line2', label: 'Second line', default: "you're #{count}.", max: 200 },
+      { key: 'line1', label: 'السطر الأول', default: 'أهلًا، {name}.', max: 200 },
+      { key: 'line2', label: 'السطر الثاني', default: 'أنت رقم #{count}.', max: 200 },
     ],
   },
   {
     key: 'concierge',
-    name: 'Concierge',
-    summary: 'Onboarding card with link buttons to rules and chat',
+    name: 'استقبال',
+    summary: 'بطاقة تعريف بأزرار روابط للقوانين والدردشة',
     color: 0x1abc9c,
     pieces: [
-      { key: 'title', label: 'Title', default: '👋 Welcome to {server}', max: 256 },
+      { key: 'title', label: 'العنوان', default: '👋 أهلًا بك في {server}', max: 256 },
       {
         key: 'description',
-        label: 'Description',
-        default: '{user}, {count} of us now. A few things before you post:',
+        label: 'الوصف',
+        default: '{user}، صرنا {count}. كم شي قبل ما تنشر:',
         max: 2000,
         paragraph: true,
       },
       {
         key: 'buttonLabels',
-        label: 'Button labels (Rules | Say hi)',
-        default: '📜 Rules | 👋 Say hi',
+        label: 'عناوين الأزرار (القوانين | سلّم)',
+        default: '📜 القوانين | 👋 سلّم',
         max: 160,
       },
-      { key: 'footer', label: 'Footer', default: '{server} · {count} members', max: 200 },
+      { key: 'footer', label: 'التذييل', default: '{server} · {count} عضو', max: 200 },
     ],
   },
 ];
 
 export const WELCOME_PLACEHOLDERS = [
-  { key: 'user', description: 'Mentions the new member' },
-  { key: 'name', description: 'Their display name' },
-  { key: 'count', description: 'Member count after they joined' },
-  { key: 'ordinal', description: 'The same number as "48th"' },
-  { key: 'server', description: 'Server name' },
-  { key: 'joined', description: 'Join date, like "31 Oct 2026"' },
-  { key: 'account_age', description: 'Account age, like "7 years ago"' },
-  { key: 'rules', description: 'Rules channel, or #rules when unset' },
-  { key: 'general', description: 'General channel, or #general when unset' },
+  { key: 'user', description: 'منشن العضو الجديد' },
+  { key: 'name', description: 'اسمه الظاهر' },
+  { key: 'count', description: 'عدد الأعضاء بعد انضمامه' },
+  { key: 'ordinal', description: 'الرقم نفسه بصيغة "48" الترتيبية' },
+  { key: 'server', description: 'اسم السيرفر' },
+  { key: 'joined', description: 'تاريخ الانضمام، مثل "31 أكتوبر 2026"' },
+  { key: 'account_age', description: 'عمر الحساب، مثل "قبل 7 سنوات"' },
+  { key: 'rules', description: 'قناة القوانين، أو #rules إذا ما انضبطت' },
+  { key: 'general', description: 'القناة العامة، أو #general إذا ما انضبطت' },
 ];
 
 export const STYLE_KEYS = STYLES.map((style) => style.key);
@@ -153,7 +153,7 @@ export function styleTexts(style, overrides = {}) {
 }
 
 /**
- * "Created | Joined" -> ["Created", "Joined"]. A single value names both
+ * "الحساب | التالي" -> ["الحساب", "التالي"]. A single value names both
  * labels, so the input can never leave one of them blank.
  */
 export function splitPair(value, first, second) {
@@ -167,13 +167,13 @@ export function splitPair(value, first, second) {
 }
 
 export function splitFieldLabels(value) {
-  return splitPair(value, 'Created', 'Joined');
+  return splitPair(value, 'أُنشئ', 'انضم');
 }
 
 /** The GIF box shown at the bottom of every style's edit modal. */
 export const GIF_INPUT = {
   key: 'gifUrl',
-  label: 'GIF URL (optional)',
+  label: 'رابط GIF (اختياري)',
   max: 1000,
   placeholder: 'https://media.tenor.com/....gif',
   target: 'setting',
@@ -231,7 +231,7 @@ function buildValues({ guild, member, settings, timeZone, now }) {
     name: member.displayName ?? member.user?.username ?? member.id,
     count: String(count),
     ordinal: ordinal(count),
-    server: guild.name ?? 'this server',
+    server: guild.name ?? 'هذا السيرفر',
     joined: formatListDate(zoned.year, zoned.month, zoned.day),
     account_age: `<t:${Math.floor((member.user?.createdTimestamp ?? now.getTime()) / 1000)}:R>`,
     rules: settings.rulesChannelId ? `<#${settings.rulesChannelId}>` : '#rules',
@@ -272,7 +272,7 @@ export function buildWelcomePayload({
   const components = [];
 
   if (style.key === 'ledger') {
-    const [accountLabel, nextLabel] = splitPair(text.rowLabels, 'account', 'next');
+    const [accountLabel, nextLabel] = splitPair(text.rowLabels, 'الحساب', 'التالي');
 
     embeds.push(
       embed({
@@ -350,7 +350,7 @@ export function buildWelcomePayload({
     // "Say hi" falls back to the welcome channel, so the card still has a
     // button before any link is configured.
     const generalId = settings.generalChannelId ?? settings.channelId;
-    const [rulesLabel, hiLabel] = splitPair(text.buttonLabels, '📜 Rules', '👋 Say hi');
+    const [rulesLabel, hiLabel] = splitPair(text.buttonLabels, '📜 القوانين', '👋 سلّم');
 
     if (rulesId) {
       row.addComponents(

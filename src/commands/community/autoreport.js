@@ -1,12 +1,14 @@
 import {
   InteractionContextType,
-  MessageFlags,
   PermissionFlagsBits,
   SlashCommandBuilder,
 } from 'discord.js';
 import { config } from '../../config.js';
-import { COLORS, embed, errorEmbed, infoEmbed, successEmbed } from '../../lib/embeds.js';
+import { formatDurationArabic } from '../../lib/durations.js';
+import { COLORS, embed } from '../../lib/embeds.js';
 import { createLogger } from '../../lib/logger.js';
+import { permissionName } from '../../lib/permissions.js';
+import { ephemeral, errorReply, infoReply, okReply } from '../../lib/replies.js';
 import { aiConfigured } from '../../lib/ai.js';
 import { getGuildSettings } from '../../services/birthday-store.js';
 import {
@@ -22,7 +24,6 @@ import {
 import { KIND_ALIASES, KIND_KEYS, SUMMARY_KINDS } from '../../services/summary.js';
 import {
   formatClock,
-  formatInterval,
   nextRunAt,
   parseClock,
   parseInterval,
@@ -33,17 +34,11 @@ const logger = createLogger('autoreport');
 const MAX_SCHEDULES = 10;
 const MAX_PROMPT = 500;
 
-function ephemeral(payload) {
-  return { ...payload, flags: MessageFlags.Ephemeral };
-}
-
 async function requireManageGuild(ctx) {
   if (ctx.member?.permissions?.has(PermissionFlagsBits.ManageGuild)) return true;
 
-  await ctx.reply(
-    ephemeral({
-      embeds: [errorEmbed('Missing permissions', 'You need **Manage Server** to schedule reports.')],
-    }),
+  await ctx.fail(
+    ephemeral(errorReply('صلاحيات ناقصة', 'تحتاج **إدارة السيرفر** عشان تجدول التقارير.')),
   );
 
   return false;
@@ -69,12 +64,19 @@ function stamp(ms) {
 
 function cadenceLabel(schedule) {
   return schedule.mode === 'daily'
-    ? `every day at ${formatClock(schedule.minuteOfDay)}`
-    : `every ${formatInterval(schedule.intervalMs)}`;
+    ? `كل يوم الساعة ${formatClock(schedule.minuteOfDay)}`
+    : `كل ${formatDurationArabic(schedule.intervalMs)}`;
 }
 
 function kindLabel(kind) {
-  return `${SUMMARY_KINDS[kind]?.emoji ?? ''} ${SUMMARY_KINDS[kind]?.label ?? kind}`.trim();
+  return `${SUMMARY_KINDS[kind]?.emoji ?? ''} ${SUMMARY_KINDS[kind]?.arLabel ?? kind}`.trim();
+}
+
+function kindChoices() {
+  return KIND_KEYS.map((key) => ({
+    name: `${SUMMARY_KINDS[key].arLabel} (${key}) — ${SUMMARY_KINDS[key].arBrief}`,
+    value: key,
+  }));
 }
 
 /**
@@ -162,15 +164,13 @@ async function handleSet(ctx) {
   if (!(await requireManageGuild(ctx))) return;
 
   if (!aiConfigured()) {
-    await ctx.reply(
-      ephemeral({
-        embeds: [
-          errorEmbed(
-            'AI is not configured',
-            'A schedule needs the summarizer. Add `AI_API_KEY` to the server environment and restart.',
-          ),
-        ],
-      }),
+    await ctx.fail(
+      ephemeral(
+        errorReply(
+          'الذكاء الاصطناعي غير مضبوط',
+          'الجدولة تحتاج الملخّص. أضف `AI_API_KEY` لمتغيرات السيرفر وأعد التشغيل.',
+        ),
+      ),
     );
     return;
   }
@@ -178,42 +178,38 @@ async function handleSet(ctx) {
   const options = setOptions(ctx);
 
   if (!options.channelId) {
-    await ctx.reply(
-      ephemeral({
-        embeds: [
-          errorEmbed(
-            'Which channel?',
-            ctx.isSlash
-              ? 'Pick the channel to summarize.'
-              : 'Mention the channel, e.g. `:-autoreport set #general 6h`.',
-          ),
-        ],
-      }),
+    await ctx.fail(
+      ephemeral(
+        errorReply(
+          'أي قناة؟',
+          ctx.isSlash
+            ? 'اختر القناة اللي تبي تلخّصها.'
+            : 'اذكر القناة، مثلاً `:-autoreport set #general 6h`.',
+        ),
+      ),
     );
     return;
   }
 
   if (options.rawEvery && options.intervalMs === null) {
-    await ctx.reply(
-      ephemeral({
-        embeds: [
-          errorEmbed(
-            'Invalid interval',
-            `Use minutes, hours or days from ${formatInterval(MIN_INTERVAL_MS)} to ${formatInterval(MAX_INTERVAL_MS)}: \`90m\`, \`6h\`, \`2d\`.`,
-          ),
-        ],
-      }),
+    await ctx.fail(
+      ephemeral(
+        errorReply(
+          'فترة غير صالحة',
+          `استخدم دقائق أو ساعات أو أيام من ${formatDurationArabic(
+            MIN_INTERVAL_MS,
+          )} إلى ${formatDurationArabic(MAX_INTERVAL_MS)}: \`90m\`، \`6h\`، \`2d\`.`,
+        ),
+      ),
     );
     return;
   }
 
   if (options.rawTime && options.minuteOfDay === null) {
-    await ctx.reply(
-      ephemeral({
-        embeds: [
-          errorEmbed('Invalid time', 'Use 24-hour `HH:MM`, for example `09:00` or `21:30`.'),
-        ],
-      }),
+    await ctx.fail(
+      ephemeral(
+        errorReply('وقت غير صالح', 'استخدم صيغة 24 ساعة `HH:MM`، مثلاً `09:00` أو `21:30`.'),
+      ),
     );
     return;
   }
@@ -222,20 +218,18 @@ async function handleSet(ctx) {
   const hasDaily = options.minuteOfDay !== null && options.minuteOfDay !== undefined;
 
   if (hasInterval === hasDaily) {
-    await ctx.reply(
-      ephemeral({
-        embeds: [
-          errorEmbed(
-            'Pick one cadence',
-            [
-              'Give **either** an interval **or** a time of day:',
-              '`:-autoreport set #general 6h` — every six hours',
-              '`:-autoreport set #general 09:00` — every day at 09:00 server time',
-              `Intervals run from ${formatInterval(MIN_INTERVAL_MS)} to ${formatInterval(MAX_INTERVAL_MS)}.`,
-            ].join('\n'),
-          ),
-        ],
-      }),
+    await ctx.fail(
+      ephemeral(
+        errorReply(
+          'اختر جدولة وحدة',
+          [
+            'أعط **إما** فترة **أو** وقت يومي:',
+            '`:-autoreport set #general 6h` — كل ست ساعات',
+            '`:-autoreport set #general 09:00` — كل يوم الساعة 09:00 بتوقيت السيرفر',
+            `الفترات من ${formatDurationArabic(MIN_INTERVAL_MS)} إلى ${formatDurationArabic(MAX_INTERVAL_MS)}.`,
+          ].join('\n'),
+        ),
+      ),
     );
     return;
   }
@@ -243,31 +237,32 @@ async function handleSet(ctx) {
   const kind = KIND_ALIASES[options.kind] ?? options.kind;
 
   if (!KIND_KEYS.includes(kind)) {
-    await ctx.reply(
-      ephemeral({
-        embeds: [errorEmbed('Unknown summary type', `Pick one of: ${KIND_KEYS.join(', ')}.`)],
-      }),
+    await ctx.fail(
+      ephemeral(
+        errorReply(
+          'نوع ملخص غير معروف',
+          `اختر واحد من: ${KIND_KEYS.map((key) => SUMMARY_KINDS[key].arLabel).join('، ')}.`,
+        ),
+      ),
     );
     return;
   }
 
   if (kind === 'targeted' && !options.prompt) {
-    await ctx.reply(
-      ephemeral({
-        embeds: [
-          errorEmbed(
-            'A targeted schedule needs a focus',
-            'For example `:-autoreport set #general 09:00 ask the event schedule`.',
-          ),
-        ],
-      }),
+    await ctx.fail(
+      ephemeral(
+        errorReply(
+          'الجدولة الموجّهة تحتاج تركيز',
+          'مثلاً `:-autoreport set #general 09:00 ask جدول الفعاليات`.',
+        ),
+      ),
     );
     return;
   }
 
   if (options.prompt.length > MAX_PROMPT) {
-    await ctx.reply(
-      ephemeral({ embeds: [errorEmbed('Focus is too long', `Keep it under ${MAX_PROMPT} characters.`)] }),
+    await ctx.fail(
+      ephemeral(errorReply('التركيز طويل', `خلّه أقل من ${MAX_PROMPT} حرف.`)),
     );
     return;
   }
@@ -275,15 +270,13 @@ async function handleSet(ctx) {
   const destinationId = getSummaryChannel(ctx.guildId);
 
   if (!destinationId) {
-    await ctx.reply(
-      ephemeral({
-        embeds: [
-          errorEmbed(
-            'No summary channel yet',
-            'Set where reports are delivered first: `/summary channel channel:#management`, then schedule. Otherwise a scheduled report would land in the channel it reads.',
-          ),
-        ],
-      }),
+    await ctx.fail(
+      ephemeral(
+        errorReply(
+          'ما فيه قناة ملخصات',
+          'حدد أول وين تنرسل التقارير: `/summary channel channel:#management`، بعدها جدول. وإلا التقرير المجدول بينزل في القناة اللي يقرأها.',
+        ),
+      ),
     );
     return;
   }
@@ -292,8 +285,8 @@ async function handleSet(ctx) {
   const destination = await resolveChannel(ctx, destinationId);
 
   if (!source || !destination) {
-    await ctx.reply(
-      ephemeral({ embeds: [errorEmbed('Channel not found', 'Pick channels I can see.')] }),
+    await ctx.fail(
+      ephemeral(errorReply('ما لقيت القناة', 'اختر قنوات أقدر أشوفها.')),
     );
     return;
   }
@@ -305,15 +298,15 @@ async function handleSet(ctx) {
     !sourcePermissions?.has(PermissionFlagsBits.ViewChannel) ||
     !sourcePermissions?.has(PermissionFlagsBits.ReadMessageHistory)
   ) {
-    await ctx.reply(
-      ephemeral({
-        embeds: [
-          errorEmbed(
-            'Missing permissions',
-            `I need **View Channel** and **Read Message History** in ${source}.`,
-          ),
-        ],
-      }),
+    await ctx.fail(
+      ephemeral(
+        errorReply(
+          'صلاحيات ناقصة',
+          `أحتاج **${permissionName(PermissionFlagsBits.ViewChannel)}** و**${permissionName(
+            PermissionFlagsBits.ReadMessageHistory,
+          )}** في ${source}.`,
+        ),
+      ),
     );
     return;
   }
@@ -321,10 +314,10 @@ async function handleSet(ctx) {
   const existing = getSchedule(ctx.guildId, source.id);
 
   if (!existing && listSchedules(ctx.guildId).length >= MAX_SCHEDULES) {
-    await ctx.reply(
-      ephemeral({
-        embeds: [errorEmbed('Too many schedules', `Remove one first (max ${MAX_SCHEDULES}).`)],
-      }),
+    await ctx.fail(
+      ephemeral(
+        errorReply('جدولة كثيرة', `احذف واحدة أول (الحد ${MAX_SCHEDULES}).`),
+      ),
     );
     return;
   }
@@ -346,27 +339,25 @@ async function handleSet(ctx) {
   const soon = next !== null && next - Date.now() < 15 * 60 * 1000;
 
   await ctx.reply(
-    ephemeral({
-      embeds: [
-        successEmbed(
-          existing ? 'Schedule updated' : 'Schedule created',
-          [
-            `**${kindLabel(kind)}** summary of ${source}, ${cadenceLabel(schedule)}.`,
-            `Reports go to ${destination}.`,
-            next ? `First run: ${stamp(next)}` : null,
-            // A report a minute from now only covers that minute. Expecting a
-            // full day's summary from it is the most common confusion.
-            soon
-              ? 'That first report only covers the time until then — if nothing is said in that window, nothing is posted.'
-              : existing
-                ? 'Saving an existing schedule restarts its window, so the next report covers from now on.'
-                : null,
-          ]
-            .filter(Boolean)
-            .join('\n'),
-        ),
-      ],
-    }),
+    ephemeral(
+      okReply(
+        existing ? 'انحدّثت الجدولة' : 'انضافت الجدولة',
+        [
+          `ملخص **${kindLabel(kind)}** لقناة ${source}، ${cadenceLabel(schedule)}.`,
+          `التقارير تروح إلى ${destination}.`,
+          next ? `أول تشغيل: ${stamp(next)}` : null,
+          // A report a minute from now only covers that minute. Expecting a
+          // full day's summary from it is the most common confusion.
+          soon
+            ? 'أول تقرير بيغطي الفترة اللي قبله بس — إذا ما انكتب شي في هالفترة، ما بينشر شي.'
+            : existing
+              ? 'حفظ جدولة موجودة يعيد تشغيل نافذتها، فالتقرير الجاي بيغطي من الحين وراي.'
+              : null,
+        ]
+          .filter(Boolean)
+          .join('\n'),
+      ),
+    ),
   );
 }
 
@@ -377,20 +368,20 @@ async function handleRemove(ctx) {
   const source = await resolveChannel(ctx, channelId?.replace?.(/^<#|>$/g, '') ?? null);
 
   if (!source) {
-    await ctx.reply(ephemeral({ embeds: [errorEmbed('Which channel?', 'Name the scheduled channel.')] }));
+    await ctx.fail(
+      ephemeral(errorReply('أي قناة؟', 'اذكر القناة المجدولة.')),
+    );
     return;
   }
 
   const removed = removeSchedule(ctx.guildId, source.id);
 
   await ctx.reply(
-    ephemeral({
-      embeds: [
-        removed > 0
-          ? successEmbed('Schedule removed', `No more automatic reports for ${source}.`)
-          : infoEmbed('No schedule', `${source} had no automatic report.`),
-      ],
-    }),
+    ephemeral(
+      removed > 0
+        ? okReply('انشالت الجدولة', `ما عاد فيه تقارير تلقائية لـ ${source}.`)
+        : infoReply('ما فيه جدولة', `${source} ما كان لها تقرير تلقائي.`),
+    ),
   );
 }
 
@@ -401,23 +392,26 @@ async function handleToggle(ctx, enabled) {
   const source = await resolveChannel(ctx, channelId?.replace?.(/^<#|>$/g, '') ?? null);
 
   if (!source) {
-    await ctx.reply(ephemeral({ embeds: [errorEmbed('Which channel?', 'Name the scheduled channel.')] }));
+    await ctx.fail(
+      ephemeral(errorReply('أي قناة؟', 'اذكر القناة المجدولة.')),
+    );
     return;
   }
 
   const changed = setScheduleEnabled(ctx.guildId, source.id, enabled);
 
   await ctx.reply(
-    ephemeral({
-      embeds: [
-        changed > 0
-          ? successEmbed(
-              enabled ? 'Schedule resumed' : 'Schedule paused',
-              `${source} — automatic reports are now ${enabled ? 'on' : 'off'}.`,
-            )
-          : infoEmbed('No schedule', `${source} has no automatic report to ${enabled ? 'resume' : 'pause'}.`),
-      ],
-    }),
+    ephemeral(
+      changed > 0
+        ? okReply(
+            enabled ? 'رجعت الجدولة' : 'انوقفت الجدولة مؤقتًا',
+            `${source} — التقارير التلقائية الحين ${enabled ? 'شغالة' : 'موقوفة'}.`,
+          )
+        : infoReply(
+            'ما فيه جدولة',
+            `${source} ما عندها تقرير تلقائي ${enabled ? 'يرجع' : 'ينوقف'}.`,
+          ),
+    ),
   );
 }
 
@@ -426,18 +420,16 @@ async function handleList(ctx) {
 
   if (schedules.length === 0) {
     await ctx.reply(
-      ephemeral({
-        embeds: [
-          infoEmbed(
-            'No automatic reports',
-            [
-              'Create one with:',
-              '`:-autoreport set #general 6h` — every six hours',
-              '`:-autoreport set #general 09:00 tasks` — daily action items at 09:00',
-            ].join('\n'),
-          ),
-        ],
-      }),
+      ephemeral(
+        infoReply(
+          'ما فيه تقارير تلقائية',
+          [
+            'سوِّ واحد بـ:',
+            '`:-autoreport set #general 6h` — كل ست ساعات',
+            '`:-autoreport set #general 09:00 tasks` — مهام يومية الساعة 09:00',
+          ].join('\n'),
+        ),
+      ),
     );
     return;
   }
@@ -447,8 +439,8 @@ async function handleList(ctx) {
     const channel = ctx.guild.channels.cache.get(schedule.channelId);
     const name = channel ? `${channel}` : `\`${schedule.channelId}\``;
     const when = schedule.enabled
-      ? `next ${stamp(nextRunAt(schedule, timeZone))}`
-      : '⏸ paused';
+      ? `الجاي ${stamp(nextRunAt(schedule, timeZone))}`
+      : 'موقوفة';
 
     return `${schedule.enabled ? '▶️' : '⏸️'} ${name} · ${kindLabel(schedule.kind)} · ${cadenceLabel(schedule)} · ${when}`;
   });
@@ -457,9 +449,9 @@ async function handleList(ctx) {
     ephemeral({
       embeds: [
         embed({
-          title: `Automatic reports (${schedules.length})`,
+          title: `التقارير التلقائية (${schedules.length})`,
           description: lines.join('\n').slice(0, 4000),
-          footer: `Times use ${timeZone} · /autoreport remove channel:<#channel>`,
+          footer: `الأوقات بتوقيت ${timeZone} · /autoreport remove channel:<#channel>`,
           color: COLORS.primary,
         }),
       ],
@@ -470,41 +462,41 @@ async function handleList(ctx) {
 export default {
   data: new SlashCommandBuilder()
     .setName('autoreport')
-    .setDescription('Post a channel summary automatically, on an interval or at a fixed time')
+    .setDescription('انشر ملخص قناة تلقائيًا، كل فترة أو في وقت ثابت')
     .setContexts(InteractionContextType.Guild)
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .addSubcommand((sub) =>
       sub
         .setName('set')
-        .setDescription('Create or change the schedule for a channel')
+        .setDescription('أنشئ جدولة قناة أو عدّلها')
         .addChannelOption((option) =>
-          option.setName('channel').setDescription('Channel to summarize').setRequired(true),
+          option.setName('channel').setDescription('القناة اللي تبي تلخّصها').setRequired(true),
         )
         .addStringOption((option) =>
           option
             .setName('every')
-            .setDescription('Interval between reports: 90m, 6h, 2d')
+            .setDescription('الفترة بين التقارير: 90m، 6h، 2d')
             .setRequired(false)
             .setMaxLength(10),
         )
         .addStringOption((option) =>
           option
             .setName('time')
-            .setDescription('Daily at this server time, 24h format: 09:00')
+            .setDescription('يوميًا بهذا التوقيت (24 ساعة): 09:00')
             .setRequired(false)
             .setMaxLength(5),
         )
         .addStringOption((option) =>
           option
             .setName('kind')
-            .setDescription('What kind of summary (default: General)')
+            .setDescription('نوع الملخص (الافتراضي: عام)')
             .setRequired(false)
-            .addChoices(...KIND_KEYS.map((key) => ({ name: SUMMARY_KINDS[key].brief, value: key }))),
+            .addChoices(...kindChoices()),
         )
         .addStringOption((option) =>
           option
             .setName('prompt')
-            .setDescription('For Targeted schedules: what to look for')
+            .setDescription('للجدولة الموجّهة: عن أي شي أدوّر؟')
             .setRequired(false)
             .setMaxLength(MAX_PROMPT),
         ),
@@ -512,32 +504,32 @@ export default {
     .addSubcommand((sub) =>
       sub
         .setName('remove')
-        .setDescription('Stop the automatic report for a channel')
+        .setDescription('وقّف التقرير التلقائي لقناة')
         .addChannelOption((option) =>
-          option.setName('channel').setDescription('Scheduled channel').setRequired(true),
+          option.setName('channel').setDescription('القناة المجدولة').setRequired(true),
         ),
     )
     .addSubcommand((sub) =>
       sub
         .setName('pause')
-        .setDescription('Pause a schedule without deleting it')
+        .setDescription('وقّف الجدولة مؤقتًا بدون حذفها')
         .addChannelOption((option) =>
-          option.setName('channel').setDescription('Scheduled channel').setRequired(true),
+          option.setName('channel').setDescription('القناة المجدولة').setRequired(true),
         ),
     )
     .addSubcommand((sub) =>
       sub
         .setName('resume')
-        .setDescription('Resume a paused schedule')
+        .setDescription('رجّع جدولة موقوفة')
         .addChannelOption((option) =>
-          option.setName('channel').setDescription('Scheduled channel').setRequired(true),
+          option.setName('channel').setDescription('القناة المجدولة').setRequired(true),
         ),
     )
-    .addSubcommand((sub) => sub.setName('list').setDescription('Show every automatic report')),
+    .addSubcommand((sub) => sub.setName('list').setDescription('اعرض كل التقارير التلقائية')),
 
   name: 'autoreport',
   aliases: ['schedule', 'digest'],
-  description: 'Automatically post a channel summary on an interval or at a fixed time',
+  description: 'انشر ملخص قناة تلقائيًا كل فترة أو في وقت ثابت',
   category: 'Community',
   usage: 'autoreport set <#channel> <6h|09:00> [general|tasks|ask <focus>] | remove <#channel> | list',
   cooldown: 3,

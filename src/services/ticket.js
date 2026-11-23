@@ -11,8 +11,9 @@ import {
   TextInputBuilder,
   TextInputStyle,
 } from 'discord.js';
-import { COLORS, embed, errorEmbed, successEmbed } from '../lib/embeds.js';
+import { COLORS, embed } from '../lib/embeds.js';
 import { createLogger } from '../lib/logger.js';
+import { errorReply, okReply } from '../lib/replies.js';
 import {
   DEFAULT_PANEL_KEY,
   claimTicket,
@@ -76,17 +77,17 @@ export function channelNameFor(type, user, number) {
 }
 
 export function renderWelcome(type, { user, guild, number } = {}) {
-  const username = user?.username ?? user?.tag?.split('#')[0] ?? 'member';
+  const username = user?.username ?? user?.tag?.split('#')[0] ?? 'عضو';
   const template =
     type?.welcomeMessage ||
-    'Thanks for opening a ticket, {mention}. A staff member will help you soon.';
+    'شكرًا على فتح التذكرة، {mention}. عضو من الفريق بيجيك قريب.';
 
   return template
     .replaceAll('{mention}', user ? `<@${user.id}>` : username)
     .replaceAll('{user}', username)
     .replaceAll('{username}', username)
-    .replaceAll('{type}', type?.label ?? type?.key ?? 'ticket')
-    .replaceAll('{server}', guild?.name ?? 'the server')
+    .replaceAll('{type}', type?.label ?? type?.key ?? 'تذكرة')
+    .replaceAll('{server}', guild?.name ?? 'السيرفر')
     .replaceAll('{number}', padTicketNumber(number));
 }
 
@@ -123,10 +124,10 @@ export function typeButton(type) {
   return applyEmoji(button, type.emoji);
 }
 
-export const DEFAULT_PANEL_TITLE = 'Open a ticket';
+export const DEFAULT_PANEL_TITLE = 'افتح تذكرة';
 export const DEFAULT_PANEL_DESCRIPTION =
-  'Choose the option that fits your issue. Each button opens a private ticket with the right team.';
-export const DEFAULT_PANEL_FOOTER = 'Pick the option that matches your issue';
+  'اختر الخيار اللي يناسب مشكلتك. كل زر يفتح تذكرة خاصة مع الفريق المناسب.';
+export const DEFAULT_PANEL_FOOTER = 'اختر الخيار اللي يطابق مشكلتك';
 
 /** Discord allows five buttons per row and five rows per message. */
 export function buttonRows(types) {
@@ -288,7 +289,7 @@ async function resolveCategory(guild, categoryId) {
 
   if (!category || category.type !== ChannelType.GuildCategory) {
     throw new TicketError(
-      'The configured ticket category no longer exists. An admin can fix it with `/ticket button edit`.',
+      'فئة التذاكر المضبوطة ما عادت موجودة. المشرف يقدر يصلحها بـ `/ticket button edit`.',
     );
   }
 
@@ -405,11 +406,11 @@ async function logTicket(guild, type, payload) {
 export async function createTicketChannel({ guild, user, typeKey }) {
   const type = getTicketType(guild.id, typeKey);
 
-  if (!type) throw new TicketError('That ticket button no longer exists.');
+  if (!type) throw new TicketError('هذا الزر ما عاد موجود.');
 
   if (!type.categoryId) {
     throw new TicketError(
-      `**${type.label}** has no category yet. An admin needs to run \`/ticket button edit key:${type.key} category:#category\`.`,
+      `**${type.label}** ما له فئة. المشرف يحتاج يشغّل \`/ticket button edit key:${type.key} category:#category\`.`,
     );
   }
 
@@ -418,7 +419,7 @@ export async function createTicketChannel({ guild, user, typeKey }) {
   if (existing.length >= type.maxOpen) {
     const first = existing[0];
     throw new TicketError(
-      `You already have an open ${type.label} ticket${first?.channelId ? `: <#${first.channelId}>` : '.'}`,
+      `عندك تذكرة ${type.label} مفتوحة${first?.channelId ? `: <#${first.channelId}>` : '.'}`,
     );
   }
 
@@ -429,7 +430,7 @@ export async function createTicketChannel({ guild, user, typeKey }) {
     name,
     type: ChannelType.GuildText,
     parent: category.id,
-    topic: `Ticket #${padTicketNumber(number)} • ${type.label} • ${user.tag ?? user.username} (${user.id})`,
+    topic: `تذكرة #${padTicketNumber(number)} • ${type.label} • ${user.tag ?? user.username} (${user.id})`,
     permissionOverwrites: permissionOverwrites(guild, type, user.id),
     reason: `Ticket #${padTicketNumber(number)} opened by ${user.tag ?? user.username}`,
   });
@@ -448,7 +449,7 @@ export async function createTicketChannel({ guild, user, typeKey }) {
   } catch (error) {
     await channel.delete('Could not record the ticket').catch(() => null);
     throw new TicketError(
-      `I created the ticket channel but could not record it: ${error.message}`,
+      `سويت قناة التذكرة بس ما قدرت أسجّلها: ${error.message}`,
     );
   }
 
@@ -460,11 +461,11 @@ export async function createTicketChannel({ guild, user, typeKey }) {
   const buttons = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(`${TICKET_PREFIX}claim:${channel.id}`)
-      .setLabel('Claim')
+      .setLabel('استلام')
       .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId(`${TICKET_PREFIX}close:${channel.id}`)
-      .setLabel('Close')
+      .setLabel('إغلاق')
       .setStyle(ButtonStyle.Danger),
   );
 
@@ -472,14 +473,14 @@ export async function createTicketChannel({ guild, user, typeKey }) {
     content: mentions,
     embeds: [
       embed({
-        title: `Ticket #${padTicketNumber(number)}`,
+        title: `تذكرة #${padTicketNumber(number)}`,
         description: renderWelcome(type, { user, guild, number }),
         color: type.color ?? COLORS.primary,
         fields: [
-          { name: 'Option', value: type.label, inline: true },
-          { name: 'Opened by', value: `<@${user.id}>`, inline: true },
+          { name: 'الخيار', value: type.label, inline: true },
+          { name: 'فتحها', value: `<@${user.id}>`, inline: true },
         ],
-        footer: 'Use the buttons below to claim or close this ticket',
+        footer: 'استخدم الأزرار تحت عشان تستلم التذكرة أو تقفلها',
       }),
     ],
     components: [buttons],
@@ -488,20 +489,20 @@ export async function createTicketChannel({ guild, user, typeKey }) {
     markTicketDeleted(ticket.id);
     await channel.delete('Could not post the ticket welcome message').catch(() => null);
     throw new TicketError(
-      `I created <#${channel.id}> but could not post the welcome message: ${error.message}`,
+      `سويت <#${channel.id}> بس ما قدرت أكتب رسالة الترحيب: ${error.message}`,
     );
   });
 
   await logTicket(guild, type, {
     embeds: [
       embed({
-        title: 'Ticket opened',
+        title: 'انفتحت تذكرة',
         description: `#${padTicketNumber(number)} · ${type.label}`,
         color: COLORS.success,
         fields: [
-          { name: 'Member', value: `<@${user.id}> (${user.tag ?? user.username})`, inline: true },
-          { name: 'Channel', value: `<#${channel.id}>`, inline: true },
-          { name: 'Category', value: `<#${category.id}>`, inline: true },
+          { name: 'العضو', value: `<@${user.id}> (${user.tag ?? user.username})`, inline: true },
+          { name: 'القناة', value: `<#${channel.id}>`, inline: true },
+          { name: 'الفئة', value: `<#${category.id}>`, inline: true },
         ],
       }),
     ],
@@ -544,7 +545,7 @@ function renderMessage(message) {
     .map(
       (attachment) =>
         `<div class="attachment">📎 <a href="${escapeHtml(attachment.url)}">${escapeHtml(
-          attachment.name ?? 'attachment',
+          attachment.name ?? 'مرفق',
         )}</a></div>`,
     )
     .join('');
@@ -554,7 +555,7 @@ function renderMessage(message) {
 
   return `<article class="message">
     <div class="meta"><span class="author">${escapeHtml(
-      message.author?.tag ?? message.author?.username ?? 'Unknown',
+      message.author?.tag ?? message.author?.username ?? 'غير معروف',
     )}</span><span class="time">${escapeHtml(
       new Date(message.createdTimestamp ?? Date.now()).toISOString(),
     )}</span></div>
@@ -587,12 +588,12 @@ export async function collectTranscript(channel, limit = MAX_TRANSCRIPT_MESSAGES
 
 export async function createTranscript(channel, ticket, type) {
   const messages = await collectTranscript(channel);
-  const rows = messages.map(renderMessage).join('\n') || '<p class="empty">No messages.</p>';
+  const rows = messages.map(renderMessage).join('\n') || '<p class="empty">ما فيه رسائل.</p>';
   const html = `<!doctype html>
-<html lang="en">
+<html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<title>Ticket #${padTicketNumber(ticket.number)} transcript</title>
+<title>تذكرة #${padTicketNumber(ticket.number)} — نسخة المحادثة</title>
 <style>
   :root { color-scheme: dark; }
   body { margin: 0; padding: 32px; background: #1e1f22; color: #dbdee1; font: 15px/1.5 system-ui, sans-serif; }
@@ -616,10 +617,10 @@ export async function createTranscript(channel, ticket, type) {
 <body>
 <main>
 <header>
-  <h1>Ticket #${padTicketNumber(ticket.number)} — ${escapeHtml(type?.label ?? ticket.typeKey)}</h1>
-  <div class="sub">Opened by ${escapeHtml(ticket.openerTag || ticket.openerId)} · ${escapeHtml(
+  <h1>تذكرة #${padTicketNumber(ticket.number)} — ${escapeHtml(type?.label ?? ticket.typeKey)}</h1>
+  <div class="sub">فتحها ${escapeHtml(ticket.openerTag || ticket.openerId)} · ${escapeHtml(
     new Date(ticket.createdAt ?? Date.now()).toISOString(),
-  )} · ${messages.length} message(s)</div>
+  )} · ${messages.length} رسالة</div>
 </header>
 ${rows}
 </main>
@@ -647,11 +648,11 @@ async function sendTranscript(guild, ticket, type, transcript, { title, descript
       embeds: [
         embed({
           title,
-          description: description ?? `Ticket #${padTicketNumber(ticket.number)} · ${type?.label ?? ticket.typeKey}`,
+          description: description ?? `تذكرة #${padTicketNumber(ticket.number)} · ${type?.label ?? ticket.typeKey}`,
           color: color ?? COLORS.muted,
           fields: [
-            { name: 'Member', value: `<@${ticket.openerId}>`, inline: true },
-            { name: 'Messages', value: String(transcript.messages), inline: true },
+            { name: 'العضو', value: `<@${ticket.openerId}>`, inline: true },
+            { name: 'الرسائل', value: String(transcript.messages), inline: true },
           ],
         }),
       ],
@@ -674,7 +675,7 @@ export async function saveTicketTranscript({
   channel,
   ticket,
   type,
-  title = 'Ticket transcript',
+  title = 'نسخة التذكرة',
   description = null,
   color = COLORS.primary,
 }) {
@@ -692,15 +693,15 @@ function closedButtons(channelId) {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(`${TICKET_PREFIX}reopen:${channelId}`)
-      .setLabel('Reopen')
+      .setLabel('إعادة فتح')
       .setStyle(ButtonStyle.Success),
     new ButtonBuilder()
       .setCustomId(`${TICKET_PREFIX}transcript:${channelId}`)
-      .setLabel('Transcript')
+      .setLabel('نسخة المحادثة')
       .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId(`${TICKET_PREFIX}delete:${channelId}`)
-      .setLabel('Delete')
+      .setLabel('حذف')
       .setStyle(ButtonStyle.Danger),
   );
 }
@@ -732,7 +733,7 @@ async function setOpenerAccess(channel, ticket, allow) {
  */
 export async function closeTicketChannel({ guild, channel, ticket, type, actor, reason }) {
   if (ticket.status !== 'open') {
-    throw new TicketError('This ticket is already closed. Reopen it first.');
+    throw new TicketError('هذي التذكرة مقفلة أصلًا. رجّعها أول.');
   }
 
   const hidden = await setOpenerAccess(channel, ticket, false);
@@ -743,7 +744,7 @@ export async function closeTicketChannel({ guild, channel, ticket, type, actor, 
     const builtMs = Date.now() - buildStarted;
     const logStarted = Date.now();
     const log = await sendTranscript(guild, ticket, type, transcript, {
-      title: 'Ticket closed',
+      title: 'انقفلت التذكرة',
       description: `#${padTicketNumber(ticket.number)} · ${type?.label ?? ticket.typeKey}`,
       color: COLORS.danger,
     });
@@ -793,12 +794,12 @@ export async function closeTicketChannel({ guild, channel, ticket, type, actor, 
       .send({
         embeds: [
           embed({
-            title: 'Ticket closed',
+            title: 'انقفلت التذكرة',
             description: reason
-              ? `Closed by <@${actor?.id}>.\n**Reason:** ${reason}`
-              : `Closed by <@${actor?.id}>.`,
+              ? `قفلها <@${actor?.id}>.\n**السبب:** ${reason}`
+              : `قفلها <@${actor?.id}>.`,
             color: COLORS.danger,
-            footer: log ? 'A transcript was saved to the log channel' : 'No log channel is set',
+            footer: log ? 'انحفظت نسخة المحادثة في قناة السجل' : 'ما فيه قناة سجل مضبوطة',
           }),
         ],
         components: [closedButtons(channel.id)],
@@ -842,8 +843,8 @@ export async function reopenTicketChannel({ guild, channel, ticket, type }) {
     .send({
       embeds: [
         embed({
-          title: 'Ticket reopened',
-          description: 'This ticket was reopened. A staff member will continue here.',
+          title: 'رجعت التذكرة',
+          description: 'هذي التذكرة رجعت مفتوحة. عضو من الفريق بيكمل معك هنا.',
           color: COLORS.success,
         }),
       ],
@@ -851,11 +852,11 @@ export async function reopenTicketChannel({ guild, channel, ticket, type }) {
         new ActionRowBuilder().addComponents(
           new ButtonBuilder()
             .setCustomId(`${TICKET_PREFIX}claim:${channel.id}`)
-            .setLabel('Claim')
+            .setLabel('استلام')
             .setStyle(ButtonStyle.Secondary),
           new ButtonBuilder()
             .setCustomId(`${TICKET_PREFIX}close:${channel.id}`)
-            .setLabel('Close')
+            .setLabel('إغلاق')
             .setStyle(ButtonStyle.Danger),
         ),
       ],
@@ -875,7 +876,7 @@ async function loadChannel(guild, channelId) {
 async function ticketContext(guild, channelId) {
   const ticket = getTicketByChannel(guild.id, channelId);
 
-  if (!ticket) throw new TicketError('This channel is not a ticket.');
+  if (!ticket) throw new TicketError('هذي القناة مو تذكرة.');
 
   return { ticket, type: getTicketType(guild.id, ticket.typeKey) };
 }
@@ -891,12 +892,10 @@ async function handleOpen(interaction, typeKey) {
     });
 
     await interaction.editReply({
-      embeds: [
-        successEmbed(
-          'Ticket opened',
-          `Your private ticket is ready: <#${channel.id}> (#${padTicketNumber(ticket.number)}).`,
-        ),
-      ],
+      ...okReply(
+        'انفتحت التذكرة',
+        `تذكرتك الخاصة جاهزة: <#${channel.id}> (#${padTicketNumber(ticket.number)}).`,
+      ),
       allowedMentions: { parse: [] },
     });
   } catch (error) {
@@ -904,16 +903,14 @@ async function handleOpen(interaction, typeKey) {
       logger.error(`Could not open ticket "${typeKey}"`, error);
     }
 
-    await interaction.editReply({
-      embeds: [
-        errorEmbed(
-          'Could not open the ticket',
-          error instanceof TicketError
-            ? error.message
-            : 'Something went wrong while creating the channel. Check my Manage Channels permission and the configured category.',
-        ),
-      ],
-    });
+    await interaction.editReply(
+      errorReply(
+        'ما قدرت أفتح التذكرة',
+        error instanceof TicketError
+          ? error.message
+          : 'صار خطأ وأنا أسوي القناة. تأكد من صلاحية **إدارة القنوات** عندي ومن الفئة المضبوطة.',
+      ),
+    );
   }
 }
 
@@ -924,48 +921,46 @@ async function handleClaim(interaction, channelId) {
     const { ticket, type } = await ticketContext(interaction.guild, channelId);
 
     if (!isStaffMember(interaction.guild, interaction.member, type)) {
-      throw new TicketError('Only the support team can claim tickets.');
+      throw new TicketError('فريق الدعم بس يقدر يستلم التذاكر.');
     }
 
     const channel = await loadChannel(interaction.guild, channelId);
 
-    if (!channel) throw new TicketError('The ticket channel no longer exists.');
+    if (!channel) throw new TicketError('قناة التذكرة ما عادت موجودة.');
 
     if (ticket.claimedBy === interaction.user.id) {
       claimTicket(ticket.id, null);
       await channel.send({
-        embeds: [embed({ title: 'Ticket unclaimed', description: 'Anyone on the team can pick it up again.', color: COLORS.muted })],
+        embeds: [embed({ title: 'التذكرة صارت غير مستلمة', description: 'أي أحد من الفريق يقدر يستلمها من جديد.', color: COLORS.muted })],
         allowedMentions: { parse: [] },
       });
-      await interaction.editReply({ content: 'This ticket is unclaimed again.' });
+      await interaction.editReply({ content: 'رجعناها غير مستلمة.' });
       return;
     }
 
     if (ticket.claimedBy) {
-      throw new TicketError(`This ticket is already claimed by <@${ticket.claimedBy}>.`);
+      throw new TicketError(`هذي التذكرة مستلمها <@${ticket.claimedBy}>.`);
     }
 
     claimTicket(ticket.id, interaction.user.id);
     await channel.send({
       embeds: [
         embed({
-          title: 'Ticket claimed',
-          description: `This ticket is now handled by <@${interaction.user.id}>.`,
+          title: 'التذكرة صارت مستلمة',
+          description: `الحين يتابعها <@${interaction.user.id}>.`,
           color: COLORS.success,
         }),
       ],
       allowedMentions: { parse: [] },
     });
-    await interaction.editReply({ content: 'You claimed this ticket.' });
+    await interaction.editReply({ content: 'استلمت التذكرة.' });
   } catch (error) {
-    await interaction.editReply({
-      embeds: [
-        errorEmbed(
-          'Could not claim the ticket',
-          error instanceof TicketError ? error.message : 'Something went wrong.',
-        ),
-      ],
-    });
+    await interaction.editReply(
+      errorReply(
+        'ما قدرت أستلم التذكرة',
+        error instanceof TicketError ? error.message : 'صار خطأ.',
+      ),
+    );
   }
 }
 
@@ -974,17 +969,17 @@ async function handleCloseButton(interaction, channelId) {
     const { type } = await ticketContext(interaction.guild, channelId);
 
     if (!isStaffMember(interaction.guild, interaction.member, type)) {
-      throw new TicketError('Only the support team can close tickets.');
+      throw new TicketError('فريق الدعم بس يقدر يقفل التذاكر.');
     }
 
     const modal = new ModalBuilder()
       .setCustomId(`${TICKET_PREFIX}close:${channelId}`)
-      .setTitle('Close ticket')
+      .setTitle('إغلاق التذكرة')
       .addComponents(
         new ActionRowBuilder().addComponents(
           new TextInputBuilder()
             .setCustomId('reason')
-            .setLabel('Reason (optional)')
+            .setLabel('السبب (اختياري)')
             .setStyle(TextInputStyle.Paragraph)
             .setRequired(false)
             .setMaxLength(400),
@@ -995,14 +990,12 @@ async function handleCloseButton(interaction, channelId) {
   } catch (error) {
     await interaction
       .reply(
-        ephemeral({
-          embeds: [
-            errorEmbed(
-              'Could not close the ticket',
-              error instanceof TicketError ? error.message : 'Something went wrong.',
-            ),
-          ],
-        }),
+        ephemeral(
+          errorReply(
+            'ما قدرت أقفل التذكرة',
+            error instanceof TicketError ? error.message : 'صار خطأ.',
+          ),
+        ),
       )
       .catch(() => null);
   }
@@ -1018,34 +1011,32 @@ async function handleTranscriptButton(interaction, channelId) {
       ticket.openerId !== interaction.user.id &&
       !isStaffMember(interaction.guild, interaction.member, type)
     ) {
-      throw new TicketError('Only the ticket opener or the support team can export a transcript.');
+      throw new TicketError('صاحب التذكرة أو فريق الدعم بس يقدر يصدّر نسخة.');
     }
 
     const channel = await loadChannel(interaction.guild, channelId);
 
-    if (!channel) throw new TicketError('The ticket channel no longer exists.');
+    if (!channel) throw new TicketError('قناة التذكرة ما عادت موجودة.');
 
     const transcript = await createTranscript(channel, ticket, type);
     const log = await sendTranscript(interaction.guild, ticket, type, transcript, {
-      title: 'Ticket transcript',
+      title: 'نسخة التذكرة',
       description: `#${padTicketNumber(ticket.number)} · ${type?.label ?? ticket.typeKey}`,
       color: COLORS.primary,
     });
 
     if (log) {
-      await interaction.editReply({
-        embeds: [
-          successEmbed(
-            'Transcript saved',
-            `The transcript was sent to <#${log.channelId}> with ${transcript.messages} message(s).`,
-          ),
-        ],
-      });
+      await interaction.editReply(
+        okReply(
+          'انحفظت النسخة',
+          `انرسلت إلى <#${log.channelId}> ومعها ${transcript.messages} رسالة.`,
+        ),
+      );
       return;
     }
 
     await interaction.editReply({
-      content: 'No log channel is set, so here is the transcript directly.',
+      content: 'ما فيه قناة سجل مضبوطة، فهذي النسخة مباشرة.',
       files: [
         new AttachmentBuilder(Buffer.from(transcript.html, 'utf8'), {
           name: transcript.filename,
@@ -1053,14 +1044,12 @@ async function handleTranscriptButton(interaction, channelId) {
       ],
     });
   } catch (error) {
-    await interaction.editReply({
-      embeds: [
-        errorEmbed(
-          'Could not export the transcript',
-          error instanceof TicketError ? error.message : 'Something went wrong.',
-        ),
-      ],
-    });
+    await interaction.editReply(
+      errorReply(
+        'ما قدرت أصدّر النسخة',
+        error instanceof TicketError ? error.message : 'صار خطأ.',
+      ),
+    );
   }
 }
 
@@ -1071,26 +1060,24 @@ async function handleReopen(interaction, channelId) {
     const { ticket, type } = await ticketContext(interaction.guild, channelId);
 
     if (!isStaffMember(interaction.guild, interaction.member, type)) {
-      throw new TicketError('Only the support team can reopen tickets.');
+      throw new TicketError('فريق الدعم بس يقدر يرجّع التذاكر.');
     }
 
-    if (ticket.status === 'open') throw new TicketError('This ticket is already open.');
+    if (ticket.status === 'open') throw new TicketError('هذي التذكرة مفتوحة أصلًا.');
 
     const channel = await loadChannel(interaction.guild, channelId);
 
-    if (!channel) throw new TicketError('The ticket channel no longer exists.');
+    if (!channel) throw new TicketError('قناة التذكرة ما عادت موجودة.');
 
     await reopenTicketChannel({ guild: interaction.guild, channel, ticket, type });
-    await interaction.editReply({ content: 'The ticket was reopened.' });
+    await interaction.editReply({ content: 'رجعت التذكرة.' });
   } catch (error) {
-    await interaction.editReply({
-      embeds: [
-        errorEmbed(
-          'Could not reopen the ticket',
-          error instanceof TicketError ? error.message : 'Something went wrong.',
-        ),
-      ],
-    });
+    await interaction.editReply(
+      errorReply(
+        'ما قدرت أرجّع التذكرة',
+        error instanceof TicketError ? error.message : 'صار خطأ.',
+      ),
+    );
   }
 }
 
@@ -1101,7 +1088,7 @@ async function handleDelete(interaction, channelId) {
     const { ticket, type } = await ticketContext(interaction.guild, channelId);
 
     if (!isStaffMember(interaction.guild, interaction.member, type)) {
-      throw new TicketError('Only the support team can delete tickets.');
+      throw new TicketError('فريق الدعم بس يقدر يحذف التذاكر.');
     }
 
     markTicketDeleted(ticket.id);
@@ -1109,16 +1096,14 @@ async function handleDelete(interaction, channelId) {
     await channel?.delete?.(`Ticket deleted by ${interaction.user.tag ?? interaction.user.id}`).catch(
       () => null,
     );
-    await interaction.editReply({ content: 'The ticket was deleted.' }).catch(() => null);
+    await interaction.editReply({ content: 'انحذفت التذكرة.' }).catch(() => null);
   } catch (error) {
-    await interaction.editReply({
-      embeds: [
-        errorEmbed(
-          'Could not delete the ticket',
-          error instanceof TicketError ? error.message : 'Something went wrong.',
-        ),
-      ],
-    });
+    await interaction.editReply(
+      errorReply(
+        'ما قدرت أحذف التذكرة',
+        error instanceof TicketError ? error.message : 'صار خطأ.',
+      ),
+    );
   }
 }
 
@@ -1146,12 +1131,12 @@ export async function handleTicketModal(interaction) {
     const { ticket, type } = await ticketContext(interaction.guild, channelId);
 
     if (!isStaffMember(interaction.guild, interaction.member, type)) {
-      throw new TicketError('Only the support team can close tickets.');
+      throw new TicketError('فريق الدعم بس يقدر يقفل التذاكر.');
     }
 
     const channel = await loadChannel(interaction.guild, channelId);
 
-    if (!channel) throw new TicketError('The ticket channel no longer exists.');
+    if (!channel) throw new TicketError('قناة التذكرة ما عادت موجودة.');
 
     const reason = interaction.fields?.getTextInputValue?.('reason') ?? '';
     const result = await closeTicketChannel({
@@ -1165,10 +1150,10 @@ export async function handleTicketModal(interaction) {
 
     const message =
       result.mode === 'delete'
-        ? 'Ticket closed and deleted. The transcript was saved.'
+        ? 'انقفلت التذكرة وانحذفت. النسخة انحفظت.'
         : result.logged
-          ? 'Ticket closed and archived. The transcript was saved.'
-          : 'Ticket closed and archived. No log channel is set, so no transcript was stored.';
+          ? 'انقفلت التذكرة وانؤرشفت. النسخة انحفظت.'
+          : 'انقفلت التذكرة وانؤرشفت. ما فيه قناة سجل مضبوطة، فما انحفظت نسخة.';
 
     await interaction.editReply({ content: message }).catch(() => null);
   } catch (error) {
@@ -1177,14 +1162,12 @@ export async function handleTicketModal(interaction) {
     }
 
     await interaction
-      .editReply({
-        embeds: [
-          errorEmbed(
-            'Could not close the ticket',
-            error instanceof TicketError ? error.message : 'Something went wrong.',
-          ),
-        ],
-      })
+      .editReply(
+        errorReply(
+          'ما قدرت أقفل التذكرة',
+          error instanceof TicketError ? error.message : 'صار خطأ.',
+        ),
+      )
       .catch(() => null);
   }
 }
