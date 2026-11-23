@@ -439,7 +439,7 @@ The bot counts **messages** and **voice time** per member and per channel, then 
 
 All moderation commands are ephemeral for the moderator and use the audit-log reason `… by <moderator>: <reason>`.
 
-Moderation replies are short **Arabic plain text** (one or two lines with a ✅/⚠️/❌ marker, or ℹ️ for a neutral status) instead of embeds — including `/nickname`, `/role`, `/perm`, `/profile-edit`, `/coins-config`, `/store-config`, the exile package, and the general/activity commands (`/coins`, `/background`, `/color`, `/alias`, `/store`, `/avatar`, `/banner`, the stats commands). Command names, aliases and usage stay English; slash descriptions and option choices are Arabic. Lists that are tables (`/help`, `/store`, `/coin-log`, `/exile-list`, `/exile-role list`, `/perm list`, `/store-config list`, `/rank`, `/background`, `/alias`, `/top*`, `/lastseen`, `/compare`, `/serverstats`) keep their embeds until they are redesigned.
+Moderation replies are short **Arabic plain text** (one or two lines with a ✅/⚠️/❌ marker, or ℹ️ for a neutral status) instead of embeds — including `/nickname`, `/role`, `/perm`, `/profile-edit`, `/coins-config`, `/store-config`, the exile package, `glossary`, `birthday`, `watch`, `welcome`, `ticket`, `summary` and `autoreport`. Command names, aliases and usage stay English; slash descriptions and option choices are Arabic. Lists that are tables (`/help`, `/store`, `/coin-log`, `/exile-list`, `/exile-role list`, `/perm list`, `/store-config list`, `/rank`, `/background`, `/alias`, `/top*`, `/lastseen`, `/compare`, `/serverstats`, `/welcome list`, `/ticket panel list`, `/summary history`, `/autoreport list`) keep their embeds until they are redesigned.
 
 - **Timed actions** accept `40s`, `10m`, `2h`, `7d`, `1w`, or a combination like `1d12h`:
   - `/mute @member 10m spam` adds the **Muted** role for ten minutes.
@@ -851,17 +851,17 @@ New members get one of **six card styles**, chosen automatically. All six are en
 ```
 :-welcome channel #welcome
 :-welcome test                  # preview the next style, only you see it
-:-welcome test Poster           # preview one specific style
+:-welcome test ملصق             # preview one specific style
 ```
 
 | Style | Look |
 |---|---|
-| **Ledger** | Aligned date-first rows — the same grammar as `/birthday list` |
-| **Classic** | Avatar, mention, two inline fields, optional GIF |
-| **Poster** | Full-width server banner (or your GIF) with one headline |
-| **Story** | Narrative welcome, member count becomes "Floor 48" |
-| **Whisper** | Two quiet lines, no fields |
-| **Concierge** | Onboarding card with link buttons to rules and chat |
+| **سجل** (`ledger`) | Aligned date-first rows — the same grammar as `/birthday list` |
+| **كلاسيكي** (`classic`) | Avatar, mention, two inline fields, optional GIF |
+| **ملصق** (`poster`) | Full-width server banner (or your GIF) with one headline |
+| **قصة** (`story`) | Narrative welcome, member count becomes "Floor 48" |
+| **همسة** (`whisper`) | Two quiet lines, no fields |
+| **استقبال** (`concierge`) | Onboarding card with link buttons to rules and chat |
 
 ### Choosing the style
 
@@ -869,13 +869,13 @@ New members get one of **six card styles**, chosen automatically. All six are en
 |---|---|
 | `/welcome mode random` | Random, never the same style twice in a row (default) |
 | `/welcome mode rotate` | Walk the enabled styles in order |
-| `/welcome mode single style:Story` | Always the same card |
-| `/welcome toggle style:Poster` | Turn one style off or on |
+| `/welcome mode single style:قصة` | Always the same card |
+| `/welcome toggle style:ملصق` | Turn one style off or on |
 | `/welcome list` | Channel, mode, links, and which styles are active |
 
 ### Editing the text
 
-`/welcome edit style:Ledger` opens a form with one box per text slot for that style. Change a word, submit, and the card keeps its layout — only strings are stored, never structure. Emptying a box (or typing the default back) restores that piece. `/welcome reset style:Ledger` restores the whole style; `/welcome reset` restores all six.
+`/welcome edit style:سجل` opens a form with one box per text slot for that style. Change a word, submit, and the card keeps its layout — only strings are stored, never structure. Emptying a box (or typing the default back) restores that piece. `/welcome reset style:سجل` restores the whole style; `/welcome reset` restores all six.
 
 | Placeholder | Becomes |
 |---|---|
@@ -893,7 +893,7 @@ Link the two channels the cards point at with `/welcome links rules:#rules gener
 
 ### GIF on any card
 
-Every card's edit form ends with a **GIF URL (optional)** box — `/welcome edit style:Story` → change the text and the GIF together, with the current URL prefilled. Empty it (or type `none`) to remove the image.
+Every card's edit form ends with a **GIF URL (optional)** box — `/welcome edit style:قصة` → change the text and the GIF together, with the current URL prefilled. Empty it (or type `none`) to remove the image.
 
 `/welcome gif style:<style> url:<link>` does the same from outside the form; the style is optional and defaults to Classic, and `/welcome gif` alone shows the current GIF.
 
