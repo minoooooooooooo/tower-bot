@@ -375,7 +375,7 @@ function renderBackgrounds() {
   if (list.length === 0 && !state.data.canManage) {
     grid.innerHTML = '';
     empty.hidden = false;
-    empty.textContent = 'No backgrounds yet.';
+    empty.textContent = 'ما فيه خلفيات إلى الآن.';
     return;
   }
 
@@ -384,9 +384,9 @@ function renderBackgrounds() {
     ? `<button class="card add-card" id="add-background">
         <div class="art">${glyph('background')}</div>
         <div class="card-body">
-          <h3>Add background</h3>
-          <span class="card-meta">Manage Server</span>
-          <span class="price free">Upload & set a price</span>
+          <h3>إضافة خلفية</h3>
+          <span class="card-meta">إدارة السيرفر</span>
+          <span class="price free">ارفع الصورة وحدّد السعر</span>
         </div>
       </button>`
     : '';
@@ -403,47 +403,47 @@ function backgroundCard(background) {
 
   if (background.custom) {
     badge = background.selected
-      ? '<span class="badge equipped">Equipped</span>'
+      ? '<span class="badge equipped">مفعّلة</span>'
       : background.hasImage
-        ? '<span class="badge owned">Owned</span>'
+        ? '<span class="badge owned">مملوكة</span>'
         : background.unlocked
-          ? '<span class="badge">Ready</span>'
-          : `<span class="badge">Level ${format(background.level)}</span>`;
+          ? '<span class="badge">جاهزة</span>'
+          : `<span class="badge">المستوى ${format(background.level)}</span>`;
     price = background.selected
-      ? '<span class="price free">Equipped</span>'
+      ? '<span class="price free">مفعّلة</span>'
       : background.hasImage || background.unlocked
-        ? '<span class="price free">Tap to manage</span>'
-        : `<span class="price">Level ${format(background.level)}</span>`;
-    meta = background.hasImage ? 'your wallpaper' : 'upload your own';
+        ? '<span class="price free">اضغط للإدارة</span>'
+        : `<span class="price">المستوى ${format(background.level)}</span>`;
+    meta = background.hasImage ? 'خلفيتك' : 'ارفع خلفيتك';
   } else {
     badge = background.selected
-      ? '<span class="badge equipped">Equipped</span>'
+      ? '<span class="badge equipped">مفعّلة</span>'
       : background.unlocked
-        ? '<span class="badge owned">Owned</span>'
+        ? '<span class="badge owned">مملوكة</span>'
         : background.price > 0
           ? ''
-          : `<span class="badge">Level ${format(background.level)}</span>`;
+          : `<span class="badge">المستوى ${format(background.level)}</span>`;
 
     price = background.selected
-      ? '<span class="price free">Equipped</span>'
+      ? '<span class="price free">مفعّلة</span>'
       : background.unlocked
-        ? '<span class="price free">Tap to equip</span>'
+        ? '<span class="price free">اضغط للتفعيل</span>'
         : background.price > 0
           ? `<span class="price">${coinSvg()}<span>${format(background.price)}</span></span>`
-          : `<span class="price">Level ${format(background.level)}</span>`;
+          : `<span class="price">المستوى ${format(background.level)}</span>`;
 
     meta =
       background.id === 'default'
-        ? 'always available'
+        ? 'متاحة دائمًا'
         : background.price > 0
-          ? 'store design'
-          : `level ${format(background.level)}`;
+          ? 'تصميم من المتجر'
+          : `المستوى ${format(background.level)}`;
   }
 
   return `<button class="card rarity-${background.rarity}" data-bg="${escapeHtml(background.id)}">
     <div class="art">
       ${background.art ? `<img src="${escapeHtml(background.art)}" alt="" loading="lazy" decoding="async">` : glyph('background')}
-      <span class="rarity">${background.price > 0 ? 'store design' : background.rarity}</span>
+      <span class="rarity">${background.price > 0 ? 'تصميم من المتجر' : rarityLabel(background.rarity)}</span>
       ${badge}
     </div>
     <div class="card-body">
@@ -467,25 +467,25 @@ function wireItemCards() {
 
 function characterCard(character) {
   const badge = character.owned
-    ? '<span class="badge owned">Owned</span>'
+    ? '<span class="badge owned">مملوكة</span>'
     : character.price === 0
-      ? '<span class="badge">Free</span>'
+      ? '<span class="badge">مجانية</span>'
       : '';
   const price = character.owned
-    ? '<span class="price free">Owned</span>'
+    ? '<span class="price free">مملوكة</span>'
     : character.price > 0
       ? `<span class="price">${coinSvg()}<span>${format(character.price)}</span></span>`
-      : '<span class="price free">Free</span>';
+      : '<span class="price free">مجانية</span>';
 
   return `<button class="card character-card rarity-${character.rarity}" data-character="${escapeHtml(character.id)}">
     <div class="art portrait">
       ${character.art ? `<img src="${escapeHtml(character.art)}" alt="" loading="lazy" decoding="async">` : glyph('character')}
-      <span class="rarity">character</span>
+      <span class="rarity">شخصية</span>
       ${badge}
     </div>
     <div class="card-body">
       <h3>${escapeHtml(character.name)}</h3>
-      <span class="card-meta">collectible</span>
+      <span class="card-meta">للجمع</span>
       ${price}
     </div>
   </button>`;
@@ -495,9 +495,9 @@ function addCharacterCard() {
   return `<button class="card add-card" id="add-character">
     <div class="art portrait">${glyph('character')}</div>
     <div class="card-body">
-      <h3>Add character</h3>
-      <span class="card-meta">Manage Server</span>
-      <span class="price free">Portrait &amp; price</span>
+      <h3>إضافة شخصية</h3>
+      <span class="card-meta">إدارة السيرفر</span>
+      <span class="price free">الصورة والسعر</span>
     </div>
   </button>`;
 }
@@ -506,9 +506,9 @@ function reserveSettingsCard(reserve) {
   return `<button class="card add-card" id="reserve-settings">
     <div class="art portrait">${glyph('character')}</div>
     <div class="card-body">
-      <h3>Reservation settings</h3>
-      <span class="card-meta">Manage Server · ${reserve.enabled ? 'visible' : 'hidden'}</span>
-      <span class="price free">${reserve.price > 0 ? `${format(reserve.price)} coins` : 'Free'}</span>
+      <h3>إعدادات الحجز</h3>
+      <span class="card-meta">إدارة السيرفر · ${reserve.enabled ? 'ظاهر' : 'مخفي'}</span>
+      <span class="price free">${reserve.price > 0 ? `${format(reserve.price)} كوينز` : 'مجاني'}</span>
     </div>
   </button>`;
 }
@@ -517,9 +517,9 @@ function reservationsCard(count) {
   return `<button class="card add-card" id="character-reservations">
     <div class="art portrait">${glyph('character')}</div>
     <div class="card-body">
-      <h3>Reservations</h3>
-      <span class="card-meta">Manage Server</span>
-      <span class="price free">${format(count)} pending</span>
+      <h3>الحجوزات</h3>
+      <span class="card-meta">إدارة السيرفر</span>
+      <span class="price free">${format(count)} معلّق</span>
     </div>
   </button>`;
 }
@@ -527,13 +527,13 @@ function reservationsCard(count) {
 function myReservationCard(reservation) {
   return `<button class="card character-card rarity-epic" id="character-my-reservation">
     <div class="art portrait">${glyph('character')}
-      <span class="rarity">reservation</span>
-      <span class="badge equipped">Pending</span>
+      <span class="rarity">حجز</span>
+      <span class="badge equipped">معلّق</span>
     </div>
     <div class="card-body">
       <h3>${escapeHtml(reservation.name)}</h3>
-      <span class="card-meta">your reservation</span>
-      <span class="price free">Tap to rename</span>
+      <span class="card-meta">حجزك</span>
+      <span class="price free">اضغط لتغيير الاسم</span>
     </div>
   </button>`;
 }
@@ -541,12 +541,12 @@ function myReservationCard(reservation) {
 function reserveCard(price) {
   return `<button class="card character-card rarity-rare" id="character-reserve">
     <div class="art portrait">${glyph('character')}
-      <span class="rarity">reservation</span>
+      <span class="rarity">حجز</span>
     </div>
     <div class="card-body">
-      <h3>Reserve your character</h3>
-      <span class="card-meta">pick a name</span>
-      <span class="price ${price > 0 ? '' : 'free'}">${price > 0 ? `${coinSvg()}<span>${format(price)}</span>` : 'Free'}</span>
+      <h3>احجز شخصيتك</h3>
+      <span class="card-meta">اختر اسم</span>
+      <span class="price ${price > 0 ? '' : 'free'}">${price > 0 ? `${coinSvg()}<span>${format(price)}</span>` : 'مجاني'}</span>
     </div>
   </button>`;
 }
@@ -572,7 +572,7 @@ function renderCharacters() {
   if (cards.length === 0) {
     grid.innerHTML = '';
     empty.hidden = false;
-    empty.textContent = 'No characters yet.';
+    empty.textContent = 'ما فيه شخصيات إلى الآن.';
     return;
   }
 
@@ -871,27 +871,27 @@ function openBackgroundSheet(background) {
       type: 'background',
       summary:
         background.price > 0
-          ? `A store design. Buy it once and use it at any level.`
+          ? `تصميم من المتجر. اشتره مرة وحدة واستخدمه بأي مستوى.`
           : background.id === 'default'
-            ? 'The classic card, always available.'
-            : `Unlocks at level ${background.level}.`,
+            ? 'البطاقة الكلاسيكية، متاحة دائمًا.'
+            : `تنفتح عند المستوى ${background.level}.`,
     },
     'background',
   );
 
   if (background.selected) {
-    setAction('Currently equipped', { disabled: true, secondary: true });
+    setAction('مفعّلة الآن', { disabled: true, secondary: true });
   } else if (background.unlocked) {
-    setAction('Equip', { onClick: () => equipBackground(background) });
+    setAction('تفعيل', { onClick: () => equipBackground(background) });
   } else if (background.price > 0) {
     const short = balanceNote(background.price);
 
-    setAction(`Buy · ${format(background.price)} coins`, {
+    setAction(`شراء · ${format(background.price)} كوينز`, {
       disabled: short,
       onClick: () => buyBackground(background),
     });
   } else {
-    setAction(`Unlocks at level ${format(background.level)}`, { disabled: true, secondary: true });
+    setAction(`تنفتح عند المستوى ${format(background.level)}`, { disabled: true, secondary: true });
   }
 
   if (state.data.canManage && background.id !== 'default') {
@@ -907,19 +907,19 @@ function openCustomBackgroundSheet(background) {
       ...background,
       type: 'background',
       summary: background.hasImage
-        ? `Your uploaded wallpaper${background.selected ? ' is on your card.' : ' is ready to equip.'} You can replace it here.`
+        ? `خلفيتك المرفوعة ${background.selected ? 'على بطاقتك.' : 'جاهزة للتفعيل.'} تقدر تبدّلها من هنا.`
         : background.canUpload
-          ? `Upload a PNG, JPEG, WebP or GIF (10 MB max). Custom wallpapers unlock at level ${level}.`
-          : `Custom wallpapers unlock at level ${level}. You can upload one when you reach it.`,
+          ? `ارفع صورة PNG أو JPEG أو WebP أو GIF (الحد 10 ميجابايت). الخلفيات المخصصة تنفتح عند المستوى ${level}.`
+          : `الخلفيات المخصصة تنفتح عند المستوى ${level}. تقدر ترفع وحدة لما توصل له.`,
     },
     'background',
   );
 
   if (background.canUpload || background.hasImage) {
     sheetEls.controls.innerHTML = `<div class="field">
-      <label for="custom-image">${background.hasImage ? 'Replace image' : 'Wallpaper image'}</label>
+      <label for="custom-image">${background.hasImage ? 'تبديل الصورة' : 'صورة الخلفية'}</label>
       <input id="custom-image" type="file" accept="image/png,image/jpeg,image/webp,image/gif">
-      <span id="custom-image-note" class="card-meta">PNG, JPEG, WebP or GIF · 10 MB max${background.hasImage ? ' · GIFs stay animated' : ''}</span>
+      <span id="custom-image-note" class="card-meta">PNG أو JPEG أو WebP أو GIF · الحد 10 ميجابايت${background.hasImage ? ' · الصور المتحركة تبقى متحركة' : ''}</span>
     </div>`;
 
     $('#custom-image').addEventListener('change', (event) => {
@@ -929,7 +929,7 @@ function openCustomBackgroundSheet(background) {
 
   function refresh() {
     if (state.backgroundImage) {
-      setAction(background.hasImage ? 'Replace wallpaper' : 'Upload wallpaper', {
+      setAction(background.hasImage ? 'تبديل الخلفية' : 'رفع الخلفية', {
         disabled: state.busy,
         onClick: uploadCustomBackground,
       });
@@ -937,21 +937,21 @@ function openCustomBackgroundSheet(background) {
     }
 
     if (background.selected) {
-      setAction('Currently equipped', { disabled: true, secondary: true });
+      setAction('مفعّلة الآن', { disabled: true, secondary: true });
       return;
     }
 
     if (background.hasImage) {
-      setAction('Equip', { onClick: () => equipBackground(background) });
+      setAction('تفعيل', { onClick: () => equipBackground(background) });
       return;
     }
 
     if (background.canUpload) {
-      setAction('Choose an image first', { disabled: true, secondary: true });
+      setAction('اختر صورة أول', { disabled: true, secondary: true });
       return;
     }
 
-    setAction(`Unlocks at level ${level}`, { disabled: true, secondary: true });
+    setAction(`تنفتح عند المستوى ${level}`, { disabled: true, secondary: true });
   }
 
   refresh();
@@ -963,13 +963,13 @@ async function readBackgroundImageFile(file, noteSelector) {
   if (!file) return null;
 
   if (!/^image\/(png|jpe?g|webp|gif)$/i.test(file.type)) {
-    if (note) note.textContent = 'That file type is not supported.';
+    if (note) note.textContent = 'هذا النوع من الملفات مو مدعوم.';
     state.backgroundImage = null;
     return null;
   }
 
   if (file.size > 10 * 1024 * 1024) {
-    if (note) note.textContent = `This file is ${Math.ceil(file.size / 1024 / 1024)} MB; the limit is 10 MB.`;
+    if (note) note.textContent = `حجم الملف ${Math.ceil(file.size / 1024 / 1024)} ميجابايت، والحد 10 ميجابايت.`;
     state.backgroundImage = null;
     return null;
   }
@@ -982,34 +982,34 @@ async function readBackgroundImageFile(file, noteSelector) {
   });
 
   if (!dataUrl) {
-    if (note) note.textContent = 'Could not read the image.';
+    if (note) note.textContent = 'تعذّر قراءة الصورة.';
     return null;
   }
 
   state.backgroundImage = dataUrl;
   state.backgroundImageName = file.name;
-  if (note) note.textContent = `${file.name} · ${Math.ceil(file.size / 1024)} KB`;
+  if (note) note.textContent = `${file.name} · ${Math.ceil(file.size / 1024)} كيلوبايت`;
   sheetEls.art.innerHTML = `<img src="${escapeHtml(dataUrl)}" alt="">`;
-  setNote('Image ready.');
+  setNote('الصورة جاهزة.');
 
   return dataUrl;
 }
 
 async function uploadCustomBackground() {
   if (state.demo) {
-    toast('Demo mode — open the store in Discord to change this.', 'error');
+    toast('وضع العرض — افتح المتجر من ديسكورد للتغيير.', 'error');
     return;
   }
 
   if (!state.backgroundImage) {
-    setNote('Choose an image first.', 'error');
+    setNote('اختر صورة أول.', 'error');
     return;
   }
 
   if (state.busy) return;
 
   state.busy = true;
-  setAction('Uploading…', { disabled: true });
+  setAction('نرفع…', { disabled: true });
 
   try {
     const result = await api('/api/background/custom', {
@@ -1022,7 +1022,7 @@ async function uploadCustomBackground() {
     });
 
     if (!result.ok) {
-      setNote(result.message || REASONS[result.reason] || 'The wallpaper was not saved.', 'error');
+      setNote(result.message || REASONS[result.reason] || 'ما انحفظت الخلفية.', 'error');
       state.busy = false;
       return;
     }
@@ -1030,8 +1030,8 @@ async function uploadCustomBackground() {
     closeSheet();
     toast(
       result.animated
-        ? `Custom wallpaper saved (${format(result.frames)} frames).`
-        : 'Custom wallpaper saved.',
+        ? `انحفظت الخلفية المخصصة (${format(result.frames)} إطار).`
+        : 'انحفظت الخلفية المخصصة.',
       'good',
     );
     await loadStore();
@@ -1284,7 +1284,7 @@ async function deleteBackgroundAdmin(background, button) {
 
 async function equipBackground(background) {
   if (state.demo) {
-    toast('Demo mode — open the store in Discord to equip.', 'error');
+    toast('وضع العرض — افتح المتجر من ديسكورد للتفعيل.', 'error');
     return;
   }
 
@@ -1295,12 +1295,12 @@ async function equipBackground(background) {
     });
 
     if (!result.ok) {
-      setNote(result.message || 'Could not equip that background.', 'error');
+      setNote(result.message || 'ما قدرنا نفعّل هذي الخلفية.', 'error');
       return;
     }
 
     closeSheet();
-    toast(`${background.name} equipped.`, 'good');
+    toast(`${background.name} صارت على بطاقتك.`, 'good');
     await loadStore();
   } catch (error) {
     setNote(error.message, 'error');
@@ -1309,14 +1309,14 @@ async function equipBackground(background) {
 
 async function buyBackground(background) {
   if (state.demo) {
-    toast('Demo mode — open the store in Discord to buy.', 'error');
+    toast('وضع العرض — افتح المتجر من ديسكورد للشراء.', 'error');
     return;
   }
 
   const item = state.data.items.find((entry) => entry.backgroundId === background.id);
 
   if (!item) {
-    setNote('This design is not on sale right now.', 'error');
+    setNote('هذا التصميم مو معروض للبيع حاليًا.', 'error');
     return;
   }
 
@@ -1336,25 +1336,25 @@ function openCharacterSheet(character) {
       ...character,
       type: 'character',
       summary: character.owned
-        ? 'This character is in your collection.'
+        ? 'هذي الشخصية في مجموعتك.'
         : character.price > 0
-          ? 'Buy this character once and keep it in your collection. Characters do not need a level.'
-          : 'This character is free to claim.',
+          ? 'اشتر هذي الشخصية مرة وحدة وخلها في مجموعتك. الشخصيات ما تحتاج مستوى.'
+          : 'هذي الشخصية مجانية، خذها.',
     },
     'character',
   );
 
   if (character.owned) {
-    setAction('Owned', { disabled: true, secondary: true });
+    setAction('مملوكة', { disabled: true, secondary: true });
   } else if (character.price > 0) {
     const short = balanceNote(character.price);
 
-    setAction(`Buy · ${format(character.price)} coins`, {
+    setAction(`شراء · ${format(character.price)} كوينز`, {
       disabled: short,
       onClick: () => buyCharacter(character),
     });
   } else {
-    setAction('Claim for free', { onClick: () => buyCharacter(character) });
+    setAction('خذها مجانًا', { onClick: () => buyCharacter(character) });
   }
 
   if (state.data.canManage) addCharacterAdminControls(character);
@@ -1362,13 +1362,13 @@ function openCharacterSheet(character) {
 
 async function buyCharacter(character) {
   if (state.demo) {
-    toast('Demo mode — open the store in Discord to buy.', 'error');
+    toast('وضع العرض — افتح المتجر من ديسكورد للشراء.', 'error');
     return;
   }
 
   if (state.busy) return;
   state.busy = true;
-  setAction('Working…', { disabled: true });
+  setAction('ننفّذ…', { disabled: true });
 
   try {
     const result = await api('/api/character/buy', {
@@ -1377,14 +1377,14 @@ async function buyCharacter(character) {
     });
 
     if (!result.ok) {
-      setNote(result.message || REASONS[result.reason] || 'The purchase did not go through.', 'error');
+      setNote(result.message || REASONS[result.reason] || 'ما تمت العملية.', 'error');
       state.busy = false;
       return;
     }
 
     state.data.balance = result.balance ?? state.data.balance;
     closeSheet();
-    toast(`${character.name} added to your collection.`, 'good');
+    toast(`${character.name} انضافت لمجموعتك.`, 'good');
     await loadStore();
   } catch (error) {
     setNote(error.message, 'error');
@@ -1736,35 +1736,35 @@ function openReserveSheet() {
     {
       id: existing?.id ?? 'reserve',
       type: 'character',
-      name: existing ? 'Your reservation' : 'Reserve your character',
+      name: existing ? 'حجزك' : 'احجز شخصيتك',
       rarity: 'rare',
       art: null,
       summary: existing
-        ? `You reserved “${existing.name}”. You can rename it until a moderator reviews it.`
+        ? `حاجز “${existing.name}”. تقدر تغيّر الاسم لين يشوفه المشرف.`
         : reserve.enabled
-          ? `Pay ${format(reserve.price)} coins to submit a character name. A moderator will review the reservation.`
-          : 'Character reservations are closed right now.',
+          ? `ادفع ${format(reserve.price)} كوينز وترسل اسم شخصية. المشرف يراجع الحجز.`
+          : 'حجز الشخصيات مقفّل حاليًا.',
     },
     'character',
   );
 
-  sheetEls.rarity.textContent = existing ? 'Pending review' : reserve.enabled ? 'Open' : 'Closed';
+  sheetEls.rarity.textContent = existing ? 'بانتظار المراجعة' : reserve.enabled ? 'مفتوح' : 'مقفّل';
 
   if (!existing && !reserve.enabled) {
-    setAction('Reservations closed', { disabled: true, secondary: true });
+    setAction('الحجز مقفّل', { disabled: true, secondary: true });
     return;
   }
 
   sheetEls.controls.innerHTML = `<div class="field">
-      <label for="reservation-name">Character name</label>
-      <input id="reservation-name" type="text" maxlength="40" value="${escapeHtml(existing?.name ?? '')}" placeholder="The Watcher" autocomplete="off">
+      <label for="reservation-name">اسم الشخصية</label>
+      <input id="reservation-name" type="text" maxlength="40" value="${escapeHtml(existing?.name ?? '')}" placeholder="المراقب" autocomplete="off">
     </div>`;
 
   if (existing) {
-    setAction('Save name', { onClick: saveReservation });
+    setAction('حفظ الاسم', { onClick: saveReservation });
   } else {
     const short = reserve.price > 0 ? balanceNote(reserve.price) : false;
-    const label = reserve.price > 0 ? `Reserve · ${format(reserve.price)} coins` : 'Reserve for free';
+    const label = reserve.price > 0 ? `احجز · ${format(reserve.price)} كوينز` : 'احجز مجانًا';
 
     setAction(label, { disabled: short, onClick: saveReservation });
   }
@@ -1772,7 +1772,7 @@ function openReserveSheet() {
 
 async function saveReservation() {
   if (state.demo) {
-    toast('Demo mode — open the store in Discord to reserve.', 'error');
+    toast('وضع العرض — افتح المتجر من ديسكورد للحجز.', 'error');
     return;
   }
 
@@ -1782,12 +1782,12 @@ async function saveReservation() {
   const existing = state.data.reserve?.reservation ?? null;
 
   if (!name) {
-    setNote('Enter a character name.', 'error');
+    setNote('اكتب اسم الشخصية.', 'error');
     return;
   }
 
   state.busy = true;
-  setAction(existing ? 'Saving…' : 'Reserving…', { disabled: true });
+  setAction(existing ? 'نحفظ…' : 'نحجز…', { disabled: true });
 
   try {
     const result = await api('/api/character/reserve', {
@@ -1803,12 +1803,12 @@ async function saveReservation() {
     if (!result.ok) {
       if (result.reason === 'pending') {
         closeSheet();
-        toast('You already have a pending reservation.', 'error');
+        toast('عندك حجز معلّق أصلاً.', 'error');
         await loadStore();
         return;
       }
 
-      setNote(result.message || REASONS[result.reason] || 'The reservation was not saved.', 'error');
+      setNote(result.message || REASONS[result.reason] || 'ما انحفظ الحجز.', 'error');
       state.busy = false;
       return;
     }
@@ -1816,7 +1816,7 @@ async function saveReservation() {
     if (result.balance !== undefined) state.data.balance = result.balance;
 
     closeSheet();
-    toast(existing ? 'Reservation renamed.' : 'Reservation submitted for review.', 'good');
+    toast(existing ? 'تغيّر اسم الحجز.' : 'انرسل الحجز للمراجعة.', 'good');
     await loadStore();
   } catch (error) {
     setNote(error.message, 'error');
@@ -1831,17 +1831,17 @@ function openReservationsSheet() {
     {
       id: 'reservations',
       type: 'character',
-      name: 'Pending reservations',
+      name: 'الحجوزات المعلّقة',
       rarity: 'rare',
       art: null,
       summary: list.length
-        ? 'Every pending character reservation. Members can rename theirs until it is reviewed.'
-        : 'No pending reservations right now.',
+        ? 'كل حجوزات الشخصيات المعلّقة. العضو يقدر يغيّر اسمه لين تتم المراجعة.'
+        : 'ما فيه حجوزات معلّقة حاليًا.',
     },
     'character',
   );
 
-  sheetEls.rarity.textContent = 'Manage Server';
+  sheetEls.rarity.textContent = 'إدارة السيرفر';
   sheetEls.rarity.style.color = 'var(--gold)';
 
   if (list.length > 0) {
@@ -1849,13 +1849,13 @@ function openReservationsSheet() {
       .map(
         (row) => `<li>
           <strong>${escapeHtml(row.name)}</strong>
-          <span>${escapeHtml(row.userName || 'Member')} · ${escapeHtml(row.userId)} · ${new Date(row.createdAt).toLocaleDateString()}</span>
+          <span>${escapeHtml(row.userName || 'عضو')} · ${escapeHtml(row.userId)} · ${new Date(row.createdAt).toLocaleDateString('ar', { day: 'numeric', month: 'long', year: 'numeric', numberingSystem: 'latn' })}</span>
         </li>`,
       )
       .join('')}</ul>`;
   }
 
-  setAction('Close', { onClick: closeSheet });
+  setAction('إغلاق', { onClick: closeSheet });
 }
 
 /* ── Demo data ────────────────────────────────────────────────────────────── */
