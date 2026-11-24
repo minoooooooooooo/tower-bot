@@ -100,8 +100,13 @@ function botProblem(guild) {
   return null;
 }
 
-/** Refuses roles Discord will not let a bot assign by hand. */
-function roleProblem(guild, role) {
+/**
+ * Refuses roles Discord will not let a bot assign by hand, or that outrank the
+ * person running the command. Discord's API only checks the bot's own highest
+ * role, so without the second check a member with **Manage Roles** could hand
+ * out a role above their own.
+ */
+export function roleProblem(guild, role, actor = null) {
   if (!role) {
     return 'حدّد الرتبة — منشنها (`@Role`)، الصق آيديها، أو اكتب اسمها بالضبط.';
   }
@@ -120,21 +125,39 @@ function roleProblem(guild, role) {
     return `رتبتي لازم تكون **فوق ${role.name}**. ارفع رتبتي في **إعدادات السيرفر → الرتب** وجرّب مرة ثانية.`;
   }
 
+  if (actor && guild.ownerId !== actor.id) {
+    const actorTop = actor.roles?.highest?.position ?? 0;
+
+    if ((role.position ?? 0) >= actorTop) {
+      return `رتبتك لازم تكون **فوق ${role.name}** عشان تقدر تغيّرها.`;
+    }
+  }
+
   return null;
 }
 
-/** Refuses members the bot cannot outrank. Managing its own roles is allowed. */
-function memberProblem(member, me) {
+/**
+ * Refuses members the bot cannot outrank, and members ranked above the person
+ * running the command. Managing its own roles is allowed.
+ */
+export function memberProblem(guild, member, me, actor = null) {
   if (!member) return 'حدّد عضو من هذا السيرفر.';
   if (!me) return 'ما قدرت أقرأ ملفي في السيرفر. جرّب بعد لحظة.';
-  if (member.id === me.id) return null;
 
   const botTop = me.roles?.highest?.position ?? 0;
   const memberTop = member.roles?.highest?.position ?? 0;
+  const name = member.displayName ?? member.user?.username ?? 'هذا العضو';
 
-  if (memberTop >= botTop) {
-    const name = member.displayName ?? member.user?.username ?? 'هذا العضو';
+  if (member.id !== me.id && memberTop >= botTop) {
     return `**${name}** رتبته أعلى من رتبتي أو نفسها، فما أقدر أغيّر رتبه. ارفع رتبتي أول.`;
+  }
+
+  if (!actor || member.id === actor.id || guild?.ownerId === actor.id) return null;
+
+  const actorTop = actor.roles?.highest?.position ?? 0;
+
+  if (memberTop >= actorTop) {
+    return `**${name}** رتبته أعلى من رتبتك أو نفسها، فما تقدر تغيّر رتبه.`;
   }
 
   return null;
@@ -247,7 +270,7 @@ async function collectMembers(guild, kind) {
 
 async function runSingle(ctx, member, role, action) {
   const me = ctx.guild.members?.me;
-  const problem = memberProblem(member, me);
+  const problem = memberProblem(ctx.guild, member, me, ctx.member);
 
   if (problem) {
     await fail(ctx, 'ما أقدر أغيّر هذا العضو', problem);
@@ -306,7 +329,7 @@ async function runBulk(ctx, target, role, action) {
   let firstFailure = null;
 
   for (const member of members.slice(0, BULK_LIMIT)) {
-    if (memberProblem(member, me)) {
+    if (memberProblem(ctx.guild, member, me, ctx.member)) {
       counts.skipped += 1;
       continue;
     }
@@ -341,7 +364,7 @@ async function runBulk(ctx, target, role, action) {
     `أُضيفت: **${counts.added}**`,
     `أُزيلت: **${counts.removed}**`,
     `ما تغيّرت: **${counts.unchanged}**`,
-    `انخطى: **${counts.skipped}**${counts.skipped ? ' (رتبتهم أعلى من رتبتي)' : ''}`,
+    `انخطى: **${counts.skipped}**${counts.skipped ? ' (فوق رتبتي أو رتبتك)' : ''}`,
   ];
 
   if (counts.failed) {
@@ -432,7 +455,7 @@ async function executePrefix(ctx) {
     return;
   }
 
-  const problem = roleProblem(ctx.guild, role);
+  const problem = roleProblem(ctx.guild, role, ctx.member);
 
   if (problem) {
     await fail(ctx, 'ما أقدر أستخدم هذي الرتبة', problem);
@@ -459,7 +482,7 @@ async function executeSlash(ctx) {
 
   if (sub === 'bulk') {
     const role = ctx.getRole('role');
-    const problem = roleProblem(ctx.guild, role);
+    const problem = roleProblem(ctx.guild, role, ctx.member);
 
     if (problem) {
       await fail(ctx, role ? 'ما أقدر أستخدم هذي الرتبة' : 'رتبة غير معروفة', problem);
@@ -475,7 +498,7 @@ async function executeSlash(ctx) {
 
   const action = ['add', 'remove', 'toggle'].includes(sub) ? sub : 'toggle';
   const role = ctx.getRole('role');
-  const problem = roleProblem(ctx.guild, role);
+  const problem = roleProblem(ctx.guild, role, ctx.member);
 
   if (problem) {
     await fail(ctx, role ? 'ما أقدر أستخدم هذي الرتبة' : 'رتبة غير معروفة', problem);

@@ -303,7 +303,20 @@ runner's two error replies, the activity verbs on the profile card, and a few
 leftover English replies (`birthday` timezone, `unban`, `store` hint). The
 bundled `card.png` no longer bakes labels: the bot draws the Arabic ones.
 Batch 7 converted the Store Activity web UI and the messages it gets from the
-server. Still English: console logs, audit reasons and docs.
+server. Batch 8 cleaned up the leftovers (the store-launch failure reply, the
+ticket/store/mute audit reasons) and renamed the mute role to `مكتوم`. Still
+English: console logs, code comments and docs.
+
+**Role command hierarchy (fixed 2026-11-24).** `role` checked the *bot's* highest
+role against the target role, but never the *invoker's*. Discord's API does not
+enforce the invoker's rank for a bot, so any member holding **Manage Roles**
+(including a custom `perm grant`) could add or remove a role above their own top
+role, as long as the bot outranked it. `roleProblem()` now also requires the
+role to sit strictly below `ctx.member`'s highest role, and `memberProblem()` now
+also requires the target member to sit below the invoker (a mod can no longer
+edit someone ranked above them). The guild owner is exempt from both checks.
+Bulk runs skip those members and say `(فوق رتبتي أو رتبتك)` in the summary, and
+the same guards cover the slash and prefix paths, including `/role bulk`.
 
 ## What exists
 
@@ -1123,6 +1136,7 @@ Behavior that must be preserved:
 - Arabic batch 6 test on a temp DB (95 checks): `formatArabicDate` (Arabic months, no-year form, Feb 29) and `formatArabicMonthDay` while `formatListDate` keeps its English-month column, and the birthday greeting uses the Arabic month; `formatArabicCount` (singular, dual, 3–10, 11+) and the unchanged `formatDurationArabic`; all 61 background names are Arabic, the classic name and `design:<id>`/level lookups still work, and the custom wallpaper label is Arabic; the profile card source has no old label, draws the new ones, forces the RTL mark on mixed Arabic/digit values, and renders a PNG at 1868×1200 for a full profile and for an empty/hidden-birthday profile; the store-address announcement is Arabic, keeps the address in a code block and drops the trailing slash; the automatic exile release writes the Arabic footer and reason and releases the row; the alias runner answers a broken alias and a slash-only alias with Arabic plain-text error replies.
 - Arabic batch 7 (Store Activity UI) checked in the browser against `?demo` on a local static preview, pass by pass, by reading the live DOM instead of trusting a screenshot (the harness here cannot capture a hidden window): `dir=rtl`/`lang=ar`, no console errors and no horizontal overflow at 1280 px, the mirrored top bar/tabs/cards, every sheet title, summary, action button, field label, placeholder, badge and note, the delete-armed state (`اضغط مرة ثانية للحذف`), the demo-guard toast (`وضع العرض — افتح المتجر من ديسكورد…`), and the reservation list date rendering `23 نوفمبر 2026`. A string scan over `app.js`, `index.html`, `styles.css`, `store-api.js`, `server.js`, `background-admin.js`, `character-store.js`, `profile-backgrounds.js` and `character-reservations.js` leaves only logs, SQL, DOM selectors, MIME types, CSS custom properties and internal `Error` strings that the HTTP layer replaces before they reach the browser.
 - Arabic batch 8 sweep: a scan of `src/**/*.js` for English sentences in string literals now returns only slash/prefix command examples (kept English by request), console logs, code comments, SQL, AI prompts, and font names — every English string that reaches Discord or the report export is gone. The mute-role rename is adoption-safe: `isMuteRoleName` accepts both `مكتوم` and the old `Muted`, so a server that already has the English role keeps using it instead of getting a second one.
+- Role hierarchy test with fake guild/role/member objects (21 checks, `roleProblem`/`memberProblem` exported for it): a role below the invoker's top role is allowed while one at or above it is refused with the role named, a role above the bot is still refused first, the guild owner bypasses both checks but not the bot's ceiling, a member below the invoker is allowed while a peer or higher member is refused with their name, self is allowed, the bot itself follows the same rule (owner excepted), managed and `@everyone` roles stay refused, and the no-actor calls behave exactly as before.
 
 ## Useful context
 
