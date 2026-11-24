@@ -1429,7 +1429,7 @@ async function handleTicketDelete(ctx) {
   else await ctx.typing();
 
   try {
-    await ctx.channel.delete(`Ticket deleted by ${ctx.user.tag ?? ctx.user.id}`);
+    await ctx.channel.delete(`تذكرة حذفها ${ctx.user.tag ?? ctx.user.id}`);
   } catch (error) {
     await ctx.fail(ephemeral(errorReply('ما قدرت أحذف التذكرة', error.message)));
     return;
@@ -1656,7 +1656,7 @@ async function handleRename(ctx) {
   }
 
   try {
-    await ctx.channel.setName(name, `Ticket renamed by ${ctx.user.tag ?? ctx.user.id}`);
+    await ctx.channel.setName(name, `تذكرة غيّر اسمها ${ctx.user.tag ?? ctx.user.id}`);
     await ctx.reply(okReply('انغيّر اسم التذكرة', `صارت \`${name}\`.`));
   } catch (error) {
     await ctx.fail(ephemeral(errorReply('ما قدرت أغيّر الاسم', error.message)));

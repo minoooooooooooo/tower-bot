@@ -301,14 +301,14 @@ async function deliver({ item, guild, guildId, userId, member, name, color, atta
         color: parsed?.value,
         hoist: false,
         mentionable: false,
-        reason: `Store purchase by ${userId}`,
+        reason: `شراء من المتجر بواسطة ${userId}`,
       });
 
       try {
         const target = member ?? (await guild.members.fetch(userId));
-        await target.roles.add(role, 'Store purchase');
+        await target.roles.add(role, 'شراء من المتجر');
       } catch (error) {
-        await role.delete('Store purchase could not be assigned').catch(() => null);
+        await role.delete('ما قدرنا نعطي رتبة الشراء').catch(() => null);
         throw error;
       }
 
@@ -319,7 +319,7 @@ async function deliver({ item, guild, guildId, userId, member, name, color, atta
       const emoji = await guild.emojis.create({
         attachment: attachment.buffer ?? attachment.url,
         name,
-        reason: `Store purchase by ${userId}`,
+        reason: `شراء من المتجر بواسطة ${userId}`,
       });
 
       return { emojiId: emoji.id, name: emoji.name, animated: Boolean(emoji.animated) };

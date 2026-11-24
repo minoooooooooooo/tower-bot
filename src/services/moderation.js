@@ -8,7 +8,14 @@ import { getMuteRoleId, getMuteSettings, setMuteRoleId } from './moderation-stor
 
 const logger = createLogger('moderation');
 
-export const MUTE_ROLE_NAME = 'Muted';
+export const MUTE_ROLE_NAME = 'مكتوم';
+
+/** Older servers already have the role under its English name; adopt either. */
+const MUTE_ROLE_NAMES = new Set(['muted', MUTE_ROLE_NAME.toLowerCase()]);
+
+function isMuteRoleName(name) {
+  return MUTE_ROLE_NAMES.has(String(name ?? '').toLowerCase());
+}
 
 // Channel overwrites are the only way to remove permissions: role permissions
 // are additive, so a role cannot "deny" what @everyone grants. These denies are
@@ -137,10 +144,8 @@ export async function ensureMuteRole(guild) {
 
   if (!role) {
     role =
-      guild.roles.cache.find(
-        (candidate) =>
-          !candidate.managed && candidate.name.toLowerCase() === MUTE_ROLE_NAME.toLowerCase(),
-      ) ?? null;
+      guild.roles.cache.find((candidate) => !candidate.managed && isMuteRoleName(candidate.name)) ??
+      null;
   }
 
   if (role) {
@@ -179,10 +184,10 @@ export async function ensureMuteRole(guild) {
       permissions: [],
       mentionable: false,
       hoist: false,
-      reason: 'Mute command: creating the muted role',
+      reason: 'أمر الميوت: إنشاء رتبة المكتومين',
     });
   } catch (error) {
-    return { problem: `Discord refused to create the **Muted** role: ${error.message}` };
+    return { problem: `ديسكورد رفض ينشئ رتبة **${MUTE_ROLE_NAME}**: ${error.message}` };
   }
 
   setMuteRoleId(guild.id, created.id, { configured: false });
@@ -217,7 +222,7 @@ export async function applyMuteOverwrites(guild, role) {
       await channel.permissionOverwrites.edit(
         role,
         MUTE_DENY,
-        { reason: 'Mute command: setting up the muted role' },
+        { reason: 'أمر الميوت: تجهيز رتبة المكتومين' },
       );
       updated += 1;
     } catch (error) {
@@ -251,7 +256,7 @@ export async function applyMuteRules(channel) {
     await channel.permissionOverwrites.edit(
       role,
       MUTE_DENY,
-      { reason: 'Mute command: new channel' },
+      { reason: 'أمر الميوت: قناة جديدة' },
     );
     return { updated: true };
   } catch (error) {
@@ -268,14 +273,12 @@ export function isMuted(member, roleId) {
   // A role id can be stale after a manual delete; a role named "Muted" is the
   // next best signal.
   return Boolean(
-    member.roles?.cache?.find(
-      (role) => !role.managed && role.name.toLowerCase() === MUTE_ROLE_NAME.toLowerCase(),
-    ),
+    member.roles?.cache?.find((role) => !role.managed && isMuteRoleName(role.name)),
   );
 }
 
 export function muteRoleProblem(guild, role) {
-  if (!role) return 'ما لقيت رتبة **Muted** أو ما قدرت أنشئها.';
+  if (!role) return `ما لقيت رتبة **${MUTE_ROLE_NAME}** أو ما قدرت أنشئها.`;
 
   if (role.managed) {
     return `**${role.name}** مرتبطة بتكامل ولا تنعطى يدويًا.`;

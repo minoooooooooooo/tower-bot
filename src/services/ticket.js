@@ -432,7 +432,7 @@ export async function createTicketChannel({ guild, user, typeKey }) {
     parent: category.id,
     topic: `تذكرة #${padTicketNumber(number)} • ${type.label} • ${user.tag ?? user.username} (${user.id})`,
     permissionOverwrites: permissionOverwrites(guild, type, user.id),
-    reason: `Ticket #${padTicketNumber(number)} opened by ${user.tag ?? user.username}`,
+    reason: `تذكرة #${padTicketNumber(number)} فتحها ${user.tag ?? user.username}`,
   });
 
   let ticket;
@@ -764,7 +764,7 @@ export async function closeTicketChannel({ guild, channel, ticket, type, actor, 
 
     if (mode === 'delete') {
       try {
-        await channel.delete(`Ticket closed by ${actor?.tag ?? actor?.id ?? 'staff'}`);
+        await channel.delete(`تذكرة سكّرها ${actor?.tag ?? actor?.id ?? 'مشرف'}`);
         markTicketDeleted(ticket.id);
         return { mode, transcript, logged: Boolean(log) };
       } catch (error) {
@@ -1093,7 +1093,7 @@ async function handleDelete(interaction, channelId) {
 
     markTicketDeleted(ticket.id);
     const channel = await loadChannel(interaction.guild, channelId);
-    await channel?.delete?.(`Ticket deleted by ${interaction.user.tag ?? interaction.user.id}`).catch(
+    await channel?.delete?.(`تذكرة حذفها ${interaction.user.tag ?? interaction.user.id}`).catch(
       () => null,
     );
     await interaction.editReply({ content: 'انحذفت التذكرة.' }).catch(() => null);

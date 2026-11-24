@@ -25,7 +25,7 @@ export default {
             await interaction
               .reply({
                 content:
-                  'The store app is not available yet. Ask an admin to finish enabling the activity.',
+                  'تطبيق المتجر مو جاهز بعد. خلّ أحد المشرفين يكمّل تفعيله.',
                 flags: MessageFlags.Ephemeral,
               })
               .catch(() => null);
