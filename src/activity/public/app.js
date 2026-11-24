@@ -1042,8 +1042,8 @@ async function uploadCustomBackground() {
 }
 
 function addBackgroundAdminControls(background) {
-  sheetEls.admin.innerHTML = `<button type="button" data-edit>Edit</button>
-    <button type="button" class="danger" data-delete>Delete</button>`;
+  sheetEls.admin.innerHTML = `<button type="button" data-edit>تعديل</button>
+    <button type="button" class="danger" data-delete>حذف</button>`;
 
   sheetEls.admin.querySelector('[data-edit]').addEventListener('click', () => {
     openBackgroundEditor(background);
@@ -1060,8 +1060,8 @@ function wireDeleteBackground(background, button) {
   button.addEventListener('click', () => {
     if (!armed) {
       armed = true;
-      button.textContent = 'Click again to delete';
-      setNote('This removes the design for everyone. Click again to confirm.', 'error');
+      button.textContent = 'اضغط مرة ثانية للحذف';
+      setNote('هذا يشيل التصميم للجميع. اضغط مرة ثانية للتأكيد.', 'error');
       return;
     }
 
@@ -1074,33 +1074,33 @@ function openBackgroundCreator() {
     {
       id: 'new',
       type: 'background',
-      name: 'Add background',
+      name: 'إضافة خلفية',
       rarity: 'rare',
       art: null,
-      summary: 'Upload a picture and set a price. It appears in the Backgrounds tab immediately.',
+      summary: 'ارفع صورة وحدّد سعر. تظهر في تبويب الخلفيات مباشرة.',
     },
     'background',
   );
 
-  sheetEls.rarity.textContent = 'Manage Server';
+  sheetEls.rarity.textContent = 'إدارة السيرفر';
   sheetEls.rarity.style.color = 'var(--gold)';
 
   sheetEls.controls.innerHTML = `<div class="field">
-      <label for="bg-name">Name</label>
-      <input id="bg-name" type="text" maxlength="40" placeholder="Neon Garden" autocomplete="off">
+      <label for="bg-name">الاسم</label>
+      <input id="bg-name" type="text" maxlength="40" placeholder="حديقة النيون" autocomplete="off">
     </div>
     <div class="field">
-      <label for="bg-price">Price (coins)</label>
+      <label for="bg-price">السعر (كوينز)</label>
       <input id="bg-price" type="number" min="0" max="100000" value="100">
     </div>
     <div class="field">
-      <label for="bg-level">Level (for a free design)</label>
+      <label for="bg-level">المستوى (للتصميم المجاني)</label>
       <input id="bg-level" type="number" min="1" max="999" value="1">
     </div>
     <div class="field">
-      <label for="bg-image">Image</label>
+      <label for="bg-image">الصورة</label>
       <input id="bg-image" type="file" accept="image/png,image/jpeg,image/webp,image/gif">
-      <span id="bg-image-note" class="card-meta">PNG, JPEG, WebP or GIF · 10 MB max</span>
+      <span id="bg-image-note" class="card-meta">PNG أو JPEG أو WebP أو GIF · الحد 10 ميجابايت</span>
     </div>`;
 
   const nameInput = $('#bg-name');
@@ -1109,13 +1109,13 @@ function openBackgroundCreator() {
   const refresh = () => {
     const ready = nameInput.value.trim().length > 0 && Boolean(state.backgroundImage);
 
-    setAction('Add background', {
+    setAction('إضافة خلفية', {
       disabled: state.busy || !ready,
       onClick: () => saveBackgroundAdmin({ action: 'create' }),
     });
 
     if (state.backgroundImage) {
-      setNote(`Price: ${format(Number(priceInput.value) || 0)} coins`);
+      setNote(`السعر: ${format(Number(priceInput.value) || 0)} كوينز`);
     }
   };
 
@@ -1134,35 +1134,35 @@ function openBackgroundEditor(background) {
       ...background,
       type: 'background',
       summary:
-        'Rename, reprice or replace this design. Name and artwork are shared; the price is saved for this server.',
+        'غيّر الاسم أو السعر أو الصورة. الاسم والصورة للجميع، والسعر محفوظ لهذا السيرفر.',
     },
     'background',
   );
 
-  sheetEls.rarity.textContent = 'Manage Server';
+  sheetEls.rarity.textContent = 'إدارة السيرفر';
   sheetEls.rarity.style.color = 'var(--gold)';
 
   sheetEls.controls.innerHTML = `<div class="field">
-      <label for="bg-name">Name</label>
+      <label for="bg-name">الاسم</label>
       <input id="bg-name" type="text" maxlength="40" value="${escapeHtml(background.name)}" autocomplete="off">
     </div>
     <div class="field">
-      <label for="bg-price">Price (coins)</label>
+      <label for="bg-price">السعر (كوينز)</label>
       <input id="bg-price" type="number" min="0" max="100000" value="${Number(background.price) || 0}">
     </div>
     <div class="field">
-      <label for="bg-level">Level (for a free design)</label>
+      <label for="bg-level">المستوى (للتصميم المجاني)</label>
       <input id="bg-level" type="number" min="1" max="999" value="${Number(background.level) || 1}">
     </div>
     <div class="field">
-      <label for="bg-image">Replace image (optional)</label>
+      <label for="bg-image">تبديل الصورة (اختياري)</label>
       <input id="bg-image" type="file" accept="image/png,image/jpeg,image/webp,image/gif">
-      <span id="bg-image-note" class="card-meta">PNG, JPEG, WebP or GIF · 10 MB max</span>
+      <span id="bg-image-note" class="card-meta">PNG أو JPEG أو WebP أو GIF · الحد 10 ميجابايت</span>
     </div>`;
 
   const nameInput = $('#bg-name');
   const refresh = () => {
-    setAction('Save changes', {
+    setAction('حفظ التغييرات', {
       disabled: state.busy || nameInput.value.trim().length === 0,
       onClick: () => saveBackgroundAdmin({ action: 'update', id: background.id }),
     });
@@ -1173,7 +1173,7 @@ function openBackgroundEditor(background) {
     readBackgroundImageFile(event.target.files?.[0], '#bg-image-note').then(refresh);
   });
 
-  sheetEls.admin.innerHTML = '<button type="button" class="danger" data-delete>Delete background</button>';
+  sheetEls.admin.innerHTML = '<button type="button" class="danger" data-delete>حذف الخلفية</button>';
   wireDeleteBackground(background, sheetEls.admin.querySelector('[data-delete]'));
 
   refresh();
@@ -1181,7 +1181,7 @@ function openBackgroundEditor(background) {
 
 async function saveBackgroundAdmin({ action, id = null }) {
   if (state.demo) {
-    toast('Demo mode — open the store in Discord to change the shop.', 'error');
+    toast('وضع العرض — افتح المتجر من ديسكورد لتعديل المتجر.', 'error');
     return;
   }
 
@@ -1192,27 +1192,27 @@ async function saveBackgroundAdmin({ action, id = null }) {
   const level = Number($('#bg-level')?.value);
 
   if (!name) {
-    setNote('Give the background a name.', 'error');
+    setNote('عط الخلفية اسم.', 'error');
     return;
   }
 
   if (!Number.isInteger(price) || price < 0) {
-    setNote('The price must be a whole number of coins.', 'error');
+    setNote('السعر لازم يكون رقم صحيح من الكوينز.', 'error');
     return;
   }
 
   if (!Number.isInteger(level) || level < 1) {
-    setNote('The level must be a whole number from 1 to 999.', 'error');
+    setNote('المستوى لازم يكون رقم صحيح من 1 إلى 999.', 'error');
     return;
   }
 
   if (action === 'create' && !state.backgroundImage) {
-    setNote('Choose an image for the background.', 'error');
+    setNote('اختر صورة للخلفية.', 'error');
     return;
   }
 
   state.busy = true;
-  setAction(action === 'create' ? 'Adding…' : 'Saving…', { disabled: true });
+  setAction(action === 'create' ? 'نضيف…' : 'نحفظ…', { disabled: true });
 
   try {
     const body = {
@@ -1232,13 +1232,13 @@ async function saveBackgroundAdmin({ action, id = null }) {
     const result = await api('/api/admin/background', { method: 'POST', body });
 
     if (!result.ok) {
-      setNote(result.message || REASONS[result.reason] || 'The background was not saved.', 'error');
+      setNote(result.message || REASONS[result.reason] || 'ما انحفظت الخلفية.', 'error');
       state.busy = false;
       return;
     }
 
     closeSheet();
-    toast(action === 'create' ? 'Background added.' : 'Background updated.', 'good');
+    toast(action === 'create' ? 'انضافت الخلفية.' : 'تحدّثت الخلفية.', 'good');
     await loadStore();
   } catch (error) {
     setNote(error.message, 'error');
@@ -1248,7 +1248,7 @@ async function saveBackgroundAdmin({ action, id = null }) {
 
 async function deleteBackgroundAdmin(background, button) {
   if (state.demo) {
-    toast('Demo mode — open the store in Discord to change the shop.', 'error');
+    toast('وضع العرض — افتح المتجر من ديسكورد لتعديل المتجر.', 'error');
     return;
   }
 
@@ -1256,7 +1256,7 @@ async function deleteBackgroundAdmin(background, button) {
 
   state.busy = true;
   button.disabled = true;
-  button.textContent = 'Deleting…';
+  button.textContent = 'نحذف…';
 
   try {
     const result = await api('/api/admin/background', {
@@ -1265,15 +1265,15 @@ async function deleteBackgroundAdmin(background, button) {
     });
 
     if (!result.ok) {
-      setNote(result.message || 'The background was not deleted.', 'error');
+      setNote(result.message || 'ما انحذفت الخلفية.', 'error');
       state.busy = false;
       button.disabled = false;
-      button.textContent = 'Click again to delete';
+      button.textContent = 'اضغط مرة ثانية للحذف';
       return;
     }
 
     closeSheet();
-    toast('Background deleted.', 'good');
+    toast('انحذفت الخلفية.', 'good');
     await loadStore();
   } catch (error) {
     setNote(error.message, 'error');
@@ -1393,8 +1393,8 @@ async function buyCharacter(character) {
 }
 
 function addCharacterAdminControls(character) {
-  sheetEls.admin.innerHTML = `<button type="button" data-edit>Edit</button>
-    <button type="button" class="danger" data-delete>Delete</button>`;
+  sheetEls.admin.innerHTML = `<button type="button" data-edit>تعديل</button>
+    <button type="button" class="danger" data-delete>حذف</button>`;
 
   sheetEls.admin.querySelector('[data-edit]').addEventListener('click', () => {
     openCharacterEditor(character);
@@ -1411,8 +1411,8 @@ function wireDeleteCharacter(character, button) {
   button.addEventListener('click', () => {
     if (!armed) {
       armed = true;
-      button.textContent = 'Click again to delete';
-      setNote('This removes the character for everyone. Click again to confirm.', 'error');
+      button.textContent = 'اضغط مرة ثانية للحذف';
+      setNote('هذا يشيل الشخصية للجميع. اضغط مرة ثانية للتأكيد.', 'error');
       return;
     }
 
@@ -1425,30 +1425,29 @@ function openCharacterCreator() {
     {
       id: 'new',
       type: 'character',
-      name: 'Add character',
+      name: 'إضافة شخصية',
       rarity: 'rare',
       art: null,
-      summary:
-        'Upload a portrait (225 × 350 works best; any size is cropped to fit) and set a coin price.',
+      summary: 'ارفع صورة الشخصية (الأفضل 225 × 350، وأي مقاس ثاني ينقص للحد) وحدّد سعرها بالكوينز.',
     },
     'character',
   );
 
-  sheetEls.rarity.textContent = 'Manage Server';
+  sheetEls.rarity.textContent = 'إدارة السيرفر';
   sheetEls.rarity.style.color = 'var(--gold)';
 
   sheetEls.controls.innerHTML = `<div class="field">
-      <label for="character-name">Name</label>
-      <input id="character-name" type="text" maxlength="40" placeholder="The Watcher" autocomplete="off">
+      <label for="character-name">الاسم</label>
+      <input id="character-name" type="text" maxlength="40" placeholder="المراقب" autocomplete="off">
     </div>
     <div class="field">
-      <label for="character-price">Price (coins)</label>
+      <label for="character-price">السعر (كوينز)</label>
       <input id="character-price" type="number" min="0" max="100000" value="100">
     </div>
     <div class="field">
-      <label for="character-image">Portrait</label>
+      <label for="character-image">الصورة</label>
       <input id="character-image" type="file" accept="image/png,image/jpeg,image/webp,image/gif">
-      <span id="character-image-note" class="card-meta">PNG, JPEG, WebP or GIF · 10 MB max · 225 × 350 recommended</span>
+      <span id="character-image-note" class="card-meta">PNG أو JPEG أو WebP أو GIF · الحد 10 ميجابايت · الأفضل 225 × 350</span>
     </div>`;
 
   const nameInput = $('#character-name');
@@ -1457,13 +1456,13 @@ function openCharacterCreator() {
   const refresh = () => {
     const ready = nameInput.value.trim().length > 0 && Boolean(state.characterImage);
 
-    setAction('Add character', {
+    setAction('إضافة شخصية', {
       disabled: state.busy || !ready,
       onClick: () => saveCharacterAdmin({ action: 'create' }),
     });
 
     if (state.characterImage) {
-      setNote(`Price: ${format(Number(priceInput.value) || 0)} coins`);
+      setNote(`السعر: ${format(Number(priceInput.value) || 0)} كوينز`);
     }
   };
 
@@ -1481,32 +1480,32 @@ function openCharacterEditor(character) {
     {
       ...character,
       type: 'character',
-      summary: 'Rename, reprice or replace this character portrait.',
+      summary: 'غيّر الاسم أو السعر أو صورة الشخصية.',
     },
     'character',
   );
 
-  sheetEls.rarity.textContent = 'Manage Server';
+  sheetEls.rarity.textContent = 'إدارة السيرفر';
   sheetEls.rarity.style.color = 'var(--gold)';
 
   sheetEls.controls.innerHTML = `<div class="field">
-      <label for="character-name">Name</label>
+      <label for="character-name">الاسم</label>
       <input id="character-name" type="text" maxlength="40" value="${escapeHtml(character.name)}" autocomplete="off">
     </div>
     <div class="field">
-      <label for="character-price">Price (coins)</label>
+      <label for="character-price">السعر (كوينز)</label>
       <input id="character-price" type="number" min="0" max="100000" value="${Number(character.price) || 0}">
     </div>
     <div class="field">
-      <label for="character-image">Replace portrait (optional)</label>
+      <label for="character-image">تبديل الصورة (اختياري)</label>
       <input id="character-image" type="file" accept="image/png,image/jpeg,image/webp,image/gif">
-      <span id="character-image-note" class="card-meta">PNG, JPEG, WebP or GIF · 10 MB max</span>
+      <span id="character-image-note" class="card-meta">PNG أو JPEG أو WebP أو GIF · الحد 10 ميجابايت</span>
     </div>`;
 
   const nameInput = $('#character-name');
 
   const refresh = () => {
-    setAction('Save changes', {
+    setAction('حفظ التغييرات', {
       disabled: state.busy || nameInput.value.trim().length === 0,
       onClick: () => saveCharacterAdmin({ action: 'update', id: character.id }),
     });
@@ -1517,7 +1516,7 @@ function openCharacterEditor(character) {
     readCharacterImageFile(event.target.files?.[0], '#character-image-note').then(refresh);
   });
 
-  sheetEls.admin.innerHTML = '<button type="button" class="danger" data-delete>Delete character</button>';
+  sheetEls.admin.innerHTML = '<button type="button" class="danger" data-delete>حذف الشخصية</button>';
   wireDeleteCharacter(character, sheetEls.admin.querySelector('[data-delete]'));
 
   refresh();
@@ -1529,13 +1528,13 @@ async function readCharacterImageFile(file, noteSelector) {
   if (!file) return null;
 
   if (!/^image\/(png|jpe?g|webp|gif)$/i.test(file.type)) {
-    if (note) note.textContent = 'That file type is not supported.';
+    if (note) note.textContent = 'هذا النوع من الملفات مو مدعوم.';
     state.characterImage = null;
     return null;
   }
 
   if (file.size > 10 * 1024 * 1024) {
-    if (note) note.textContent = `This file is ${Math.ceil(file.size / 1024 / 1024)} MB; the limit is 10 MB.`;
+    if (note) note.textContent = `حجم الملف ${Math.ceil(file.size / 1024 / 1024)} ميجابايت، والحد 10 ميجابايت.`;
     state.characterImage = null;
     return null;
   }
@@ -1548,22 +1547,22 @@ async function readCharacterImageFile(file, noteSelector) {
   });
 
   if (!dataUrl) {
-    if (note) note.textContent = 'Could not read the image.';
+    if (note) note.textContent = 'تعذّر قراءة الصورة.';
     return null;
   }
 
   state.characterImage = dataUrl;
   state.characterImageName = file.name;
-  if (note) note.textContent = `${file.name} · ${Math.ceil(file.size / 1024)} KB`;
+  if (note) note.textContent = `${file.name} · ${Math.ceil(file.size / 1024)} كيلوبايت`;
   sheetEls.art.innerHTML = `<img src="${escapeHtml(dataUrl)}" alt="">`;
-  setNote('Portrait ready.');
+  setNote('الصورة جاهزة.');
 
   return dataUrl;
 }
 
 async function saveCharacterAdmin({ action, id = null }) {
   if (state.demo) {
-    toast('Demo mode — open the store in Discord to change the shop.', 'error');
+    toast('وضع العرض — افتح المتجر من ديسكورد لتعديل المتجر.', 'error');
     return;
   }
 
@@ -1573,22 +1572,22 @@ async function saveCharacterAdmin({ action, id = null }) {
   const price = Number($('#character-price')?.value);
 
   if (!name) {
-    setNote('Give the character a name.', 'error');
+    setNote('عط الشخصية اسم.', 'error');
     return;
   }
 
   if (!Number.isInteger(price) || price < 0) {
-    setNote('The price must be a whole number of coins.', 'error');
+    setNote('السعر لازم يكون رقم صحيح من الكوينز.', 'error');
     return;
   }
 
   if (action === 'create' && !state.characterImage) {
-    setNote('Choose a portrait for the character.', 'error');
+    setNote('اختر صورة للشخصية.', 'error');
     return;
   }
 
   state.busy = true;
-  setAction(action === 'create' ? 'Adding…' : 'Saving…', { disabled: true });
+  setAction(action === 'create' ? 'نضيف…' : 'نحفظ…', { disabled: true });
 
   try {
     const body = {
@@ -1607,13 +1606,13 @@ async function saveCharacterAdmin({ action, id = null }) {
     const result = await api('/api/admin/character', { method: 'POST', body });
 
     if (!result.ok) {
-      setNote(result.message || REASONS[result.reason] || 'The character was not saved.', 'error');
+      setNote(result.message || REASONS[result.reason] || 'ما انحفظت الشخصية.', 'error');
       state.busy = false;
       return;
     }
 
     closeSheet();
-    toast(action === 'create' ? 'Character added.' : 'Character updated.', 'good');
+    toast(action === 'create' ? 'انضافت الشخصية.' : 'تحدّثت الشخصية.', 'good');
     await loadStore();
   } catch (error) {
     setNote(error.message, 'error');
@@ -1623,7 +1622,7 @@ async function saveCharacterAdmin({ action, id = null }) {
 
 async function deleteCharacterAdmin(character, button) {
   if (state.demo) {
-    toast('Demo mode — open the store in Discord to change the shop.', 'error');
+    toast('وضع العرض — افتح المتجر من ديسكورد لتعديل المتجر.', 'error');
     return;
   }
 
@@ -1631,7 +1630,7 @@ async function deleteCharacterAdmin(character, button) {
 
   state.busy = true;
   button.disabled = true;
-  button.textContent = 'Deleting…';
+  button.textContent = 'نحذف…';
 
   try {
     const result = await api('/api/admin/character', {
@@ -1640,15 +1639,15 @@ async function deleteCharacterAdmin(character, button) {
     });
 
     if (!result.ok) {
-      setNote(result.message || 'The character was not deleted.', 'error');
+      setNote(result.message || 'ما انحذفت الشخصية.', 'error');
       state.busy = false;
       button.disabled = false;
-      button.textContent = 'Click again to delete';
+      button.textContent = 'اضغط مرة ثانية للحذف';
       return;
     }
 
     closeSheet();
-    toast('Character deleted.', 'good');
+    toast('انحذفت الشخصية.', 'good');
     await loadStore();
   } catch (error) {
     setNote(error.message, 'error');
@@ -1664,33 +1663,33 @@ function openReserveSettings() {
     {
       id: 'reserve-settings',
       type: 'character',
-      name: 'Reservation settings',
+      name: 'إعدادات الحجز',
       rarity: 'rare',
       art: null,
       summary:
-        'Members pay this price to reserve a character name. Hiding the option removes its card from the store; pending reservations can still be renamed.',
+        'الأعضاء يدفعون هذا السعر عشان يحجزون اسم شخصية. إذا خفيت الخيار تنشال بطاقته من المتجر، والحجوزات المعلّقة تبقى تقدر تغيّر اسمها.',
     },
     'character',
   );
 
-  sheetEls.rarity.textContent = 'Manage Server';
+  sheetEls.rarity.textContent = 'إدارة السيرفر';
   sheetEls.rarity.style.color = 'var(--gold)';
 
   sheetEls.controls.innerHTML = `<div class="field">
-      <label for="reserve-price">Price (coins)</label>
+      <label for="reserve-price">السعر (كوينز)</label>
       <input id="reserve-price" type="number" min="0" max="100000" value="${Number(reserve.price) || 0}">
     </div>
     <label class="check-row">
       <input id="reserve-enabled" type="checkbox" ${reserve.enabled ? 'checked' : ''}>
-      <span>Show “Reserve your character” in the store</span>
+      <span>أظهر «احجز شخصيتك» في المتجر</span>
     </label>`;
 
-  setAction('Save settings', { onClick: saveReserveSettings });
+  setAction('حفظ الإعدادات', { onClick: saveReserveSettings });
 }
 
 async function saveReserveSettings() {
   if (state.demo) {
-    toast('Demo mode — open the store in Discord to change the shop.', 'error');
+    toast('وضع العرض — افتح المتجر من ديسكورد لتعديل المتجر.', 'error');
     return;
   }
 
@@ -1700,12 +1699,12 @@ async function saveReserveSettings() {
   const enabled = Boolean($('#reserve-enabled')?.checked);
 
   if (!Number.isInteger(price) || price < 0) {
-    setNote('The price must be a whole number of coins.', 'error');
+    setNote('السعر لازم يكون رقم صحيح من الكوينز.', 'error');
     return;
   }
 
   state.busy = true;
-  setAction('Saving…', { disabled: true });
+  setAction('نحفظ…', { disabled: true });
 
   try {
     const result = await api('/api/admin/reserve', {
@@ -1714,13 +1713,13 @@ async function saveReserveSettings() {
     });
 
     if (!result.ok) {
-      setNote(result.message || REASONS[result.reason] || 'The settings were not saved.', 'error');
+      setNote(result.message || REASONS[result.reason] || 'ما انحفظت الإعدادات.', 'error');
       state.busy = false;
       return;
     }
 
     closeSheet();
-    toast(enabled ? 'Reservations are visible.' : 'Reservations are hidden.', 'good');
+    toast(enabled ? 'الحجوزات ظاهرة.' : 'الحجوزات مخفية.', 'good');
     await loadStore();
   } catch (error) {
     setNote(error.message, 'error');
@@ -1865,8 +1864,8 @@ function demoData() {
     {
       key: 'xp-10',
       type: 'xp',
-      name: '10 XP',
-      summary: 'Adds 10 XP (50 Nightmare points). Punishments still tax the gain.',
+      name: '10 خبرة',
+      summary: 'يضيف 10 خبرة (50 نقطة Nightmare). العقوبات لسا تنقص من المكسب.',
       price: 40,
       amount: 10,
       limit: 0,
@@ -1881,8 +1880,8 @@ function demoData() {
     {
       key: 'behavior-1',
       type: 'behavior',
-      name: '1 good behaviour point',
-      summary: 'Adds one good behaviour point to your card.',
+      name: 'نقطة سلوك حسن',
+      summary: 'يضيف نقطة سلوك حسن لبطاقتك. اشترِ أكثر من وحدة مرة وحدة بالكمية.',
       price: 100,
       amount: 1,
       limit: 0,
@@ -1897,8 +1896,8 @@ function demoData() {
     {
       key: 'profile-title',
       type: 'title',
-      name: 'Profile title',
-      summary: 'Sets the title on your card.',
+      name: 'لقب الملف',
+      summary: 'يحط اللقب على بطاقتك. اشتره مرة ثانية عشان تغيّره.',
       price: 60,
       amount: 1,
       limit: 0,
@@ -1913,8 +1912,8 @@ function demoData() {
     {
       key: 'emoji-slot',
       type: 'emoji',
-      name: 'Server emoji',
-      summary: 'The bot uploads an emoji you provide.',
+      name: 'إيموجي سيرفر',
+      summary: 'البوت يرفع الإيموجي اللي تعطيه.',
       price: 75,
       amount: 1,
       limit: 3,
@@ -1929,8 +1928,8 @@ function demoData() {
     {
       key: 'custom-role',
       type: 'role',
-      name: 'Custom role',
-      summary: 'Creates a role with your name and colour and gives it to you.',
+      name: 'رتبة خاصة',
+      summary: 'ينشئ رتبة باسمك ولونك ويعطيك إياها.',
       price: 120,
       amount: 1,
       limit: 1,
@@ -1948,8 +1947,8 @@ function demoData() {
     {
       key: 'design:bg-01-sakura-dusk',
       type: 'background',
-      name: 'Sakura Dusk background',
-      summary: 'Unlocks the Sakura Dusk design for your profile card.',
+      name: 'خلفية غروب الساكورا',
+      summary: 'تفتح لك تصميم غروب الساكورا لبطاقة ملفك.',
       price: 130,
       defaultPrice: 130,
       amount: 1,
@@ -1966,8 +1965,8 @@ function demoData() {
     {
       key: 'design:bg-05-violet-storm',
       type: 'background',
-      name: 'Violet Storm background',
-      summary: 'Unlocks the Violet Storm design for your profile card.',
+      name: 'خلفية عاصفة بنفسجية',
+      summary: 'تفتح لك تصميم عاصفة بنفسجية لبطاقة ملفك.',
       price: 200,
       defaultPrice: 200,
       amount: 1,
@@ -1984,8 +1983,8 @@ function demoData() {
     {
       key: 'design:bg-31-candy-rainbow',
       type: 'background',
-      name: 'Candy Rainbow background',
-      summary: 'Unlocks the Candy Rainbow design for your profile card.',
+      name: 'خلفية قوس حلوى',
+      summary: 'تفتح لك تصميم قوس حلوى لبطاقة ملفك.',
       price: 320,
       defaultPrice: 320,
       amount: 1,
@@ -2004,7 +2003,7 @@ function demoData() {
   const backgrounds = [
     {
       id: 'custom',
-      name: 'Custom background',
+      name: 'خلفية مخصصة',
       level: 50,
       price: 0,
       rarity: 'epic',
@@ -2017,19 +2016,19 @@ function demoData() {
       owned: true,
       selected: false,
     },
-    { id: 'default', name: 'Classic', level: 1, price: 0, rarity: 'common', art: null, unlocked: true, owned: true, selected: true },
-    { id: 'bg-01-sakura-dusk', name: 'Sakura Dusk', level: 1, price: 130, rarity: 'rare', art: '/assets/backgrounds/bg-01-sakura-dusk.jpg', unlocked: false, owned: false, selected: false },
-    { id: 'bg-05-violet-storm', name: 'Violet Storm', level: 1, price: 200, rarity: 'epic', art: '/assets/backgrounds/bg-05-violet-storm.jpg', unlocked: true, owned: true, selected: false },
-    { id: 'bg-31-candy-rainbow', name: 'Candy Rainbow', level: 1, price: 320, rarity: 'legendary', art: '/assets/backgrounds/bg-31-candy-rainbow.jpg', unlocked: false, owned: false, selected: false },
-    { id: 'tier-15', name: 'Tide', level: 15, price: 0, rarity: 'common', art: '/assets/backgrounds/tier-15.jpg', unlocked: true, owned: true, selected: false },
-    { id: 'tier-20', name: 'Amethyst', level: 20, price: 0, rarity: 'common', art: '/assets/backgrounds/tier-20.jpg', unlocked: false, owned: true, selected: false },
-    { id: 'tier-30', name: 'Solaris', level: 30, price: 0, rarity: 'common', art: '/assets/backgrounds/tier-30.jpg', unlocked: false, owned: true, selected: false },
+    { id: 'default', name: 'الكلاسيكية', level: 1, price: 0, rarity: 'common', art: null, unlocked: true, owned: true, selected: true },
+    { id: 'bg-01-sakura-dusk', name: 'غروب الساكورا', level: 1, price: 130, rarity: 'rare', art: '/assets/backgrounds/bg-01-sakura-dusk.jpg', unlocked: false, owned: false, selected: false },
+    { id: 'bg-05-violet-storm', name: 'عاصفة بنفسجية', level: 1, price: 200, rarity: 'epic', art: '/assets/backgrounds/bg-05-violet-storm.jpg', unlocked: true, owned: true, selected: false },
+    { id: 'bg-31-candy-rainbow', name: 'قوس حلوى', level: 1, price: 320, rarity: 'legendary', art: '/assets/backgrounds/bg-31-candy-rainbow.jpg', unlocked: false, owned: false, selected: false },
+    { id: 'tier-15', name: 'مدّ', level: 15, price: 0, rarity: 'common', art: '/assets/backgrounds/tier-15.jpg', unlocked: true, owned: true, selected: false },
+    { id: 'tier-20', name: 'جمشت', level: 20, price: 0, rarity: 'common', art: '/assets/backgrounds/tier-20.jpg', unlocked: false, owned: true, selected: false },
+    { id: 'tier-30', name: 'شمسي', level: 30, price: 0, rarity: 'common', art: '/assets/backgrounds/tier-30.jpg', unlocked: false, owned: true, selected: false },
   ];
 
   const characters = [
     {
       id: 'char-watcher',
-      name: 'The Watcher',
+      name: 'المراقب',
       price: 150,
       rarity: 'rare',
       art: '/assets/backgrounds/bg-05-violet-storm.jpg',
@@ -2037,7 +2036,7 @@ function demoData() {
     },
     {
       id: 'char-oracle',
-      name: 'Oracle of Ash',
+      name: 'عرّافة الرماد',
       price: 320,
       rarity: 'legendary',
       art: '/assets/backgrounds/bg-31-candy-rainbow.jpg',
@@ -2046,8 +2045,8 @@ function demoData() {
   ];
 
   return {
-    guild: { id: 'demo', name: 'Tower', icon: null },
-    user: { id: 'demo', name: 'Demo member', username: 'demo', avatar: 'https://cdn.discordapp.com/embed/avatars/3.png' },
+    guild: { id: 'demo', name: 'البرج', icon: null },
+    user: { id: 'demo', name: 'عضو تجريبي', username: 'demo', avatar: 'https://cdn.discordapp.com/embed/avatars/3.png' },
     balance: 420,
     level: 12,
     maxStack: 100,
@@ -2067,8 +2066,8 @@ function demoData() {
         {
           id: 1,
           userId: 'demo-member',
-          userName: 'Demo member',
-          name: 'The Keeper',
+          userName: 'عضو تجريبي',
+          name: 'الحارس',
           status: 'pending',
           price: 120,
           createdAt: Date.now() - 86_400_000,
