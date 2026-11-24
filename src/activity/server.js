@@ -83,7 +83,7 @@ function readJson(req, limit = MAX_BODY_BYTES) {
       size += chunk.length;
 
       if (size > limit) {
-        reject(Object.assign(new Error('Request body is too large.'), { status: 413 }));
+        reject(Object.assign(new Error('الطلب كبير زيادة.'), { status: 413 }));
         req.destroy();
         return;
       }
@@ -100,7 +100,7 @@ function readJson(req, limit = MAX_BODY_BYTES) {
       try {
         resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));
       } catch {
-        reject(Object.assign(new Error('Invalid JSON body.'), { status: 400 }));
+        reject(Object.assign(new Error('صيغة الطلب مو صحيحة.'), { status: 400 }));
       }
     });
 
@@ -119,7 +119,7 @@ async function requireUser(req, res) {
   const user = await authUser(bearer(req));
 
   if (!user) {
-    sendJson(res, 401, { ok: false, reason: 'auth', message: 'Your Discord session expired. Reopen the store.' });
+    sendJson(res, 401, { ok: false, reason: 'auth', message: 'انتهت جلسة ديسكورد. افتح المتجر من جديد.' });
     return null;
   }
 
@@ -150,7 +150,7 @@ async function handleApi(req, res, client, route, url) {
       sendJson(res, error.status === 429 ? 429 : 400, {
         ok: false,
         reason: error.reason ?? 'token',
-        message: 'Discord would not start the store session. Close it and try again.',
+        message: 'ديسكورد ما فتح جلسة المتجر. سكّره وجرّب مرة ثانية.',
       });
     }
 
@@ -165,12 +165,12 @@ async function handleApi(req, res, client, route, url) {
     const context = await guildContext(client, guildId, user.id);
 
     if (context.error === 'guild') {
-      sendJson(res, 404, { ok: false, reason: 'guild', message: 'The bot is not in this server.' });
+      sendJson(res, 404, { ok: false, reason: 'guild', message: 'البوت مو موجود في هذا السيرفر.' });
       return true;
     }
 
     if (context.error === 'member') {
-      sendJson(res, 403, { ok: false, reason: 'member', message: 'You are not a member of this server.' });
+      sendJson(res, 403, { ok: false, reason: 'member', message: 'إنت مو عضو في هذا السيرفر.' });
       return true;
     }
 
@@ -214,7 +214,7 @@ async function handleApi(req, res, client, route, url) {
       sendJson(res, 403, {
         ok: false,
         reason: context.error,
-        message: 'You are not a member of this server.',
+        message: 'إنت مو عضو في هذا السيرفر.',
       });
       return true;
     }

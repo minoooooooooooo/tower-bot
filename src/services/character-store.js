@@ -193,7 +193,7 @@ export async function saveCharacterArt(id, input) {
   const text = String(id ?? '').trim().toLowerCase();
 
   if (!ID_PATTERN.test(text)) {
-    throw new WallpaperError('That character id is not valid.', 'path');
+    throw new WallpaperError('آيدي الشخصية مو صحيح.', 'path');
   }
 
   let image;
@@ -201,11 +201,11 @@ export async function saveCharacterArt(id, input) {
   try {
     image = Buffer.isBuffer(input) ? await loadImage(input) : input;
   } catch {
-    throw new WallpaperError('That file could not be read as an image.', 'decode');
+    throw new WallpaperError('ما قدرنا نقرأ الملف كصورة.', 'decode');
   }
 
   if (!image?.width || !image?.height) {
-    throw new WallpaperError('That file could not be read as an image.', 'decode');
+    throw new WallpaperError('ما قدرنا نقرأ الملف كصورة.', 'decode');
   }
 
   if (
@@ -215,8 +215,8 @@ export async function saveCharacterArt(id, input) {
     image.height > MAX_SOURCE_SIDE
   ) {
     throw new WallpaperError(
-      `The portrait must be between ${MIN_SOURCE_SIDE}x${MIN_SOURCE_SIDE} and ` +
-        `${MAX_SOURCE_SIDE}x${MAX_SOURCE_SIDE} pixels.`,
+      `لازم تكون الصورة بين ${MIN_SOURCE_SIDE}x${MIN_SOURCE_SIDE} و ` +
+        `${MAX_SOURCE_SIDE}x${MAX_SOURCE_SIDE} بكسل.`,
       'dimensions',
     );
   }
@@ -261,8 +261,8 @@ export async function deleteCharacterArt(id) {
 export async function createCharacter({ name, price = 100, image }) {
   const clean = cleanName(name);
 
-  if (!clean) throw new WallpaperError('Give the character a name (1–40 characters).', 'name');
-  if (!image) throw new WallpaperError('Attach a portrait for the character.', 'image');
+  if (!clean) throw new WallpaperError('عط الشخصية اسم من 1 إلى 40 حرف.', 'name');
+  if (!image) throw new WallpaperError('أرفق صورة للشخصية.', 'image');
 
   const id = uniqueId(clean);
   await saveCharacterArt(id, image);
@@ -283,8 +283,8 @@ export async function updateCharacter(id, { name, price, image }) {
   const text = String(id ?? '').trim().toLowerCase();
   const current = characterById(text);
 
-  if (!current) throw new WallpaperError('That character no longer exists.', 'unknown');
-  if (!ID_PATTERN.test(text)) throw new WallpaperError('That character cannot be edited.', 'path');
+  if (!current) throw new WallpaperError('هذي الشخصية ما عادت موجودة.', 'unknown');
+  if (!ID_PATTERN.test(text)) throw new WallpaperError('ما نقدر نعدّل هذي الشخصية.', 'path');
 
   const next = {
     id: text,
@@ -294,7 +294,7 @@ export async function updateCharacter(id, { name, price, image }) {
 
   if (name !== undefined) {
     const clean = cleanName(name);
-    if (!clean) throw new WallpaperError('Give the character a name (1–40 characters).', 'name');
+    if (!clean) throw new WallpaperError('عط الشخصية اسم من 1 إلى 40 حرف.', 'name');
     next.name = clean;
   }
 
@@ -315,8 +315,8 @@ export async function deleteCharacter(id) {
   const text = String(id ?? '').trim().toLowerCase();
   const current = characterById(text);
 
-  if (!current) throw new WallpaperError('That character no longer exists.', 'unknown');
-  if (!ID_PATTERN.test(text)) throw new WallpaperError('That character cannot be deleted.', 'path');
+  if (!current) throw new WallpaperError('هذي الشخصية ما عادت موجودة.', 'unknown');
+  if (!ID_PATTERN.test(text)) throw new WallpaperError('ما نقدر نحذف هذي الشخصية.', 'path');
 
   const raw = readManifest();
   const characters = (Array.isArray(raw.characters) ? raw.characters : []).filter(

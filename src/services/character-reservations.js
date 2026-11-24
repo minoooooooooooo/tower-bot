@@ -131,7 +131,7 @@ export function reserveCharacter({ guildId, userId, userName = null, name }) {
   const settings = reservationSettings(guildId);
 
   if (!settings.enabled) {
-    return { ok: false, reason: 'disabled', message: 'Character reservations are closed right now.' };
+    return { ok: false, reason: 'disabled', message: 'حجز الشخصيات مقفّل حاليًا.' };
   }
 
   const existing = pendingReservationFor(guildId, userId);

@@ -704,7 +704,7 @@ export async function saveBackgroundArt(id, input) {
   const text = String(id ?? '').trim().toLowerCase();
 
   if (!isValidBackgroundId(text)) {
-    throw new WallpaperError('That background id is not valid.', 'path');
+    throw new WallpaperError('آيدي الخلفية مو صحيح.', 'path');
   }
 
   let image;
@@ -712,11 +712,11 @@ export async function saveBackgroundArt(id, input) {
   try {
     image = Buffer.isBuffer(input) ? await loadImage(input) : input;
   } catch {
-    throw new WallpaperError('That file could not be read as an image.', 'decode');
+    throw new WallpaperError('ما قدرنا نقرأ الملف كصورة.', 'decode');
   }
 
   if (!image?.width || !image?.height) {
-    throw new WallpaperError('That file could not be read as an image.', 'decode');
+    throw new WallpaperError('ما قدرنا نقرأ الملف كصورة.', 'decode');
   }
 
   if (
@@ -726,8 +726,8 @@ export async function saveBackgroundArt(id, input) {
     image.height > MAX_WALLPAPER_SIDE
   ) {
     throw new WallpaperError(
-      `The image must be between ${MIN_WALLPAPER_WIDTH}x${MIN_WALLPAPER_HEIGHT} and ` +
-        `${MAX_WALLPAPER_SIDE}x${MAX_WALLPAPER_SIDE} pixels.`,
+      `لازم تكون الصورة بين ${MIN_WALLPAPER_WIDTH}x${MIN_WALLPAPER_HEIGHT} و ` +
+        `${MAX_WALLPAPER_SIDE}x${MAX_WALLPAPER_SIDE} بكسل.`,
       'dimensions',
     );
   }
@@ -802,7 +802,7 @@ function safeSegment(value) {
   const text = String(value ?? '');
 
   if (!/^[0-9A-Za-z_-]+$/.test(text)) {
-    throw new WallpaperError('That member or server id cannot be used for a wallpaper path.', 'path');
+    throw new WallpaperError('آيدي العضو أو السيرفر ما يصلح لمسار الخلفية.', 'path');
   }
 
   return text;
@@ -893,12 +893,12 @@ export async function saveCustomWallpaper(
   { fetchImpl = globalThis.fetch } = {},
 ) {
   if (!attachment?.url) {
-    throw new WallpaperError('Attach an image to the command, or upload one in the same message.', 'missing');
+    throw new WallpaperError('أرفق الصورة مع الأمر أو ارفعها بنفس الرسالة.', 'missing');
   }
 
   if (Number(attachment.size) > MAX_WALLPAPER_BYTES) {
     throw new WallpaperError(
-      `That image is too large. The limit is ${Math.round(MAX_WALLPAPER_BYTES / (1024 * 1024))} MB.`,
+      `الصورة كبيرة. الحد ${Math.round(MAX_WALLPAPER_BYTES / (1024 * 1024))} ميجابايت.`,
       'too-large',
     );
   }
@@ -906,11 +906,11 @@ export async function saveCustomWallpaper(
   const type = contentTypeOf(attachment);
 
   if (!looksLikeImage(attachment, type)) {
-    throw new WallpaperError('Only PNG, JPEG, WebP or GIF images can be used as a wallpaper.', 'type');
+    throw new WallpaperError('الخلفيات تقبل PNG أو JPEG أو WebP أو GIF بس.', 'type');
   }
 
   if (typeof fetchImpl !== 'function') {
-    throw new WallpaperError('This bot cannot download attachments right now.', 'download');
+    throw new WallpaperError('البوت ما يقدر ينزّل المرفقات الحين.', 'download');
   }
 
   let response;
@@ -918,18 +918,18 @@ export async function saveCustomWallpaper(
   try {
     response = await fetchImpl(attachment.url, { signal: AbortSignal.timeout(20_000) });
   } catch {
-    throw new WallpaperError('Discord did not return the image in time. Try again.', 'download');
+    throw new WallpaperError('ديسكورد ما رجّع الصورة في الوقت. جرّب مرة ثانية.', 'download');
   }
 
   if (!response.ok) {
-    throw new WallpaperError('Discord did not return the image. Try uploading it again.', 'download');
+    throw new WallpaperError('ديسكورد ما رجّع الصورة. ارفعها مرة ثانية.', 'download');
   }
 
   const bytes = Buffer.from(await response.arrayBuffer());
 
   if (bytes.length > MAX_WALLPAPER_BYTES) {
     throw new WallpaperError(
-      `That image is too large. The limit is ${Math.round(MAX_WALLPAPER_BYTES / (1024 * 1024))} MB.`,
+      `الصورة كبيرة. الحد ${Math.round(MAX_WALLPAPER_BYTES / (1024 * 1024))} ميجابايت.`,
       'too-large',
     );
   }
@@ -939,7 +939,7 @@ export async function saveCustomWallpaper(
   try {
     image = await loadImage(bytes);
   } catch {
-    throw new WallpaperError('That file could not be read as an image.', 'decode');
+    throw new WallpaperError('ما قدرنا نقرأ الملف كصورة.', 'decode');
   }
 
   if (
@@ -949,8 +949,8 @@ export async function saveCustomWallpaper(
     image.height > MAX_WALLPAPER_SIDE
   ) {
     throw new WallpaperError(
-      `The image must be between ${MIN_WALLPAPER_WIDTH}x${MIN_WALLPAPER_HEIGHT} and ` +
-        `${MAX_WALLPAPER_SIDE}x${MAX_WALLPAPER_SIDE} pixels.`,
+      `لازم تكون الصورة بين ${MIN_WALLPAPER_WIDTH}x${MIN_WALLPAPER_HEIGHT} و ` +
+        `${MAX_WALLPAPER_SIDE}x${MAX_WALLPAPER_SIDE} بكسل.`,
       'dimensions',
     );
   }

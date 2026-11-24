@@ -80,8 +80,8 @@ function plainTheme(theme) {
 export async function createBackground({ name, price = 100, level = 1, image }) {
   const clean = cleanName(name);
 
-  if (!clean) throw new WallpaperError('Give the background a name (1–40 characters).', 'name');
-  if (!image) throw new WallpaperError('Attach an image for the background.', 'image');
+  if (!clean) throw new WallpaperError('عط الخلفية اسم من 1 إلى 40 حرف.', 'name');
+  if (!image) throw new WallpaperError('أرفق صورة للخلفية.', 'image');
 
   const id = uniqueId(clean);
   const saved = await saveBackgroundArt(id, image);
@@ -114,13 +114,13 @@ export async function createBackground({ name, price = 100, level = 1, image }) 
  */
 export async function updateBackground(id, { name, price, level, image }) {
   if (id === 'default' || id === 'custom') {
-    throw new WallpaperError('The Classic and custom cards cannot be edited here.', 'path');
+    throw new WallpaperError('ما نقدر نعدّل الخلفية الكلاسيكية أو المخصصة من هنا.', 'path');
   }
 
   const current = backgroundById(id);
 
-  if (!current) throw new WallpaperError('That background no longer exists.', 'unknown');
-  if (!isValidBackgroundId(id)) throw new WallpaperError('That background cannot be edited.', 'path');
+  if (!current) throw new WallpaperError('هذي الخلفية ما عادت موجودة.', 'unknown');
+  if (!isValidBackgroundId(id)) throw new WallpaperError('ما نقدر نعدّل هذي الخلفية.', 'path');
 
   let saved = null;
 
@@ -138,7 +138,7 @@ export async function updateBackground(id, { name, price, level, image }) {
 
   if (name !== undefined) {
     const clean = cleanName(name);
-    if (!clean) throw new WallpaperError('Give the background a name (1–40 characters).', 'name');
+    if (!clean) throw new WallpaperError('عط الخلفية اسم من 1 إلى 40 حرف.', 'name');
     entry.name = clean;
   }
 
@@ -163,13 +163,13 @@ export async function updateBackground(id, { name, price, level, image }) {
  */
 export async function deleteBackground(id) {
   if (id === 'default' || id === 'custom') {
-    throw new WallpaperError('The Classic and custom cards cannot be deleted.', 'path');
+    throw new WallpaperError('ما نقدر نحذف الخلفية الكلاسيكية أو المخصصة.', 'path');
   }
 
   const current = backgroundById(id);
 
-  if (!current) throw new WallpaperError('That background no longer exists.', 'unknown');
-  if (!isValidBackgroundId(id)) throw new WallpaperError('That background cannot be deleted.', 'path');
+  if (!current) throw new WallpaperError('هذي الخلفية ما عادت موجودة.', 'unknown');
+  if (!isValidBackgroundId(id)) throw new WallpaperError('ما نقدر نحذف هذي الخلفية.', 'path');
 
   const raw = readBackgroundOverrides();
   const backgrounds = (Array.isArray(raw.backgrounds) ? raw.backgrounds : []).filter(

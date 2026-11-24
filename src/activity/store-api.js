@@ -339,7 +339,7 @@ export async function storefront(client, guild, member, user) {
 
   const custom = {
     id: CUSTOM_ID,
-    name: 'Custom background',
+    name: 'خلفية مخصصة',
     level: CUSTOM_LEVEL,
     price: 0,
     rarity: 'epic',
@@ -424,7 +424,7 @@ export async function storefront(client, guild, member, user) {
 function parseImage(
   raw,
   name,
-  { maxBytes = MAX_EMOJI_BYTES, limitLabel = '256 KB', defaultName = 'emoji.png' } = {},
+  { maxBytes = MAX_EMOJI_BYTES, limitLabel = '256 كيلوبايت', defaultName = 'emoji.png' } = {},
 ) {
   const text = String(raw ?? '').trim();
 
@@ -433,13 +433,13 @@ function parseImage(
   const match = /^data:([^;,]+);base64,(.+)$/is.exec(text);
 
   if (!match) {
-    return { error: { reason: 'image', message: 'The image could not be read.' } };
+    return { error: { reason: 'image', message: 'ما قدرنا نقرأ الصورة.' } };
   }
 
   const contentType = match[1].toLowerCase();
 
   if (!IMAGE_TYPES.has(contentType)) {
-    return { error: { reason: 'image', message: 'Use a PNG, JPEG, WebP or GIF image.' } };
+    return { error: { reason: 'image', message: 'استخدم صورة PNG أو JPEG أو WebP أو GIF.' } };
   }
 
   let buffer;
@@ -447,18 +447,18 @@ function parseImage(
   try {
     buffer = Buffer.from(match[2], 'base64');
   } catch {
-    return { error: { reason: 'image', message: 'The image could not be read.' } };
+    return { error: { reason: 'image', message: 'ما قدرنا نقرأ الصورة.' } };
   }
 
   if (buffer.length === 0) {
-    return { error: { reason: 'image', message: 'The image is empty.' } };
+    return { error: { reason: 'image', message: 'الصورة فاضية.' } };
   }
 
   if (buffer.length > maxBytes) {
     return {
       error: {
         reason: 'size',
-        message: `The image is ${Math.ceil(buffer.length / 1024)} KB; the limit is ${limitLabel}.`,
+        message: `حجم الصورة ${Math.ceil(buffer.length / 1024)} كيلوبايت، والحد ${limitLabel}.`,
       },
     };
   }
@@ -489,11 +489,11 @@ export async function buyFromActivity({
   const context = await guildContext(client, guildId, user.id);
 
   if (context.error === 'guild') {
-    return { ok: false, reason: 'guild', message: 'The bot is not in this server.' };
+    return { ok: false, reason: 'guild', message: 'البوت مو موجود في هذا السيرفر.' };
   }
 
   if (context.error === 'member') {
-    return { ok: false, reason: 'member', message: 'You are not a member of this server.' };
+    return { ok: false, reason: 'member', message: 'إنت مو عضو في هذا السيرفر.' };
   }
 
   const parsed = parseImage(image, imageName);
@@ -524,24 +524,24 @@ export async function buyFromActivity({
 
 export async function equipFromActivity(client, guildId, userId, backgroundId) {
   const guild = client.guilds.cache.get(String(guildId ?? ''));
-  if (!guild) return { ok: false, reason: 'guild', message: 'The bot is not in this server.' };
+  if (!guild) return { ok: false, reason: 'guild', message: 'البوت مو موجود في هذا السيرفر.' };
 
   if (String(backgroundId ?? '') === CUSTOM_ID) {
     if (!hasCustomWallpaper(guildId, userId)) {
       return {
         ok: false,
         reason: 'custom',
-        message: `Upload a custom wallpaper first (level ${CUSTOM_LEVEL}+, or Manage Server).`,
+        message: `ارفع خلفية مخصصة أول (المستوى ${CUSTOM_LEVEL} أو أعلى، أو إدارة السيرفر).`,
       };
     }
 
     setProfileBackground(guildId, userId, CUSTOM_ID);
-    return { ok: true, backgroundId: CUSTOM_ID, name: 'Custom background' };
+    return { ok: true, backgroundId: CUSTOM_ID, name: 'خلفية مخصصة' };
   }
 
   const background = backgroundById(String(backgroundId ?? ''));
 
-  if (!background) return { ok: false, reason: 'unknown', message: 'Unknown background.' };
+  if (!background) return { ok: false, reason: 'unknown', message: 'الخلفية مو معروفة.' };
 
   const owned = ownedBackgroundIds(guildId, userId);
   // Re-check with the same merged level the storefront displayed, otherwise a
@@ -556,8 +556,8 @@ export async function equipFromActivity(client, guildId, userId, backgroundId) {
       reason: 'locked',
       message:
         background.price > 0
-          ? `Buy **${background.name}** in the store first.`
-          : `**${background.name}** unlocks at level ${background.level}.`,
+          ? `اشترِ **${background.name}** من المتجر أول.`
+          : `**${background.name}** تنفتح عند المستوى ${background.level}.`,
       level: background.level,
       price: background.price,
     };
@@ -573,11 +573,11 @@ export async function saveCustomFromActivity({ client, guildId, user, image, ima
   const context = await guildContext(client, guildId, user.id);
 
   if (context.error === 'guild') {
-    return { ok: false, reason: 'guild', message: 'The bot is not in this server.' };
+    return { ok: false, reason: 'guild', message: 'البوت مو موجود في هذا السيرفر.' };
   }
 
   if (context.error === 'member') {
-    return { ok: false, reason: 'member', message: 'You are not a member of this server.' };
+    return { ok: false, reason: 'member', message: 'إنت مو عضو في هذا السيرفر.' };
   }
 
   const manager = Boolean(context.member.permissions?.has?.(PermissionFlagsBits.ManageGuild));
@@ -589,21 +589,21 @@ export async function saveCustomFromActivity({ client, guildId, user, image, ima
     return {
       ok: false,
       reason: 'level',
-      message: `Custom wallpapers unlock at level ${CUSTOM_LEVEL}. You are level ${level}.`,
+      message: `الخلفيات المخصصة تنفتح عند المستوى ${CUSTOM_LEVEL}. إنت الحين المستوى ${level}.`,
       level: CUSTOM_LEVEL,
     };
   }
 
   const parsed = parseImage(image, imageName, {
     maxBytes: MAX_WALLPAPER_BYTES,
-    limitLabel: '10 MB',
+    limitLabel: '10 ميجابايت',
     defaultName: 'wallpaper.jpg',
   });
 
   if (parsed.error) return { ok: false, ...parsed.error };
 
   if (!parsed.attachment) {
-    return { ok: false, reason: 'image', message: 'Choose a PNG, JPEG, WebP or GIF image.' };
+    return { ok: false, reason: 'image', message: 'اختر صورة PNG أو JPEG أو WebP أو GIF.' };
   }
 
   try {
@@ -630,7 +630,7 @@ export async function saveCustomFromActivity({ client, guildId, user, image, ima
     return {
       ok: false,
       reason: 'server',
-      message: 'The image could not be stored. Try again in a moment.',
+      message: 'ما قدرنا نخزّن الصورة. جرّب بعد لحظة.',
     };
   }
 }
@@ -651,25 +651,25 @@ export async function adminBackground({
   const context = await guildContext(client, guildId, user.id);
 
   if (context.error === 'guild') {
-    return { ok: false, reason: 'guild', message: 'The bot is not in this server.' };
+    return { ok: false, reason: 'guild', message: 'البوت مو موجود في هذا السيرفر.' };
   }
 
   if (context.error === 'member') {
-    return { ok: false, reason: 'member', message: 'You are not a member of this server.' };
+    return { ok: false, reason: 'member', message: 'إنت مو عضو في هذا السيرفر.' };
   }
 
   if (!context.member.permissions?.has?.(PermissionFlagsBits.ManageGuild)) {
     return {
       ok: false,
       reason: 'permission',
-      message: 'You need **Manage Server** to change the shop.',
+      message: 'تحتاج **إدارة السيرفر** عشان تعدّل المتجر.',
     };
   }
 
   const parsed = image
     ? parseImage(image, imageName, {
         maxBytes: MAX_WALLPAPER_BYTES,
-        limitLabel: '10 MB',
+        limitLabel: '10 ميجابايت',
         defaultName: 'background.jpg',
       })
     : { error: null, attachment: null };
@@ -720,7 +720,7 @@ export async function adminBackground({
       return { ok: true, ...deleted };
     }
 
-    return { ok: false, reason: 'action', message: 'Unknown background action.' };
+    return { ok: false, reason: 'action', message: 'إجراء الخلفية مو معروف.' };
   } catch (error) {
     if (error instanceof WallpaperError) {
       return { ok: false, reason: error.code, message: error.message };
@@ -730,7 +730,7 @@ export async function adminBackground({
     return {
       ok: false,
       reason: 'server',
-      message: 'The background could not be saved. Try again.',
+      message: 'ما انحفظت الخلفية. جرّب مرة ثانية.',
     };
   }
 }
@@ -742,11 +742,11 @@ export async function buyCharacterFromActivity({ client, guildId, user, characte
   const context = await guildContext(client, guildId, user.id);
 
   if (context.error === 'guild') {
-    return { ok: false, reason: 'guild', message: 'The bot is not in this server.' };
+    return { ok: false, reason: 'guild', message: 'البوت مو موجود في هذا السيرفر.' };
   }
 
   if (context.error === 'member') {
-    return { ok: false, reason: 'member', message: 'You are not a member of this server.' };
+    return { ok: false, reason: 'member', message: 'إنت مو عضو في هذا السيرفر.' };
   }
 
   return buyCharacter({
@@ -761,11 +761,11 @@ export async function reserveFromActivity({ client, guildId, user, action = 'cre
   const context = await guildContext(client, guildId, user.id);
 
   if (context.error === 'guild') {
-    return { ok: false, reason: 'guild', message: 'The bot is not in this server.' };
+    return { ok: false, reason: 'guild', message: 'البوت مو موجود في هذا السيرفر.' };
   }
 
   if (context.error === 'member') {
-    return { ok: false, reason: 'member', message: 'You are not a member of this server.' };
+    return { ok: false, reason: 'member', message: 'إنت مو عضو في هذا السيرفر.' };
   }
 
   if (action === 'update') {
@@ -778,7 +778,7 @@ export async function reserveFromActivity({ client, guildId, user, action = 'cre
   }
 
   if (action !== 'create') {
-    return { ok: false, reason: 'action', message: 'Unknown reservation action.' };
+    return { ok: false, reason: 'action', message: 'إجراء الحجز مو معروف.' };
   }
 
   return reserveCharacter({
@@ -804,25 +804,25 @@ export async function adminCharacter({
   const context = await guildContext(client, guildId, user.id);
 
   if (context.error === 'guild') {
-    return { ok: false, reason: 'guild', message: 'The bot is not in this server.' };
+    return { ok: false, reason: 'guild', message: 'البوت مو موجود في هذا السيرفر.' };
   }
 
   if (context.error === 'member') {
-    return { ok: false, reason: 'member', message: 'You are not a member of this server.' };
+    return { ok: false, reason: 'member', message: 'إنت مو عضو في هذا السيرفر.' };
   }
 
   if (!context.member.permissions?.has?.(PermissionFlagsBits.ManageGuild)) {
     return {
       ok: false,
       reason: 'permission',
-      message: 'You need **Manage Server** to change the shop.',
+      message: 'تحتاج **إدارة السيرفر** عشان تعدّل المتجر.',
     };
   }
 
   const parsed = image
     ? parseImage(image, imageName, {
         maxBytes: MAX_WALLPAPER_BYTES,
-        limitLabel: '10 MB',
+        limitLabel: '10 ميجابايت',
         defaultName: 'character.jpg',
       })
     : { error: null, attachment: null };
@@ -865,7 +865,7 @@ export async function adminCharacter({
       return { ok: true, ...deleted };
     }
 
-    return { ok: false, reason: 'action', message: 'Unknown character action.' };
+    return { ok: false, reason: 'action', message: 'إجراء الشخصية مو معروف.' };
   } catch (error) {
     if (error instanceof WallpaperError) {
       return { ok: false, reason: error.code, message: error.message };
@@ -875,7 +875,7 @@ export async function adminCharacter({
     return {
       ok: false,
       reason: 'server',
-      message: 'The character could not be saved. Try again.',
+      message: 'ما انحفظت الشخصية. جرّب مرة ثانية.',
     };
   }
 }
@@ -885,18 +885,18 @@ export async function adminReserve({ client, guildId, user, enabled, price }) {
   const context = await guildContext(client, guildId, user.id);
 
   if (context.error === 'guild') {
-    return { ok: false, reason: 'guild', message: 'The bot is not in this server.' };
+    return { ok: false, reason: 'guild', message: 'البوت مو موجود في هذا السيرفر.' };
   }
 
   if (context.error === 'member') {
-    return { ok: false, reason: 'member', message: 'You are not a member of this server.' };
+    return { ok: false, reason: 'member', message: 'إنت مو عضو في هذا السيرفر.' };
   }
 
   if (!context.member.permissions?.has?.(PermissionFlagsBits.ManageGuild)) {
     return {
       ok: false,
       reason: 'permission',
-      message: 'You need **Manage Server** to change the shop.',
+      message: 'تحتاج **إدارة السيرفر** عشان تعدّل المتجر.',
     };
   }
 
@@ -909,7 +909,7 @@ export async function adminReserve({ client, guildId, user, enabled, price }) {
       return {
         ok: false,
         reason: 'price',
-        message: `The price must be a whole number from 0 to ${MAX_RESERVE_PRICE}.`,
+        message: `السعر لازم يكون رقم صحيح من 0 إلى ${MAX_RESERVE_PRICE}.`,
       };
     }
   }
