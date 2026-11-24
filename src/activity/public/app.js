@@ -23,40 +23,52 @@ const state = {
 const CUSTOM_ID = 'custom';
 
 const TABS = [
-  { id: 'all', label: 'All' },
-  { id: 'xp', label: 'XP' },
-  { id: 'behavior', label: 'Behaviour' },
-  { id: 'title', label: 'Titles' },
-  { id: 'role', label: 'Roles' },
-  { id: 'emoji', label: 'Emoji' },
-  { id: 'background', label: 'Backgrounds' },
-  { id: 'character', label: 'Characters' },
+  { id: 'all', label: 'الكل' },
+  { id: 'xp', label: 'الخبرة' },
+  { id: 'behavior', label: 'السلوك' },
+  { id: 'title', label: 'الألقاب' },
+  { id: 'role', label: 'الرتب' },
+  { id: 'emoji', label: 'الإيموجي' },
+  { id: 'background', label: 'الخلفيات' },
+  { id: 'character', label: 'الشخصيات' },
 ];
 
+// The server sends rarity as a key; the card and the sheet show this label.
+const RARITIES = {
+  common: 'عادي',
+  rare: 'نادر',
+  epic: 'ملحمي',
+  legendary: 'أسطوري',
+};
+
+function rarityLabel(rarity) {
+  return RARITIES[rarity] ?? RARITIES.common;
+}
+
 const REASONS = {
-  unknown: 'That item no longer exists.',
-  disabled: 'This item is turned off in this server.',
-  unpriced: 'This item has no price yet.',
-  limit: 'You already own the maximum of that item.',
-  funds: 'Not enough coins.',
-  level: 'You are not high enough level for that yet.',
-  custom: 'Upload a custom wallpaper first.',
-  action: 'Unknown action.',
-  name: 'Check the name you entered.',
-  color: 'That colour is not valid.',
-  image: 'Choose a PNG, JPEG, WebP or GIF image.',
-  size: 'The image is too large (256 KB max).',
-  dimensions: 'That image is too small or too large.',
-  price: 'The price must be a whole number of coins.',
-  pending: 'You already have a pending reservation.',
-  slots: 'The server has no free emoji slots.',
-  permission: 'The bot is missing a permission for that.',
-  delivery: 'Discord refused it, so your coins were refunded.',
-  guild: 'The bot is not in this server.',
-  member: 'You are not a member of this server.',
-  database: 'Nothing was charged. Try again.',
-  auth: 'Your session expired. Reopen the store.',
-  server: 'The store had a problem. Try again.',
+  unknown: 'هذا العنصر ما عاد موجود.',
+  disabled: 'هذا العنصر مقفّل في هذا السيرفر.',
+  unpriced: 'هذا العنصر ما له سعر إلى الآن.',
+  limit: 'وصلت الحد الأقصى من هذا العنصر.',
+  funds: 'كوينزك ما تكفي.',
+  level: 'مستواك ما وصل لهذا بعد.',
+  custom: 'ارفع خلفية مخصصة أول.',
+  action: 'طلب غير معروف.',
+  name: 'تأكد من الاسم اللي كتبته.',
+  color: 'هذا اللون مو صحيح.',
+  image: 'اختر صورة PNG أو JPEG أو WebP أو GIF.',
+  size: 'الصورة كبيرة (الحد 256 كيلوبايت).',
+  dimensions: 'أبعاد الصورة صغيرة أو كبيرة زيادة.',
+  price: 'السعر لازم يكون رقم صحيح من الكوينز.',
+  pending: 'عندك حجز معلّق أصلاً.',
+  slots: 'ما فيه أماكن فاضية للإيموجي في السيرفر.',
+  permission: 'البوت ما عنده الصلاحية المطلوبة.',
+  delivery: 'ديسكورد رفض العملية، ورجّعنا كوينزك.',
+  guild: 'البوت مو في هذا السيرفر.',
+  member: 'أنت مو عضو في هذا السيرفر.',
+  database: 'ما انخصم شي. جرّب مرة ثانية.',
+  auth: 'جلستك انتهت. افتح المتجر من جديد.',
+  server: 'صار خطأ في المتجر. جرّب مرة ثانية.',
 };
 
 /* ── Small helpers ────────────────────────────────────────────────────────── */
@@ -146,13 +158,13 @@ async function api(path, { method = 'GET', body, auth = true } = {}) {
       body: body === undefined ? undefined : JSON.stringify(body),
     });
   } catch {
-    throw new Error('Could not reach the store. Check your connection.');
+    throw new Error('ما وصلنا للمتجر. تأكد من اتصالك.');
   }
 
   const payload = await response.json().catch(() => ({}));
 
   if (!response.ok && !payload.reason) {
-    throw new Error(payload.message || `Request failed (${response.status}).`);
+    throw new Error(payload.message || `فشل الطلب (${response.status}).`);
   }
 
   return payload;
@@ -172,17 +184,17 @@ async function boot() {
       return;
     }
 
-    setBoot('Connecting to Discord…');
+    setBoot('نتصل بديسكورد…');
     const config = await api('/api/config', { auth: false });
 
     if (!config.enabled) {
-      throw new Error('The store activity is not enabled for this bot yet.');
+      throw new Error('متجر الأكتفتي مو مفعّل لهذا البوت.');
     }
 
     const sdk = new DiscordSDK(config.client_id);
     await sdk.ready();
 
-    setBoot('Checking your account…');
+    setBoot('نتأكد من حسابك…');
     const { code } = await sdk.commands.authorize({
       client_id: config.client_id,
       response_type: 'code',
@@ -197,7 +209,7 @@ async function boot() {
       body: { code },
     });
 
-    if (!token.access_token) throw new Error('Discord did not return a session.');
+    if (!token.access_token) throw new Error('ديسكورد ما رجّع جلسة.');
 
     await sdk.commands.authenticate({ access_token: token.access_token });
 
@@ -205,21 +217,21 @@ async function boot() {
     state.token = token.access_token;
     state.guildId = sdk.guildId;
 
-    if (!state.guildId) throw new Error('Open the store from a server, not a direct message.');
+    if (!state.guildId) throw new Error('افتح المتجر من داخل سيرفر، مو من الخاص.');
 
-    setBoot('Loading the store…');
+    setBoot('نحمّل المتجر…');
     await loadStore();
     showApp();
   } catch (error) {
     console.error(error);
-    showFatal(error?.message || 'The store could not open.');
+    showFatal(error?.message || 'ما قدرنا نفتح المتجر.');
   }
 }
 
 async function loadStore() {
   const response = await api(`/api/store?guildId=${encodeURIComponent(state.guildId)}`);
 
-  if (!response.ok) throw new Error(response.message || 'Could not load the store.');
+  if (!response.ok) throw new Error(response.message || 'ما قدرنا نحمّل المتجر.');
 
   state.data = response.data;
   render();
@@ -237,13 +249,13 @@ function render() {
   if (data.guild.icon) {
     icon.innerHTML = `<img src="${escapeHtml(data.guild.icon)}" alt="">`;
   } else {
-    icon.textContent = (data.guild.name || 'S').slice(0, 1).toUpperCase();
+    icon.textContent = (data.guild.name || 'م').slice(0, 1).toUpperCase();
   }
 
   $('#balance').textContent = format(data.balance);
   $('#avatar').src = data.user.avatar;
   $('#user-name').textContent = data.user.name;
-  $('#user-level').textContent = `Level ${format(data.level)}`;
+  $('#user-level').textContent = `المستوى ${format(data.level)}`;
 
   renderTabs();
   renderGrid();
@@ -317,7 +329,7 @@ function renderGrid() {
   if (list.length === 0) {
     grid.innerHTML = '';
     empty.hidden = false;
-    empty.textContent = 'Nothing for sale in this category.';
+    empty.textContent = 'ما فيه شي للبيع في هذا القسم.';
     return;
   }
 
@@ -327,16 +339,16 @@ function renderGrid() {
 }
 
 function itemMeta(item) {
-  if (item.stackable) return 'per point';
-  if (item.atLimit) return 'limit reached';
+  if (item.stackable) return 'لكل نقطة';
+  if (item.atLimit) return 'وصلت الحد';
   if (item.amount > 1) return `+${format(item.amount)}`;
-  if (item.needs.includes('image')) return 'upload included';
+  if (item.needs.includes('image')) return 'مع رفع صورة';
   return '';
 }
 
 function itemCard(item) {
   const badge = item.atLimit
-    ? '<span class="badge">Max</span>'
+    ? '<span class="badge">الحد</span>'
     : item.ownedCount > 0
       ? `<span class="badge owned">×${format(item.ownedCount)}</span>`
       : '';
@@ -344,7 +356,7 @@ function itemCard(item) {
   return `<button class="card rarity-${item.rarity}" data-item="${escapeHtml(item.key)}">
     <div class="art">
       ${item.art ? `<img src="${escapeHtml(item.art)}" alt="" loading="lazy" decoding="async">` : glyph(item.type)}
-      <span class="rarity">${item.rarity}</span>
+      <span class="rarity">${rarityLabel(item.rarity)}</span>
       ${badge}
     </div>
     <div class="card-body">
@@ -617,7 +629,7 @@ function openSheet(item, kind) {
   sheetEls.art.classList.toggle('portrait', kind === 'character');
   sheetEls.art.style.setProperty('--rarity', `var(--${item.rarity ?? 'common'})`);
   sheetEls.art.innerHTML = item.art ? `<img src="${escapeHtml(item.art)}" alt="">` : glyph(item.type ?? 'background');
-  sheetEls.rarity.textContent = item.rarity ?? 'common';
+  sheetEls.rarity.textContent = rarityLabel(item.rarity);
   sheetEls.rarity.style.color = `var(--${item.rarity ?? 'common'})`;
   sheetEls.title.textContent = item.name;
   sheetEls.summary.textContent = item.summary ?? '';
@@ -656,11 +668,11 @@ function balanceNote(total) {
   const balance = state.data.balance;
 
   if (total <= balance) {
-    setNote(`Balance: ${format(balance)} coins`);
+    setNote(`رصيدك: ${format(balance)} كوينز`);
     return false;
   }
 
-  setNote(`Need ${format(total - balance)} more coins.`, 'error');
+  setNote(`تحتاج ${format(total - balance)} كوينز زيادة.`, 'error');
   return true;
 }
 
@@ -675,7 +687,7 @@ function openItemSheet(item) {
   const refresh = () => {
     total = item.price * quantity;
     const short = balanceNote(total);
-    const label = quantity > 1 ? `Buy ${quantity} · ${format(total)} coins` : `Buy · ${format(total)} coins`;
+    const label = quantity > 1 ? `شراء ${quantity} · ${format(total)} كوينز` : `شراء · ${format(total)} كوينز`;
 
     setAction(label, {
       disabled: state.busy || item.atLimit || short,
@@ -698,9 +710,9 @@ function openItemSheet(item) {
 
   if (item.stackable) {
     sheetEls.controls.innerHTML = `<div class="stepper">
-      <button type="button" data-step="-1" aria-label="Fewer">−</button>
-      <div class="stepper-value"><strong id="qty">1</strong><small>${format(item.price)} each</small></div>
-      <button type="button" data-step="1" aria-label="More">+</button>
+      <button type="button" data-step="-1" aria-label="أقل">−</button>
+      <div class="stepper-value"><strong id="qty">1</strong><small>كل وحدة ${format(item.price)}</small></div>
+      <button type="button" data-step="1" aria-label="أكثر">+</button>
     </div>`;
 
     const qtyEl = $('#qty');
@@ -718,8 +730,8 @@ function openItemSheet(item) {
   if (item.type === 'title') {
     sheetEls.controls.insertAdjacentHTML(
       'beforeend',
-      `<div class="field"><label for="title-input">Title</label>
-        <input id="title-input" type="text" maxlength="32" placeholder="The Keeper" autocomplete="off"></div>`,
+      `<div class="field"><label for="title-input">العنوان</label>
+        <input id="title-input" type="text" maxlength="32" placeholder="حارس البرج" autocomplete="off"></div>`,
     );
     $('#title-input').addEventListener('input', refresh);
   }
@@ -727,11 +739,11 @@ function openItemSheet(item) {
   if (item.type === 'role') {
     sheetEls.controls.insertAdjacentHTML(
       'beforeend',
-      `<div class="field"><label for="role-name">Role name</label>
-        <input id="role-name" type="text" maxlength="32" placeholder="Sunset" autocomplete="off"></div>
-      <div class="field"><label for="role-color">Colour</label>
+      `<div class="field"><label for="role-name">اسم الرتبة</label>
+        <input id="role-name" type="text" maxlength="32" placeholder="الغروب" autocomplete="off"></div>
+      <div class="field"><label for="role-color">اللون</label>
         <div class="color-row">
-          <input id="role-color" type="color" value="#ff8800" aria-label="Pick a colour">
+          <input id="role-color" type="color" value="#ff8800" aria-label="اختر لون">
           <input id="role-color-text" type="text" maxlength="32" value="#ff8800" autocomplete="off">
         </div></div>`,
     );
@@ -753,11 +765,11 @@ function openItemSheet(item) {
   if (item.type === 'emoji') {
     sheetEls.controls.insertAdjacentHTML(
       'beforeend',
-      `<div class="field"><label for="emoji-name">Emoji name</label>
+      `<div class="field"><label for="emoji-name">اسم الإيموجي</label>
         <input id="emoji-name" type="text" maxlength="32" placeholder="tower_star" autocomplete="off"></div>
-      <div class="field"><label for="emoji-file">Image</label>
+      <div class="field"><label for="emoji-file">الصورة</label>
         <input id="emoji-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif">
-        <span id="image-note" class="card-meta">PNG, JPEG, WebP or GIF · 256 KB max</span></div>`,
+        <span id="image-note" class="card-meta">PNG أو JPEG أو WebP أو GIF · الحد 256 كيلوبايت</span></div>`,
     );
 
     $('#emoji-name').addEventListener('input', refresh);
@@ -773,13 +785,13 @@ async function readImage(file) {
   const note = $('#image-note');
 
   if (!/^image\/(png|jpe?g|webp|gif)$/i.test(file.type)) {
-    note.textContent = 'That file type is not supported.';
+    note.textContent = 'هذا النوع من الملفات مو مدعوم.';
     state.image = null;
     return;
   }
 
   if (file.size > 256 * 1024) {
-    note.textContent = `This file is ${Math.ceil(file.size / 1024)} KB; the limit is 256 KB.`;
+    note.textContent = `حجم الملف ${Math.ceil(file.size / 1024)} كيلوبايت، والحد 256 كيلوبايت.`;
     state.image = null;
     return;
   }
@@ -787,31 +799,31 @@ async function readImage(file) {
   const dataUrl = await new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(new Error('Could not read the image.'));
+    reader.onerror = () => reject(new Error('تعذّر قراءة الصورة.'));
     reader.readAsDataURL(file);
   }).catch(() => null);
 
   if (!dataUrl) {
-    note.textContent = 'Could not read the image.';
+    note.textContent = 'تعذّر قراءة الصورة.';
     return;
   }
 
   state.image = dataUrl;
   state.imageName = file.name;
-  note.textContent = `${file.name} · ${Math.ceil(file.size / 1024)} KB`;
-  setNote('Image ready.');
-  toast('Image ready.', 'good');
+  note.textContent = `${file.name} · ${Math.ceil(file.size / 1024)} كيلوبايت`;
+  setNote('الصورة جاهزة.');
+  toast('الصورة جاهزة.', 'good');
 }
 
 async function buyItem(item, values) {
   if (state.demo) {
-    toast('Demo mode — open the store in Discord to buy.', 'error');
+    toast('وضع العرض — افتح المتجر من ديسكورد تشتري.', 'error');
     return;
   }
 
   if (state.busy) return;
   state.busy = true;
-  setAction('Working…', { disabled: true });
+  setAction('ننفّذ…', { disabled: true });
 
   try {
     const body = {
@@ -830,14 +842,14 @@ async function buyItem(item, values) {
     const result = await api('/api/buy', { method: 'POST', body });
 
     if (!result.ok) {
-      setNote(result.message || REASONS[result.reason] || 'The purchase did not go through.', 'error');
+      setNote(result.message || REASONS[result.reason] || 'ما تمت عملية الشراء.', 'error');
       state.busy = false;
       return;
     }
 
     state.data.balance = result.balance ?? state.data.balance;
     closeSheet();
-    toast('Purchase complete.', 'good');
+    toast('تم الشراء.', 'good');
     await loadStore();
   } catch (error) {
     setNote(error.message, 'error');
