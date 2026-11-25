@@ -326,8 +326,10 @@ buttons when it ends. It is wired into the list embeds that can outgrow one
 message — `help`, `store` (browse and owned), `background`, `coin-log`,
 `exile-list`, `alias list` and `store-config list` — at ten rows per page
 (`coin-log` keeps its eight). Prefix replies get the same buttons as slash
-replies, and the store keeps its launch button below the pager. `top`, `rank`
-and `topemojis` keep their existing local pagers.
+replies, and the store keeps its launch button below the pager. The collector
+rebuilds the button row on every click, so the arrows never freeze at the page
+the list opened on. `top`, `rank` and `topemojis` keep their existing local
+pagers.
 
 ## What exists
 
@@ -1148,7 +1150,7 @@ Behavior that must be preserved:
 - Arabic batch 7 (Store Activity UI) checked in the browser against `?demo` on a local static preview, pass by pass, by reading the live DOM instead of trusting a screenshot (the harness here cannot capture a hidden window): `dir=rtl`/`lang=ar`, no console errors and no horizontal overflow at 1280 px, the mirrored top bar/tabs/cards, every sheet title, summary, action button, field label, placeholder, badge and note, the delete-armed state (`اضغط مرة ثانية للحذف`), the demo-guard toast (`وضع العرض — افتح المتجر من ديسكورد…`), and the reservation list date rendering `23 نوفمبر 2026`. A string scan over `app.js`, `index.html`, `styles.css`, `store-api.js`, `server.js`, `background-admin.js`, `character-store.js`, `profile-backgrounds.js` and `character-reservations.js` leaves only logs, SQL, DOM selectors, MIME types, CSS custom properties and internal `Error` strings that the HTTP layer replaces before they reach the browser.
 - Arabic batch 8 sweep: a scan of `src/**/*.js` for English sentences in string literals now returns only slash/prefix command examples (kept English by request), console logs, code comments, SQL, AI prompts, and font names — every English string that reaches Discord or the report export is gone. The mute-role rename is adoption-safe: `isMuteRoleName` accepts both `مكتوم` and the old `Muted`, so a server that already has the English role keeps using it instead of getting a second one.
 - Role hierarchy test with fake guild/role/member objects (21 checks, `roleProblem`/`memberProblem` exported for it): a role below the invoker's top role is allowed while one at or above it is refused with the role named, a role above the bot is still refused first, the guild owner bypasses both checks but not the bot's ceiling, a member below the invoker is allowed while a peer or higher member is refused with their name, self is allowed, the bot itself follows the same rule (owner excepted), managed and `@everyone` roles stay refused, and the no-actor calls behave exactly as before.
-- Pager harness (17 checks) over `src/lib/pager.js`: empty/short/exact/remainder chunking, the five button ids and Arabic labels, disabled first/last edges, the page-counter label, and `withPager` keeping extra rows (the store's launch button) below the pager. `node --check` and the fake-token boot (53 commands / 8 events) pass with the seven commands wired in.
+- Pager harness (17 checks) over `src/lib/pager.js`: empty/short/exact/remainder chunking, the five button ids and Arabic labels, disabled first/last edges, the page-counter label, and `withPager` keeping extra rows (the store's launch button) below the pager. A second 12-check flow harness clicks `last`/`prev`/`first` through a fake collector and confirms the counter and disabled states follow the page (the bug that froze them on page 1), that the disabled counter click is ignored, and that the collector strips the buttons when it ends. `node --check` and the fake-token boot (53 commands / 8 events) pass with the seven commands wired in.
 
 ## Useful context
 

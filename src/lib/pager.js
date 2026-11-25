@@ -115,6 +115,14 @@ export async function attachPager({ ctx, message, id, pages, page = 1, render })
       return;
     }
 
+    // Most commands only rebuild the embed. Rebuild the buttons here too, or
+    // the first/last/previous/next states stay frozen at the page they opened
+    // on. A render that already supplied components (the store keeps its
+    // launch button) keeps them.
+    if (!payload.components) {
+      payload.components = [pagerRow(id, state.page, pages)];
+    }
+
     await interaction.update(payload).catch((error) => {
       logger.warn(`Could not update the "${id}" page: ${error.message}`);
     });
