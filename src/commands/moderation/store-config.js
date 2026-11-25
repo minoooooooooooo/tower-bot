@@ -7,6 +7,7 @@ import {
 import { config } from '../../config.js';
 import { formatNumber } from '../../lib/activity-format.js';
 import { COLORS, embed } from '../../lib/embeds.js';
+import { PAGER_PAGE_SIZE, attachPager, pagerMessage, withPager } from '../../lib/pager.js';
 import { errorReply, okReply, warnReply } from '../../lib/replies.js';
 import { resolveUser } from '../../lib/resolve.js';
 import {
@@ -71,18 +72,21 @@ function itemOf(ctx) {
   return prefixRest(ctx)[0] ?? null;
 }
 
-function listEmbed(ctx) {
+function listPage(ctx, page, pages) {
   const items = storeCatalog(ctx.guildId);
   const sales = storeSales(ctx.guildId);
   const plain = items.filter((item) => item.type !== 'background');
   const designs = items.filter((item) => item.type === 'background');
+  const ordered = [...plain, ...designs];
+  const start = (page - 1) * PAGER_PAGE_SIZE;
+  const slice = ordered.slice(start, start + PAGER_PAGE_SIZE);
 
   const priceText = (item) =>
     item.price === item.defaultPrice
       ? `**${formatNumber(item.price)}** كوينز`
       : `**${formatNumber(item.price)}** كوينز (الأساسي ${formatNumber(item.defaultPrice)})`;
 
-  const fields = plain.map((item) => {
+  const plainField = (item) => {
     const sold = sales.get(item.key);
 
     return {
@@ -92,50 +96,70 @@ function listEmbed(ctx) {
         ` · ${sold ? `${sold.count} مبيعة (${formatNumber(sold.coins)} كوينز)` : 'ما انباع'}`,
       inline: false,
     };
-  });
+  };
 
-  if (designs.length === 0) {
+  const designLine = (item) => {
+    const sold = sales.get(item.key);
+
+    return (
+      `\`${item.key}\` · ${formatNumber(item.price)}` +
+      `${item.enabled ? '' : ' · **مقفّل**'}` +
+      `${sold ? ` · ${sold.count} مبيعة` : ''}`
+    );
+  };
+
+  const fields = [];
+
+  // Plain items keep one field each; designs stay together in one compact
+  // field per page, the way the unpaged list showed them.
+  for (let index = 0; index < slice.length; ) {
+    const type = slice[index].type;
+    let end = index;
+
+    while (end < slice.length && slice[end].type === type) end += 1;
+
+    const group = slice.slice(index, end);
+
+    if (type === 'background') {
+      const continued = start + index > 0 && ordered[start + index - 1]?.type === 'background';
+
+      fields.push({
+        name: continued ? 'تصاميم المتجر (تابع)' : 'تصاميم المتجر',
+        value: group.map(designLine).join('\n'),
+        inline: false,
+      });
+    } else {
+      fields.push(...group.map(plainField));
+    }
+
+    index = end;
+  }
+
+  if (designs.length === 0 && page === 1) {
     fields.push({
       name: 'تصاميم المتجر',
       value:
         'ما فيه. التصميم يصير صنف في المتجر لما ينضاف له `price` في قائمة الخلفيات.',
       inline: false,
     });
-  } else {
-    // Fifty designs do not fit in one field, or in one field each.
-    const size = 12;
-
-    for (let index = 0; index < designs.length; index += size) {
-      const chunk = designs.slice(index, index + size);
-      const part = Math.floor(index / size) + 1;
-      const parts = Math.ceil(designs.length / size);
-
-      fields.push({
-        name: parts > 1 ? `تصاميم المتجر (${part}/${parts})` : 'تصاميم المتجر',
-        value: chunk
-          .map((item) => {
-            const sold = sales.get(item.key);
-            return (
-              `\`${item.key}\` · ${formatNumber(item.price)}` +
-              `${item.enabled ? '' : ' · **مقفّل**'}` +
-              `${sold ? ` · ${sold.count} مبيعة` : ''}`
-            );
-          })
-          .join('\n'),
-        inline: false,
-      });
-    }
   }
 
-  return embed({
+  const card = embed({
     title: 'إعدادات المتجر',
     description:
       'الأسعار والظهور محفوظة لكل سيرفر على حدة. الخلفيات تنضاف وتتعدّل وتنحذف من ' +
       '**إدارة السيرفر** داخل متجر النشاط ← الخلفيات.',
     color: COLORS.primary,
     fields,
-    footer: `تغيّره بـ ${ctx.isSlash ? '/store-config' : `${config.prefix}store-config`} price|enable|disable|reset`,
+    footer: [
+      pages > 1 ? `صفحة ${page} / ${pages}` : null,
+      `تغيّره بـ ${ctx.isSlash ? '/store-config' : `${config.prefix}store-config`} price|enable|disable|reset`,
+    ]
+      .filter(Boolean)
+      .join(' · '),
   });
+
+  return { embed: card, pages, page };
 }
 
 function unknownItem(ctx, query) {
@@ -288,6 +312,24 @@ async function handleResetUser(ctx, client) {
   );
 }
 
+async function handleList(ctx) {
+  const total = storeCatalog(ctx.guildId).length;
+  const pages = Math.max(1, Math.ceil(total / PAGER_PAGE_SIZE));
+  const render = (page) => ({ embeds: [listPage(ctx, page, pages).embed] });
+
+  const sent = await ctx.reply(
+    ephemeral(withPager({ id: 'store-config', page: 1, pages, payload: render(1) })),
+  );
+
+  await attachPager({
+    ctx,
+    message: await pagerMessage(ctx, sent),
+    id: 'store-config',
+    pages,
+    render,
+  });
+}
+
 export default {
   data: new SlashCommandBuilder()
     .setName('store-config')
@@ -411,7 +453,7 @@ export default {
       case 'reset-user':
         return handleResetUser(ctx, client);
       default:
-        return ctx.reply(ephemeral({ embeds: [listEmbed(ctx)] }));
+        return handleList(ctx);
     }
   },
 };

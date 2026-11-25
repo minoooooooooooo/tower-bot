@@ -10,6 +10,12 @@ import {
 import { config } from '../../config.js';
 import { formatNumber } from '../../lib/activity-format.js';
 import { COLORS, embed } from '../../lib/embeds.js';
+import {
+  PAGER_PAGE_SIZE,
+  attachPager,
+  pagerMessage,
+  withPager,
+} from '../../lib/pager.js';
 import { errorReply, okReply, warnReply } from '../../lib/replies.js';
 import { resolveUser } from '../../lib/resolve.js';
 import { backgroundById } from '../../services/profile-backgrounds.js';
@@ -79,75 +85,87 @@ function backgroundLine(item, owned) {
   return `${bought ? '✅' : '•'} ${name} · ${formatNumber(item.price)}`;
 }
 
-function browseEmbed(ctx, items, balance, owned) {
-  const fields = TYPE_ORDER.flatMap((type) => {
-    const group = items.filter((item) => item.type === type);
+/** Catalogue order: groups follow TYPE_ORDER, the same order the old embed used. */
+function orderedItems(items) {
+  return TYPE_ORDER.flatMap((type) => items.filter((item) => item.type === type));
+}
+
+function browsePage(ctx, { items, balance, owned, page, pages, extraRows }) {
+  const start = (page - 1) * PAGER_PAGE_SIZE;
+  const slice = items.slice(start, start + PAGER_PAGE_SIZE);
+  const fields = [{ name: 'رصيدك', value: `**${formatNumber(balance)}** عملة`, inline: true }];
+
+  if (page === 1 && !items.some((item) => item.type === 'background')) {
+    fields.push({
+      name: STORE_TYPE_LABELS.background ?? 'الخلفيات',
+      value:
+        'ما فيه تصاميم مدفوعة بعد. التصميم يطلع هنا أول ما يصير له `price` في ' +
+        '`assets/profile/backgrounds/backgrounds.json`.',
+      inline: false,
+    });
+  }
+
+  // Keep same-type items in one field. A group that started on the previous
+  // page is marked so the split is obvious.
+  for (let index = 0; index < slice.length; ) {
+    const type = slice[index].type;
+    let end = index;
+
+    while (end < slice.length && slice[end].type === type) end += 1;
+
+    const group = slice.slice(index, end);
     const label = STORE_TYPE_LABELS[type] ?? type;
+    const continued = start + index > 0 && items[start + index - 1]?.type === type;
 
-    if (group.length === 0) {
-      if (type !== 'background') return [];
+    fields.push({
+      name: continued ? `${label} (تابع)` : label,
+      value: group
+        .map((item) =>
+          type === 'background' ? backgroundLine(item, owned) : itemLine(item, owned),
+        )
+        .join('\n'),
+      inline: false,
+    });
 
-      return [
-        {
-          name: label,
-          value:
-            'ما فيه تصاميم مدفوعة بعد. التصميم يطلع هنا أول ما يصير له `price` في ' +
-            '`assets/profile/backgrounds/backgrounds.json`.',
-          inline: false,
-        },
-      ];
-    }
+    index = end;
+  }
 
-    // Fifty designs do not fit in one embed field. Split the compact list in
-    // half; the Activity shows the same catalogue with pictures.
-    if (type === 'background' && group.length > 10) {
-      const middle = Math.ceil(group.length / 2);
-
-      return [
-        {
-          name: `${label} (1/2)`,
-          value: group.slice(0, middle).map((item) => backgroundLine(item, owned)).join('\n'),
-          inline: false,
-        },
-        {
-          name: `${label} (2/2)`,
-          value: group.slice(middle).map((item) => backgroundLine(item, owned)).join('\n'),
-          inline: false,
-        },
-      ];
-    }
-
-    return [
-      {
-        name: label,
-        value: group.map((item) => itemLine(item, owned)).join('\n'),
-        inline: false,
-      },
-    ];
-  });
-
-  fields.unshift({ name: 'رصيدك', value: `**${formatNumber(balance)}** عملة`, inline: true });
-
-  return embed({
-    title: 'المتجر',
-    description:
-      'اصرف عملات على ترقيات ملفك وسيرفرك. العملات تجيك من المستويات، ' +
-      'ويقدر الأعضاء يحوّلون لك منها.',
-    color: COLORS.primary,
-    fields,
-    footer: `اشترِ بـ ${ctx.isSlash ? '/store buy item:' : `${config.prefix}store buy `}<المفتاح أو الاسم>`,
+  return withPager({
+    id: 'store',
+    page,
+    pages,
+    payload: {
+      embeds: [
+        embed({
+          title: 'المتجر',
+          description:
+            'اصرف عملات على ترقيات ملفك وسيرفرك. العملات تجيك من المستويات، ' +
+            'ويقدر الأعضاء يحوّلون لك منها.',
+          color: COLORS.primary,
+          fields,
+          footer: [
+            pages > 1 ? `صفحة ${page} / ${pages}` : null,
+            `اشترِ بـ ${ctx.isSlash ? '/store buy item:' : `${config.prefix}store buy `}<المفتاح أو الاسم>`,
+          ]
+            .filter(Boolean)
+            .join(' · '),
+        }),
+      ],
+      allowedMentions: { parse: [] },
+    },
+    extraRows,
   });
 }
 
 async function handleBrowse(ctx) {
-  const items = storeCatalog(ctx.guildId).filter((item) => item.enabled);
+  const items = orderedItems(storeCatalog(ctx.guildId).filter((item) => item.enabled));
   const balance = storeBalance(ctx.guildId, ctx.user.id);
   const owned = ownedBackgroundIds(ctx.guildId, ctx.user.id);
   // Mirrors activityConfigured(): a button that can only fail is worse than no
   // button, so it appears only when the server would actually start.
   const activityReady =
     config.activity.enabled && Boolean(config.clientId) && Boolean(config.activity.clientSecret);
-  const components = activityReady
+  const extraRows = activityReady
     ? [
         new ActionRowBuilder().addComponents(
           new ButtonBuilder()
@@ -158,8 +176,18 @@ async function handleBrowse(ctx) {
         ),
       ]
     : [];
+  const pages = Math.max(1, Math.ceil(items.length / PAGER_PAGE_SIZE));
 
-  await respond(ctx, { embeds: [browseEmbed(ctx, items, balance, owned)], components });
+  const render = (page) => browsePage(ctx, { items, balance, owned, page, pages, extraRows });
+  const sent = await respond(ctx, render(1));
+
+  await attachPager({
+    ctx,
+    message: await pagerMessage(ctx, sent),
+    id: 'store',
+    pages,
+    render,
+  });
 }
 
 function detailLine(item, detail) {
@@ -203,30 +231,47 @@ async function handleOwned(ctx, client) {
   const purchases = memberPurchases(ctx.guildId, target.id);
   const catalog = new Map(storeCatalog(ctx.guildId).map((item) => [item.key, item]));
   const spent = purchases.reduce((total, row) => total + row.price, 0);
-  const lines = purchases
-    .slice(0, 20)
-    .map((row) => {
+  const pages = Math.max(1, Math.ceil(purchases.length / PAGER_PAGE_SIZE));
+  const title = target.id === ctx.user.id ? 'مشترياتك' : `<@${target.id}> · المشتريات`;
+
+  const render = (page) => {
+    const start = (page - 1) * PAGER_PAGE_SIZE;
+    const lines = purchases.slice(start, start + PAGER_PAGE_SIZE).map((row) => {
       const item = catalog.get(row.item_key);
       return `• **${item?.name ?? row.item_key}** — ${formatNumber(row.price)} عملة${detailLine(item, row.detail)}`;
     });
 
-  const title = target.id === ctx.user.id ? 'مشترياتك' : `<@${target.id}> · المشتريات`;
+    return {
+      embeds: [
+        embed({
+          title,
+          description:
+            lines.length > 0
+              ? lines.join('\n')
+              : `ما اشتريت شي بعد. شوف المعروض بـ \`${ctx.isSlash ? '/store' : `${config.prefix}store`}\`.`,
+          color: COLORS.primary,
+          footer: [
+            purchases.length > 0
+              ? `${purchases.length} مشترى · ${formatNumber(spent)} عملة مصروفة`
+              : null,
+            pages > 1 ? `صفحة ${page} / ${pages}` : null,
+          ]
+            .filter(Boolean)
+            .join(' · ') || undefined,
+        }),
+      ],
+      allowedMentions: { parse: [] },
+    };
+  };
 
-  await respond(ctx, {
-    embeds: [
-      embed({
-        title,
-        description:
-          lines.length > 0
-            ? lines.join('\n')
-            : `ما اشتريت شي بعد. شوف المعروض بـ \`${ctx.isSlash ? '/store' : `${config.prefix}store`}\`.`,
-        color: COLORS.primary,
-        footer:
-          purchases.length > 0
-            ? `${purchases.length} مشترى · ${formatNumber(spent)} عملة مصروفة`
-            : undefined,
-      }),
-    ],
+  const sent = await respond(ctx, withPager({ id: 'store-owned', page: 1, pages, payload: render(1) }));
+
+  await attachPager({
+    ctx,
+    message: await pagerMessage(ctx, sent),
+    id: 'store-owned',
+    pages,
+    render,
   });
 }
 

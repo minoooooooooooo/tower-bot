@@ -6,6 +6,7 @@ import {
 import { config } from '../../config.js';
 import { formatNumber } from '../../lib/activity-format.js';
 import { COLORS, embed } from '../../lib/embeds.js';
+import { attachPager, pagerMessage, withPager } from '../../lib/pager.js';
 import { errorReply } from '../../lib/replies.js';
 import { resolveUser } from '../../lib/resolve.js';
 import { displayNameOf } from '../../lib/targets.js';
@@ -300,25 +301,42 @@ async function runCoinLog(ctx, client) {
 
     const totals = guildCoinTotals(ctx.guildId, { filter });
     const pages = Math.max(1, Math.ceil(totals.count / COIN_PAGE_SIZE));
-    const safePage = Math.min(page, pages);
-    const rows = guildCoinHistory(ctx.guildId, {
-      filter,
-      limit: COIN_PAGE_SIZE,
-      offset: (safePage - 1) * COIN_PAGE_SIZE,
-    });
+    const startPage = Math.min(page, pages);
+    const guildName = ctx.guild?.name ?? 'السيرفر';
 
-    await ctx.editReply({
-      embeds: [
-        guildLogEmbed({
-          guildName: ctx.guild?.name ?? 'السيرفر',
-          filter,
-          page: safePage,
-          pages,
-          totals,
-          rows,
-        }),
-      ],
-      allowedMentions: { parse: [] },
+    const render = (current) => {
+      const rows = guildCoinHistory(ctx.guildId, {
+        filter,
+        limit: COIN_PAGE_SIZE,
+        offset: (current - 1) * COIN_PAGE_SIZE,
+      });
+
+      return {
+        embeds: [
+          guildLogEmbed({
+            guildName,
+            filter,
+            page: current,
+            pages,
+            totals,
+            rows,
+          }),
+        ],
+        allowedMentions: { parse: [] },
+      };
+    };
+
+    const sent = await ctx.editReply(
+      withPager({ id: 'coin-log', page: startPage, pages, payload: render(startPage) }),
+    );
+
+    await attachPager({
+      ctx,
+      message: await pagerMessage(ctx, sent),
+      id: 'coin-log',
+      pages,
+      page: startPage,
+      render,
     });
     return;
   }
@@ -340,30 +358,47 @@ async function runCoinLog(ctx, client) {
   const profile = getProfile(ctx.guildId, target.id);
   const totals = coinTotals(ctx.guildId, target.id, { filter });
   const pages = Math.max(1, Math.ceil(totals.count / COIN_PAGE_SIZE));
-  const safePage = Math.min(page, pages);
-  const rows = coinHistory(ctx.guildId, target.id, {
-    filter,
-    limit: COIN_PAGE_SIZE,
-    offset: (safePage - 1) * COIN_PAGE_SIZE,
-  });
+  const startPage = Math.min(page, pages);
   const member = ctx.guild.members.cache.get(target.id) ?? null;
   const name = displayNameOf(target, member);
+  const isSelf = target.id === ctx.user.id;
 
-  await ctx.editReply({
-    embeds: [
-      logEmbed({
-        targetId: target.id,
-        name,
-        isSelf: target.id === ctx.user.id,
-        filter,
-        page: safePage,
-        pages,
-        totals,
-        rows,
-        balance: profile.coins,
-      }),
-    ],
-    allowedMentions: { parse: [] },
+  const render = (current) => {
+    const rows = coinHistory(ctx.guildId, target.id, {
+      filter,
+      limit: COIN_PAGE_SIZE,
+      offset: (current - 1) * COIN_PAGE_SIZE,
+    });
+
+    return {
+      embeds: [
+        logEmbed({
+          targetId: target.id,
+          name,
+          isSelf,
+          filter,
+          page: current,
+          pages,
+          totals,
+          rows,
+          balance: profile.coins,
+        }),
+      ],
+      allowedMentions: { parse: [] },
+    };
+  };
+
+  const sent = await ctx.editReply(
+    withPager({ id: 'coin-log', page: startPage, pages, payload: render(startPage) }),
+  );
+
+  await attachPager({
+    ctx,
+    message: await pagerMessage(ctx, sent),
+    id: 'coin-log',
+    pages,
+    page: startPage,
+    render,
   });
 }
 

@@ -6,6 +6,7 @@ import {
 import { createLogger } from '../../lib/logger.js';
 import { config } from '../../config.js';
 import { COLORS, embed } from '../../lib/embeds.js';
+import { PAGER_PAGE_SIZE, attachPager, pagerMessage, withPager } from '../../lib/pager.js';
 import { ephemeral, errorReply, infoReply, okReply } from '../../lib/replies.js';
 import { resolveUser } from '../../lib/resolve.js';
 import { linkedPoints } from '../../services/ebot-vex.js';
@@ -148,7 +149,7 @@ function designLabel(background) {
   return background?.name ?? background?.id ?? '';
 }
 
-function listEmbed(ctx, level, stored, hasCustom, owned, manager = false) {
+function listEmbed(ctx, level, stored, hasCustom, owned, manager = false, page = 1) {
   const { selected, lockedTier, customMissing } = selectionState(ctx, stored, level, hasCustom, owned);
   const unlocked = new Set(unlockedBackgrounds(level, owned).map((background) => background.id));
   const free = BACKGROUNDS.filter((background) => Number(background.price) <= 0);
@@ -193,8 +194,12 @@ function listEmbed(ctx, level, stored, hasCustom, owned, manager = false) {
       : '';
 
   const next = nextBackground(level);
+  const pages = Math.max(1, Math.ceil(lines.length / PAGER_PAGE_SIZE));
+  const safePage = Math.min(Math.max(1, page), pages);
+  const start = (safePage - 1) * PAGER_PAGE_SIZE;
+  const ladder = lines.slice(start, start + PAGER_PAGE_SIZE).join('\n');
 
-  return embed({
+  const card = embed({
     title: 'خلفيات الملف',
     description:
       `أنت في **المستوى ${level}**. أحدث تصميم مجاني يتفعّل تلقائيًا، وتقدر تختار أي تصميم مفتوح. البطاقة الكلاسيكية متاحة دائمًا.` +
@@ -220,10 +225,17 @@ function listEmbed(ctx, level, stored, hasCustom, owned, manager = false) {
         inline: false,
       },
       { name: 'تصاميم المتجر', value: paidLine, inline: false },
-      { name: 'السلّم', value: lines.join('\n'), inline: false },
+      { name: 'السلّم', value: ladder, inline: false },
     ],
-    footer: `اختر بـ ${ctx.isSlash ? '/background set design:' : ':-background set '}<الاسم أو المستوى>`,
+    footer: [
+      pages > 1 ? `صفحة ${safePage} / ${pages}` : null,
+      `اختر بـ ${ctx.isSlash ? '/background set design:' : ':-background set '}<الاسم أو المستوى>`,
+    ]
+      .filter(Boolean)
+      .join(' · '),
   });
+
+  return { embed: card, pages, page: safePage };
 }
 
 async function handleList(ctx, client) {
@@ -231,13 +243,29 @@ async function handleList(ctx, client) {
   const hasCustom = hasCustomWallpaper(ctx.guildId, ctx.user.id);
   const stored = getProfile(ctx.guildId, ctx.user.id);
   const owned = ownedBackgroundIds(ctx.guildId, ctx.user.id);
+  const manager = canManageGuild(ctx);
 
   // Apply the newest free design before showing the ladder, so a member who
   // just crossed a level sees the same pick their card will use.
   stored.background = syncAutoBackground(ctx.guildId, ctx.user.id, level, { hasCustom });
 
-  const payload = { embeds: [listEmbed(ctx, level, stored, hasCustom, owned, canManageGuild(ctx))] };
-  await respond(ctx, payload);
+  const first = listEmbed(ctx, level, stored, hasCustom, owned, manager, 1);
+  const render = (page) => ({
+    embeds: [listEmbed(ctx, level, stored, hasCustom, owned, manager, page).embed],
+  });
+
+  const sent = await respond(
+    ctx,
+    withPager({ id: 'background', page: 1, pages: first.pages, payload: render(1) }),
+  );
+
+  await attachPager({
+    ctx,
+    message: await pagerMessage(ctx, sent),
+    id: 'background',
+    pages: first.pages,
+    render,
+  });
 }
 
 async function handleSet(ctx, client, query) {

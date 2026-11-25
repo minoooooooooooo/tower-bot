@@ -6,6 +6,7 @@ import {
 } from 'discord.js';
 import { config } from '../../config.js';
 import { COLORS, embed } from '../../lib/embeds.js';
+import { PAGER_PAGE_SIZE, attachPager, pagerMessage, withPager } from '../../lib/pager.js';
 import { errorReply, okReply, warnReply } from '../../lib/replies.js';
 import { resolveChannel } from '../../lib/resolve.js';
 import {
@@ -426,7 +427,7 @@ async function handleList(ctx) {
     return;
   }
 
-  const lines = aliases.map((alias) => {
+  const aliasLine = (alias) => {
     const command = commands.get(alias.command);
     const usage = command ? usageFor(alias.label, command) : `${alias.label} …`;
     const broken = command ? '' : ' *(معطّل — الأمر مو موجود)*';
@@ -435,19 +436,40 @@ async function handleList(ctx) {
         ? ` · ${ruleSummary(alias, ctx.guild)}`
         : '';
     return `**${alias.label}** ← \`${alias.command}\`${broken}${rule}\n\`${usage}\``;
-  });
+  };
 
-  await ctx.reply(
-    ephemeral({
+  const pages = Math.max(1, Math.ceil(aliases.length / PAGER_PAGE_SIZE));
+
+  const render = (page) => {
+    const slice = aliases.slice((page - 1) * PAGER_PAGE_SIZE, page * PAGER_PAGE_SIZE);
+
+    return {
       embeds: [
         embed({
           title: 'الأسماء البديلة',
-          description: lines.join('\n\n'),
-          footer: `${aliases.length} من ${MAX_ALIASES} · ${config.prefix}alias add <word> <command>`,
+          description: slice.map(aliasLine).join('\n\n'),
+          footer: [
+            pages > 1 ? `صفحة ${page} / ${pages}` : null,
+            `${aliases.length} من ${MAX_ALIASES} · ${config.prefix}alias add <word> <command>`,
+          ]
+            .filter(Boolean)
+            .join(' · '),
         }),
       ],
-    }),
+    };
+  };
+
+  const sent = await ctx.reply(
+    ephemeral(withPager({ id: 'alias-list', page: 1, pages, payload: render(1) })),
   );
+
+  await attachPager({
+    ctx,
+    message: await pagerMessage(ctx, sent),
+    id: 'alias-list',
+    pages,
+    render,
+  });
 }
 
 function usageEmbed() {

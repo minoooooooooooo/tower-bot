@@ -1,10 +1,9 @@
 import { SlashCommandBuilder } from 'discord.js';
 import { config } from '../../config.js';
 import { embed } from '../../lib/embeds.js';
+import { attachPager, chunkPages, pagerMessage, withPager } from '../../lib/pager.js';
 import { errorReply } from '../../lib/replies.js';
 import { getAlias, listAliases } from '../../services/alias-store.js';
-
-const MAX_FIELD_LENGTH = 1000;
 
 /** Arabic names for the categories the loader assigns. */
 const CATEGORY_LABELS = {
@@ -19,21 +18,25 @@ function categoryLabel(category) {
   return CATEGORY_LABELS[category] ?? category;
 }
 
-function chunkLines(lines, limit = MAX_FIELD_LENGTH) {
-  const chunks = [];
-  let current = '';
+/** One field per category inside the page, so the headings stay readable. */
+function pageFields(entries) {
+  const fields = [];
+  const MAX_FIELD_LENGTH = 1000;
 
-  for (const line of lines) {
-    if (current.length + line.length + 1 > limit) {
-      if (current) chunks.push(current);
-      current = line;
+  for (const entry of entries) {
+    const label = categoryLabel(entry.category);
+    const last = fields.at(-1);
+
+    if (last?.name === label && last.value.length + entry.line.length + 1 <= MAX_FIELD_LENGTH) {
+      last.value += `\n${entry.line}`;
     } else {
-      current = current ? `${current}\n${line}` : line;
+      // A category can still be longer than one embed field. Discord allows
+      // duplicate field names, so the continuation stays under the same label.
+      fields.push({ name: label, value: entry.line, inline: false });
     }
   }
 
-  if (current) chunks.push(current);
-  return chunks;
+  return fields;
 }
 
 export default {
@@ -132,27 +135,21 @@ export default {
       groups.get(category).push(command);
     }
 
-    const fields = [];
+    const entries = [...groups.entries()]
+      .sort(([a], [b]) => categoryLabel(a).localeCompare(categoryLabel(b), 'ar'))
+      .flatMap(([category, list]) =>
+        [...list]
+          .sort((a, b) => a.name.localeCompare(b.name))
+          .map((command) => ({
+            category,
+            line: `\`/${command.name}\` — ${command.description ?? 'ما فيه وصف.'}`,
+          })),
+      );
 
-    for (const [category, list] of [...groups.entries()].sort(([a], [b]) =>
-      categoryLabel(a).localeCompare(categoryLabel(b), 'ar'),
-    )) {
-      const label = categoryLabel(category);
-      const lines = list
-        .sort((a, b) => a.name.localeCompare(b.name))
-        .map((command) => `\`/${command.name}\` — ${command.description ?? 'ما فيه وصف.'}`);
+    const pages = chunkPages(entries);
+    const total = pages.length;
 
-      const chunks = chunkLines(lines);
-
-      chunks.forEach((chunk, index) => {
-        fields.push({
-          name: index === 0 ? label : `${label} (تابع)`,
-          value: chunk,
-        });
-      });
-    }
-
-    await ctx.reply({
+    const render = (page) => ({
       embeds: [
         embed({
           title: 'الأوامر',
@@ -160,10 +157,25 @@ export default {
             `استخدم \`/command\` أو \`${config.prefix}command\`.`,
             `أضف اسم الأمر للتفاصيل: \`${config.prefix}help ping\`.`,
           ].join('\n'),
-          fields,
-          footer: `${all.length} أمر متاح`,
+          fields: pageFields(pages[page - 1] ?? []),
+          footer:
+            total > 1
+              ? `صفحة ${page} / ${total} · ${all.length} أمر متاح`
+              : `${all.length} أمر متاح`,
         }),
       ],
+    });
+
+    const sent = await ctx.reply(
+      withPager({ id: 'help', page: 1, pages: total, payload: render(1) }),
+    );
+
+    await attachPager({
+      ctx,
+      message: await pagerMessage(ctx, sent),
+      id: 'help',
+      pages: total,
+      render,
     });
   },
 };
