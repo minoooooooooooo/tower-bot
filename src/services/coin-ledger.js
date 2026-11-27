@@ -52,6 +52,23 @@ function filterTypes(filter) {
   }
 }
 
+/** Hand-written adjustments; only these can be removed from the log. */
+const ADMIN_TYPES = ['admin_add', 'admin_remove', 'adjust'];
+
+function mapRow(row) {
+  let detail = null;
+
+  if (row.detail) {
+    try {
+      detail = JSON.parse(row.detail);
+    } catch {
+      detail = null;
+    }
+  }
+
+  return { ...row, detail };
+}
+
 function whereFor(guildId, userId, filter) {
   const clauses = ['guild_id = ?'];
   const args = [guildId];
@@ -162,19 +179,68 @@ function queryHistory(guildId, userId, { filter = 'all', limit = COIN_PAGE_SIZE,
     )
     .all(...args, Math.max(1, Math.trunc(limit)), Math.max(0, Math.trunc(offset)));
 
-  return rows.map((row) => {
-    let detail = null;
+  return rows.map(mapRow);
+}
 
-    if (row.detail) {
-      try {
-        detail = JSON.parse(row.detail);
-      } catch {
-        detail = null;
-      }
-    }
+/** The most recent hand-written adjustments, newest first. */
+export function recentAdminTransactions(guildId, limit = 10) {
+  const rows = getDb()
+    .prepare(
+      `SELECT id, user_id, amount, balance_after, type, actor_id, detail, created_at
+         FROM coin_transactions
+        WHERE guild_id = ? AND type IN (${ADMIN_TYPES.map(() => '?').join(', ')})
+        ORDER BY id DESC
+        LIMIT ?`,
+    )
+    .all(guildId, ...ADMIN_TYPES, Math.max(1, Math.trunc(limit)));
 
-    return { ...row, detail };
-  });
+  return rows.map(mapRow);
+}
+
+export function coinTransaction(guildId, id) {
+  const row = getDb()
+    .prepare(
+      `SELECT id, user_id, amount, balance_after, type, actor_id, detail, created_at
+         FROM coin_transactions
+        WHERE guild_id = ? AND id = ?`,
+    )
+    .get(guildId, Math.trunc(Number(id) || 0));
+
+  return row ? mapRow(row) : null;
+}
+
+/**
+ * Removes one hand-written adjustment. The current balance is left alone: this
+ * deletes history, not coins. Later rows for the same member are re-based by
+ * the removed amount so their "balance after" still follows.
+ */
+export function removeAdminTransaction(guildId, id) {
+  const numeric = Math.trunc(Number(id) || 0);
+
+  if (numeric <= 0) return { ok: false, reason: 'id' };
+
+  const db = getDb();
+  const row = coinTransaction(guildId, numeric);
+
+  if (!row) return { ok: false, reason: 'missing' };
+  if (!ADMIN_TYPES.includes(String(row.type))) return { ok: false, reason: 'type', row };
+
+  db.exec('BEGIN');
+
+  try {
+    db.prepare('DELETE FROM coin_transactions WHERE guild_id = ? AND id = ?').run(guildId, numeric);
+    db.prepare(
+      `UPDATE coin_transactions
+          SET balance_after = MAX(0, balance_after - ?)
+        WHERE guild_id = ? AND user_id = ? AND id > ?`,
+    ).run(Math.trunc(Number(row.amount) || 0), guildId, row.user_id, numeric);
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+
+  return { ok: true, row };
 }
 
 export function coinTotals(guildId, userId, { filter = 'all' } = {}) {
