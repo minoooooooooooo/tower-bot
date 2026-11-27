@@ -125,14 +125,29 @@ only runs when the member has no ledger rows at all.
 one, fifteen per page with the shared five-button pager, so adjustments older
 than the first page stay reachable; `user:<member>` (prefix
 `:-coin-remove @member` or the raw id) filters the list to one member, and
-`page:<n>` (prefix: a number after the member) jumps to a page. It previews a
-single row with `id:<n>` and deletes it with `confirm:true` (prefix:
-`:-coin-remove <n> confirm`). Deletion is history-only: current balances stay as
-they are, and later rows for the same member get `balance_after` re-based by
-the removed amount inside one SQLite transaction. Only admin adjustments can be
+`page:<n>` (prefix: a number after the member) jumps to a page. Naming a row
+with `id:<n>` shows its details and waits for the owner to type `confirm` (or
+`تأكيد`) in the channel; `confirm:true` (prefix: `:-coin-remove <n> confirm`)
+deletes it immediately. Deletion is history-only: current balances stay as they
+are, and later rows for the same member get `balance_after` re-based by the
+removed amount inside one SQLite transaction. Only admin adjustments can be
 removed; level rewards, transfers, purchases and refunds are real history.
 Guild totals, the distinct-member count and the page count drop immediately, so
 test adjustments stop skewing `/coin-log`.
+
+**Typed confirmations (2026-11-27).** Destructive commands no longer rely on a
+`confirm:true` option alone. `src/lib/confirm.js` sends a second message asking
+the caller to type **confirm** / **تأكيد** (or **إلغاء** to cancel) in the same
+channel within two minutes, then runs the action. `messageCreate` intercepts
+that word before alias dispatch, and the pending entry is keyed by guild,
+channel and user, so nobody else and no other channel can answer it. Prompts
+are ephemeral on slash and normal replies on prefix, are deleted when answered,
+and change to an expiry notice if the window closes. `askConfirmation()` is
+used by `/coins` transfers, `/coin-remove`, `/ticket delete`,
+`/ticket button remove` and `/ticket panel remove`; the in-command `confirm`
+option still skips the wait. Each action re-checks its own guards when the
+confirmation arrives (funds, transfer switch, open tickets, a button that
+already disappeared).
 
 **Store (added 2026-11-17).** `/store` (prefix `:-store`, alias `shop`) browses
 the catalogue, `buy` spends coins and delivers, `owned` lists a member's
@@ -372,9 +387,9 @@ pagers.
 | `/unlock [#channel]` | - | Restore the permissions saved by `/lock` |
 | `/avatar [user]` | `av`, `pfp` | Global + per-server avatar |
 | `/profile [user]` | `card`, `profilecard` | Generated PNG card: title, coins, rank, level, points, XP |
-| `/coins [user] [amount]` | `coin`, `balance`, `wallet` | Own balance, another member's balance, or a transfer |
+| `/coins [user] [amount]` | `coin`, `balance`, `wallet` | Own balance, another member's balance, or a transfer (asks for typed confirmation) |
 | `/coin-log [user] [type] [page]` | `coins-log`, `coin-history`, `coinlog`, `ledger` | Recent signed coin movement; `global:true` / `all` shows the whole server |
-| `/coin-remove [@member \| id] [page] [confirm]` | `coin-delete`, `coin-purge` | Owner-only: paged list of admin adjustments, member filter, preview and delete |
+| `/coin-remove [@member \| id] [page] [confirm]` | `coin-delete`, `coin-purge` | Owner-only: paged list of admin adjustments, member filter, typed confirmation before delete |
 | `/coins-config [on\|off\|status]` | `coin-config`, `coinsconfig` | Turn coin transfers on/off (Manage Server, grantable) |
 | `/store [browse\|buy\|owned]` | `shop` | Catalogue, purchases: XP, behaviour, title, emoji, role, designs |
 | `/store-config <sub>` | `store-admin`, `shop-config` | Prices, visibility and `reset-user` (Manage Server, grantable) |
@@ -783,10 +798,11 @@ Behavior that must be preserved:
   handler refuses and lists the keys. `/ticket reopen` (prefix `:-ticket reopen`)
   is the opposite of close: staff-only, refuses an already-open ticket, and calls
   `reopenTicketChannel` so the name, category, opener permission and fresh
-  Claim/Close buttons come back. `/ticket delete confirm:true`
-  (prefix `:-ticket delete confirm`) deletes the channel **without** a
-  transcript, marks the row `deleted`, confirms inline on slash and by DM on
-  prefix; without `confirm` it only warns. `/ticket close` remains the path that
+  Claim/Close buttons come back. `/ticket delete`
+  (prefix `:-ticket delete`) deletes the channel **without** a
+  transcript, marks the row `deleted`, then confirms inline on slash and by DM
+  on prefix; without `confirm` it first asks the caller to type `confirm` /
+  `تأكيد` in the channel. `/ticket close` remains the path that
   keeps a transcript.
 - **Transcripts** are standalone HTML files (`ticket-0001.html`) attached to the
   log channel, with escaped message content, embeds and attachment links. Without
@@ -1071,7 +1087,7 @@ Behavior that must be preserved:
 - [ ] Run `/backfill audit` after the import and compare its **Human · importable** field with **Imported by backfill**; they should match. Use the **Bots / webhooks** and **Live window · human** fields to explain any gap against Discord search.
 - [ ] Test emoji stats: use a few custom emojis in ordinary text and in emoji-only messages, then run `/topemojis` and `/topemojis order:least period:7d`; confirm the standalone and in-message counts add up, an unused emoji appears with 0 in the least view, the pager reaches page 2, and `:-emojis least week` works. Run `/emojibackfill start`, watch `/emojibackfill status` until complete, then confirm `/topemojis period:all` totals stop changing on a second start. Cancel one run mid-way and confirm the next start resumes without double-counting.
 - [ ] **Set up tickets:** create a `#tickets` category, a `#ticket-logs` channel, a `#tickets` panel channel, optionally a `#complaints` panel channel, and optionally one category per complaint rank. Run `/ticket panel add key:support label:"Support desk" channel:#tickets title:"Need help?" description:"Choose an option" color:#5865f2 footer:"We reply fast"`. Then run `/ticket panel add key:complaints label:Complaints channel:#complaints title:"Complaint against administration" color:#ed4245`, and add buttons to it with `/ticket button add key:complaint-submod label:"Complaint against sub-mod" panel:complaints category:#complaints-submod ping_roles:@Admins emoji:🛡️ style:danger`, plus `complaint-mod` and `complaint-owner`. Add the normal support button with `/ticket button add key:help label:Help panel:support category:#tickets support_roles:@Support ping_roles:@Mods log_channel:#ticket-logs emoji:🎫 style:primary`.
-- [ ] Confirm each panel shows only its own buttons and its own title, description, color, footer and image/thumbnail, and `/ticket panel list` shows both panels plus their buttons. Press a button from each panel on an alt and confirm it opens in that button's own category and pings only its roles. Claim, close with a reason, and verify the transcript HTML lands in the log channel and the channel is deleted; test a button without a log to confirm it archives instead, then Reopen it. Try a second ticket of the same button to confirm `max_open` refuses it. Run `/ticket button edit key:help panel:complaints` and confirm both posted panels refresh and the button moves; move it back. Run `/ticket panel edit key:complaints title:"..."` and confirm that panel refreshes in place. Delete a scratch panel with `/ticket panel remove key:... confirm:true` and confirm its buttons go with it while the other panel stays. Confirm the default types removed on upgrade are not recreated after a restart.
+- [ ] Confirm each panel shows only its own buttons and its own title, description, color, footer and image/thumbnail, and `/ticket panel list` shows both panels plus their buttons. Press a button from each panel on an alt and confirm it opens in that button's own category and pings only its roles. Claim, close with a reason, and verify the transcript HTML lands in the log channel and the channel is deleted; test a button without a log to confirm it archives instead, then Reopen it. Try a second ticket of the same button to confirm `max_open` refuses it. Run `/ticket button edit key:help panel:complaints` and confirm both posted panels refresh and the button moves; move it back. Run `/ticket panel edit key:complaints title:"..."` and confirm that panel refreshes in place. Delete a scratch panel with `/ticket panel remove key:...` and type `confirm` when asked, then confirm its buttons go with it while the other panel stays. Confirm the default types removed on upgrade are not recreated after a restart.
 - [x] **Last-activity command** (`/lastseen`) — last active, last message, message count, voice time, first message and join date.
 - [x] **Profile cards** (`/profile`, `/profile-edit`) — 2026-11-06. Avatar, title, rank, level, nightmare/vex, punishments, good behavior and XP bar on the supplied artwork.
 - [x] **Member status panel** (`/profile`) — 2026-11-07. Lower-left panel: presence dot/custom status/activity, message and voice totals, joined/account dates, last seen, top-role pills, and the opt-in birthday/age/time-zone block. `/birthday show` controls the block per member.
@@ -1168,6 +1184,8 @@ Behavior that must be preserved:
 - Role hierarchy test with fake guild/role/member objects (21 checks, `roleProblem`/`memberProblem` exported for it): a role below the invoker's top role is allowed while one at or above it is refused with the role named, a role above the bot is still refused first, the guild owner bypasses both checks but not the bot's ceiling, a member below the invoker is allowed while a peer or higher member is refused with their name, self is allowed, the bot itself follows the same rule (owner excepted), managed and `@everyone` roles stay refused, and the no-actor calls behave exactly as before.
 - Pager harness (17 checks) over `src/lib/pager.js`: empty/short/exact/remainder chunking, the five button ids and Arabic labels, disabled first/last edges, the page-counter label, and `withPager` keeping extra rows (the store's launch button) below the pager. A second 12-check flow harness clicks `last`/`prev`/`first` through a fake collector and confirms the counter and disabled states follow the page (the bug that froze them on page 1), that the disabled counter click is ignored, and that the collector strips the buttons when it ends. `node --check` and the fake-token boot (54 commands / 8 events) pass with the seven commands wired in.
 - Ledger removal test on a temp DB (29 checks): `adminTransactions` returns only `admin_add`/`admin_remove`/`adjust` rows newest-first, missing/non-admin/bad ids are refused, a guild's rows never touch another guild, deleting the two ±50,000 test adjustments drops the movement count by two and the in/out totals by 50,000 each while leaving the member's other history intact, deleting a lone adjustment re-bases the later `balance_after` values by its amount, and an 18-row member history pages 15 + 3 with no overlap, newest-first across pages, the oldest row reachable on the last page, and the member filter/count excluding everyone else.
+- Confirmation flow harness (30 checks) over `src/lib/confirm.js`: the prompt carries the Arabic warning plus `confirm`/`تأكيد`/`إلغاء`, a pending entry is scoped to the guild, channel and member, a stranger or another channel cannot answer it, ordinary chat is left alone, `تأكيد` runs the action once and removes the prompt, a second confirm is ignored, `confirm.` with punctuation still works, `إلغاء` drops it without running and replies in Arabic, and a short timeout expires the entry, rewrites the prompt to `انتهى وقت التأكيد`, and refuses a late confirm.
+- Coins transfer harness on a temp DB (8 checks) runs `coins.execute` with a 500-coin sender and a fake mention: the command posts one confirmation prompt naming the amount and member, the balances stay at 500/0 until the sender types `confirm`, then the transfer moves 50 coins (450/50) and reports the result.
 
 ## Useful context
 

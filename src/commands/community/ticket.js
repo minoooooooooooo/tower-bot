@@ -6,6 +6,7 @@ import {
   SlashCommandBuilder,
 } from 'discord.js';
 import { COLORS, embed } from '../../lib/embeds.js';
+import { askConfirmation } from '../../lib/confirm.js';
 import { errorReply, infoReply, okReply, warnReply } from '../../lib/replies.js';
 import { resolveChannel, resolveMember, resolveRole } from '../../lib/resolve.js';
 import { parseColor } from '../general/color.js';
@@ -207,7 +208,7 @@ function overviewEmbed() {
       '`/ticket add user:@member` / `/ticket remove user:@member` — إدارة الوصول (فريق الدعم)',
       '`/ticket open [key] [user]` — افتح تذكرة لعضو (فريق الدعم)',
       '`/ticket rename name:...` — غيّر اسم التذكرة (فريق الدعم)',
-      '`/ticket delete confirm:true` — احذف هذي القناة بدون نسخة (فريق الدعم)',
+      '`/ticket delete` — احذف هذي القناة بدون نسخة (فريق الدعم، يطلب تأكيد)',
       '',
       '**اللوحات**',
       '`/ticket panel add key:support label:Support channel:#support` — سوِّ لوحة',
@@ -218,7 +219,7 @@ function overviewEmbed() {
       '**الأزرار**',
       '`/ticket button add key:help label:Help panel:support category:#tickets closed_category:#closed` — سوِّ زر',
       '`/ticket button edit key:help panel:support ...` — عدّله أو انقله',
-      '`/ticket button remove key:help confirm:true` — احذفه',
+      '`/ticket button remove key:help` — احذفه (يطلب تأكيد)',
       '`/ticket number key:help start:100` — خلّ تذاكر هذا الزر تبدأ من 100',
       '',
       '**إعداد مشترك**',
@@ -529,18 +530,6 @@ async function handleButtonRemove(ctx) {
     return;
   }
 
-  if (!confirmed) {
-    await ctx.fail(
-      ephemeral(
-        warnReply(
-          'يحتاج تأكيد',
-          `هذا يحذف \`${button.key}\`. شغّل \`/ticket button remove key:${button.key} confirm:true\`.`,
-        ),
-      ),
-    );
-    return;
-  }
-
   const open = openTicketsFor(ctx.guildId, null, button.key).length;
 
   if (open > 0) {
@@ -555,12 +544,49 @@ async function handleButtonRemove(ctx) {
     return;
   }
 
-  deleteTicketType(ctx.guildId, button.key);
-  await refreshPostedPanels(ctx);
+  // Deletion is what the confirmation gates, so the checks run again when the
+  // member answers: two minutes is enough time for a ticket to open or for
+  // another admin to remove the button.
+  const removeButton = async () => {
+    if (!getTicketType(ctx.guildId, button.key)) {
+      await ctx.reply(
+        ephemeral(warnReply('الزر انحذف', `\`${button.key}\` ما عاد موجود في اللوحة.`)),
+      );
+      return;
+    }
 
-  await ctx.reply(
-    okReply('انحذف الزر', `انشال \`${button.key}\` من اللوحة \`${button.panelKey}\`.`),
-  );
+    const stillOpen = openTicketsFor(ctx.guildId, null, button.key).length;
+
+    if (stillOpen > 0) {
+      await ctx.reply(
+        ephemeral(
+          warnReply(
+            'فيه تذاكر مفتوحة',
+            `انفتحت ${stillOpen} تذكرة لهذا الزر. اقفلها قبل ما تحذفه.`,
+          ),
+        ),
+      );
+      return;
+    }
+
+    deleteTicketType(ctx.guildId, button.key);
+    await refreshPostedPanels(ctx);
+
+    await ctx.reply(
+      okReply('انحذف الزر', `انشال \`${button.key}\` من اللوحة \`${button.panelKey}\`.`),
+    );
+  };
+
+  if (!confirmed) {
+    await askConfirmation({
+      ctx,
+      prompt: `هذا يحذف الزر \`${button.key}\` من اللوحة \`${button.panelKey}\`.`,
+      run: removeButton,
+    });
+    return;
+  }
+
+  await removeButton();
 }
 
 async function handleNumber(ctx) {
@@ -1056,36 +1082,63 @@ async function handlePanelRemove(ctx) {
     return;
   }
 
-  if (!confirmed) {
-    await ctx.fail(
-      ephemeral(
-        warnReply(
-          'يحتاج تأكيد',
-          `هذا يحذف اللوحة \`${panel.key}\` و**${buttons.length}** زر. شغّل \`/ticket panel remove key:${panel.key} confirm:true\`.`,
+  const removePanel = async () => {
+    if (!getTicketPanel(ctx.guildId, panel.key)) {
+      await ctx.reply(
+        ephemeral(warnReply('اللوحة انحذفت', `\`${panel.key}\` ما عادت موجودة.`)),
+      );
+      return;
+    }
+
+    const currentButtons = listTicketTypes(ctx.guildId, panel.key);
+    const stillOpen = currentButtons
+      .map((button) => ({ button, count: openTicketsFor(ctx.guildId, null, button.key).length }))
+      .filter((entry) => entry.count > 0);
+
+    if (stillOpen.length > 0) {
+      await ctx.reply(
+        ephemeral(
+          warnReply(
+            'فيه تذاكر مفتوحة',
+            `انفتحت تذاكر لهذي اللوحة. اقفلها قبل ما تحذفها:\n${stillOpen
+              .map((entry) => `• \`${entry.button.key}\` (${entry.count})`)
+              .join('\n')}`,
+          ),
         ),
+      );
+      return;
+    }
+
+    if (panel.channelId && panel.messageId) {
+      const channel = await panelChannelById(ctx.guild, panel.channelId);
+      const message = channel?.messages?.fetch
+        ? await channel.messages.fetch(panel.messageId).catch(() => null)
+        : null;
+
+      if (message) await message.delete().catch(() => null);
+    }
+
+    for (const button of currentButtons) deleteTicketType(ctx.guildId, button.key);
+    deleteTicketPanel(ctx.guildId, panel.key);
+
+    await ctx.reply(
+      okReply(
+        'انحذفت اللوحة',
+        `انشالت \`${panel.key}\` و**${currentButtons.length}** زر معها.`,
       ),
     );
+  };
+
+  if (!confirmed) {
+    await askConfirmation({
+      ctx,
+      prompt: `هذا يحذف اللوحة \`${panel.key}\` و**${buttons.length}** زر معها.`,
+      run: removePanel,
+    });
     return;
   }
 
-  if (panel.channelId && panel.messageId) {
-    const channel = await panelChannelById(ctx.guild, panel.channelId);
-    const message = channel?.messages?.fetch
-      ? await channel.messages.fetch(panel.messageId).catch(() => null)
-      : null;
-
-    if (message) await message.delete().catch(() => null);
-  }
-
-  for (const button of buttons) deleteTicketType(ctx.guildId, button.key);
-  deleteTicketPanel(ctx.guildId, panel.key);
-
-  await ctx.reply(
-    okReply(
-      'انحذفت اللوحة',
-      `انشالت \`${panel.key}\` و**${buttons.length}** زر معها.`,
-    ),
-  );
+  await removePanel();
 }
 
 async function handleList(ctx) {
@@ -1413,37 +1466,46 @@ async function handleTicketDelete(ctx) {
     : ctx.args.includes('confirm') ||
       parseFlagTokens(ctx.args.slice(1)).flags.confirm !== undefined;
 
-  if (!confirmed) {
-    await ctx.fail(
-      ephemeral(
-        warnReply(
-          'يحتاج تأكيد',
-          `هذا يحذف تذكرة #${padTicketNumber(ticket.number)} بدون نسخة. شغّل \`/ticket delete confirm:true\` (بالبادئة \`:-ticket delete confirm\`) عشان تحذفها.`,
-        ),
-      ),
+  const deleteTicket = async () => {
+    if (!isStaffMember(ctx.guild, ctx.member, type)) {
+      await ctx.reply(
+        ephemeral(errorReply('صلاحيات ناقصة', 'فريق الدعم بس يقدر يحذف تذكرة.')),
+      );
+      return;
+    }
+
+    if (ctx.isSlash) await ctx.defer({ ephemeral: true });
+    else await ctx.typing();
+
+    try {
+      await ctx.channel.delete(`تذكرة حذفها ${ctx.user.tag ?? ctx.user.id}`);
+    } catch (error) {
+      await ctx.reply(ephemeral(errorReply('ما قدرت أحذف التذكرة', error.message)));
+      return;
+    }
+
+    markTicketDeleted(ticket.id);
+
+    const payload = okReply(
+      'انحذفت التذكرة',
+      `تذكرة #${padTicketNumber(ticket.number)} انحذفت.`,
     );
+
+    // The channel no longer exists, so the DM is the only place the caller can
+    // see the result.
+    if (ctx.user.send) await ctx.user.send(payload).catch(() => null);
+  };
+
+  if (!confirmed) {
+    await askConfirmation({
+      ctx,
+      prompt: `هذا يحذف تذكرة #${padTicketNumber(ticket.number)} بدون نسخة ولا رجعة.`,
+      run: deleteTicket,
+    });
     return;
   }
 
-  if (ctx.isSlash) await ctx.defer({ ephemeral: true });
-  else await ctx.typing();
-
-  try {
-    await ctx.channel.delete(`تذكرة حذفها ${ctx.user.tag ?? ctx.user.id}`);
-  } catch (error) {
-    await ctx.fail(ephemeral(errorReply('ما قدرت أحذف التذكرة', error.message)));
-    return;
-  }
-
-  markTicketDeleted(ticket.id);
-
-  const payload = okReply(
-    'انحذفت التذكرة',
-    `تذكرة #${padTicketNumber(ticket.number)} انحذفت.`,
-  );
-
-  if (ctx.isSlash) await ctx.editReply(payload).catch(() => null);
-  else if (ctx.user.send) await ctx.user.send(payload).catch(() => null);
+  await deleteTicket();
 }
 
 async function handleClose(ctx) {
@@ -1878,7 +1940,10 @@ export default {
               option.setName('key').setDescription('مفتاح الزر').setRequired(true).setAutocomplete(true),
             )
             .addBooleanOption((option) =>
-              option.setName('confirm').setDescription('اختر true للتأكيد').setRequired(true),
+              option
+                .setName('confirm')
+                .setDescription('أكّد فورًا (بدونها يطلب منك كتابة confirm)')
+                .setRequired(false),
             ),
         ),
     )
@@ -1912,7 +1977,10 @@ export default {
               option.setName('key').setDescription('مفتاح اللوحة').setRequired(true).setAutocomplete(true),
             )
             .addBooleanOption((option) =>
-              option.setName('confirm').setDescription('اختر true للتأكيد').setRequired(true),
+              option
+                .setName('confirm')
+                .setDescription('أكّد فورًا (بدونها يطلب منك كتابة confirm)')
+                .setRequired(false),
             ),
         ),
     )

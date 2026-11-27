@@ -1,6 +1,7 @@
 import { InteractionContextType, SlashCommandBuilder } from 'discord.js';
 import { config } from '../../config.js';
 import { formatNumber } from '../../lib/activity-format.js';
+import { askConfirmation } from '../../lib/confirm.js';
 import { errorReply, okReply, warnReply } from '../../lib/replies.js';
 import { resolveUser } from '../../lib/resolve.js';
 import { displayNameOf } from '../../lib/targets.js';
@@ -30,13 +31,13 @@ function parseAmount(token) {
 
 function usage(ctx) {
   if (ctx.isSlash) {
-    return 'استخدم `/coins` عشان تشوف رصيدك، أو `/coins user:@member amount:50` عشان ترسل عملات.';
+    return 'استخدم `/coins` عشان تشوف رصيدك، أو `/coins user:@member amount:50` عشان ترسل عملات (بيطلب منك تأكيد).';
   }
 
   return (
     `استخدم \`${config.prefix}coins\` عشان تشوف رصيدك، ` +
     `\`${config.prefix}coins @member\` عشان تشوف رصيده، أو ` +
-    `\`${config.prefix}coins @member 50\` عشان ترسل 50 عملة.`
+    `\`${config.prefix}coins @member 50\` عشان ترسل 50 عملة (بيطلب منك تأكيد).`
   );
 }
 
@@ -189,39 +190,76 @@ export default {
 
     settleProfile(ctx.guildId, targetUser.id, linked);
 
-    let result;
+    const balance = getProfile(ctx.guildId, senderId).coins;
 
-    try {
-      result = transferCoins(ctx.guildId, senderId, targetUser.id, amount);
-    } catch {
-      await ctx.fail(errorReply('ما قدرت أرسل العملات', 'كتابة قاعدة البيانات فشلت. جرّب مرة ثانية.'));
+    if (balance < amount) {
+      await ctx.fail(
+        warnReply(
+          'ما عندك عملات كافية',
+          `عندك **${formatNumber(balance)}** عملة، فما تقدر ترسل **${formatNumber(amount)}**.`,
+        ),
+      );
       return;
     }
 
-    if (!result.ok) {
-      if (result.reason === 'funds') {
-        await ctx.fail(
+    // Nothing moves until the sender answers the prompt in the channel. The
+    // checks run again when they do, in case the balance or the server setting
+    // changed during the two-minute window.
+    const transferNow = async () => {
+      if (!transferEnabled(ctx.guildId)) {
+        await ctx.reply(
           warnReply(
-            'ما عندك عملات كافية',
-            `عندك **${formatNumber(result.balance)}** عملة، فما تقدر ترسل ` +
-              `**${formatNumber(amount)}**.`,
+            'التحويل مقفّل',
+            'تحويل العملات انقفل في هذا السيرفر قبل ما يأكد التحويل.',
           ),
         );
         return;
       }
 
-      await ctx.fail(errorReply('ما قدرت أرسل العملات', usage(ctx)));
-      return;
-    }
+      let result;
 
-    await ctx.editReply({
-      content: okReply(
-        'انرسلت العملات',
-        `**${formatNumber(amount)}** عملة إلى ${targetMember}.\n` +
-          `رصيدك: **${formatNumber(result.fromBalance)}** عملة.\n` +
-          `رصيده: **${formatNumber(result.toBalance)}** عملة.`,
-      ).content,
-      allowedMentions: { parse: [] },
+      try {
+        result = transferCoins(ctx.guildId, senderId, targetUser.id, amount);
+      } catch {
+        await ctx.reply(
+          errorReply('ما قدرت أرسل العملات', 'كتابة قاعدة البيانات فشلت. جرّب مرة ثانية.'),
+        );
+        return;
+      }
+
+      if (!result.ok) {
+        if (result.reason === 'funds') {
+          await ctx.reply(
+            warnReply(
+              'ما عندك عملات كافية',
+              `عندك **${formatNumber(result.balance)}** عملة، فما تقدر ترسل ` +
+                `**${formatNumber(amount)}**.`,
+            ),
+          );
+          return;
+        }
+
+        await ctx.reply(errorReply('ما قدرت أرسل العملات', usage(ctx)));
+        return;
+      }
+
+      await ctx.reply({
+        ...okReply(
+          'انرسلت العملات',
+          `**${formatNumber(amount)}** عملة إلى ${targetMember}.\n` +
+            `رصيدك: **${formatNumber(result.fromBalance)}** عملة.\n` +
+            `رصيده: **${formatNumber(result.toBalance)}** عملة.`,
+        ),
+        allowedMentions: { parse: [] },
+      });
+    };
+
+    await askConfirmation({
+      ctx,
+      prompt:
+        `بتحوّل **${formatNumber(amount)}** عملة إلى ${targetMember}.\n` +
+        `رصيدك الحالي: **${formatNumber(balance)}** عملة. التحويل ما ينرجع تلقائيًا.`,
+      run: transferNow,
     });
   },
 };

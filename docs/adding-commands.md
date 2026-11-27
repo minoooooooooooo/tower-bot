@@ -117,6 +117,34 @@ await ctx.reply(ephemeral(errorReply('العضو غير موجود', 'اذكر �
 - Put the useful fact first and the next step second, so a one-line phone preview still answers the question.
 - Keep an embed only for list/table output (`/help`, `/store`, coin logs), where fields carry the layout.
 
+## Confirming a destructive action
+
+Use `askConfirmation()` from `src/lib/confirm.js` instead of refusing with "add confirm:true". It sends a second message asking the caller to type `confirm` / `تأكيد` (or `إلغاء` to cancel) in the same channel, and only then runs the closure. `messageCreate` handles the typed answer; nothing else is needed.
+
+```js
+import { askConfirmation } from '../../lib/confirm.js';
+import { okReply } from '../../lib/replies.js';
+
+async execute(ctx) {
+  const run = async () => {
+    // Do the destructive work here, using the same ctx. Guards that can change
+    // while the prompt is open (funds, open tickets) should run again here.
+    await ctx.reply(okReply('انحذف', 'انحذف العنصر.'));
+  };
+
+  await askConfirmation({
+    ctx,
+    prompt: 'هذا يحذف العنصر ولا ينرجع.',
+    run,
+  });
+}
+```
+
+- The pending answer is tied to the invoking member, guild and channel, and expires after two minutes.
+- Prompts are ephemeral on slash and normal replies on prefix; they are deleted once answered.
+- Keep an in-command `confirm:true` (or a prefix `confirm` word) option working only as an explicit shortcut; the typed flow is the default.
+- The closure may run up to two minutes later, so re-check anything that could have changed.
+
 ## Notes
 
 - Files starting with `_` are ignored, so you can keep a template around as `_template.js`.

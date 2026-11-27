@@ -2,6 +2,7 @@ import { InteractionContextType, MessageFlags, SlashCommandBuilder } from 'disco
 import { config } from '../../config.js';
 import { formatNumber } from '../../lib/activity-format.js';
 import { COLORS, embed } from '../../lib/embeds.js';
+import { askConfirmation } from '../../lib/confirm.js';
 import { createLogger } from '../../lib/logger.js';
 import { attachPager, pagerMessage, withPager } from '../../lib/pager.js';
 import { errorReply, infoReply, okReply, warnReply } from '../../lib/replies.js';
@@ -106,8 +107,8 @@ function parseRequest(ctx) {
 
 function hint(ctx, id) {
   return ctx.isSlash
-    ? `/coin-remove id:${id} confirm:true`
-    : `${config.prefix}coin-remove ${id} confirm`;
+    ? `/coin-remove id:${id}`
+    : `${config.prefix}coin-remove ${id}`;
 }
 
 function listHint(ctx) {
@@ -180,29 +181,6 @@ async function showList(ctx, { user = null, page = 1 } = {}) {
   });
 }
 
-async function preview(ctx, row) {
-  await ctx.reply(
-    ephemeral({
-      embeds: [
-        embed({
-          title: `الحركة #${row.id}`,
-          description: [
-            `النوع: **${typeLabel(row)}**`,
-            `العضو: <@${row.user_id}>`,
-            `المبلغ: **${signed(row.amount)}**`,
-            `الرصيد بعدها: **${formatNumber(row.balance_after)}**`,
-            `الوقت: <t:${Math.floor(row.created_at / 1000)}:f>`,
-            `بواسطة: ${row.actor_id ? `<@${row.actor_id}>` : 'غير معروف'}`,
-          ].join('\n'),
-          color: COLORS.warning,
-          footer: `للحذف: ${hint(ctx, row.id)}`,
-        }),
-      ],
-      allowedMentions: { parse: [] },
-    }),
-  );
-}
-
 export default {
   data: new SlashCommandBuilder()
     .setName('coin-remove')
@@ -232,7 +210,7 @@ export default {
     .addBooleanOption((option) =>
       option
         .setName('confirm')
-        .setDescription('أكّد الحذف (بدونها يعرض معاينة فقط)')
+        .setDescription('أكّد الحذف فورًا (بدونها يطلب منك كتابة confirm)')
         .setRequired(false),
     ),
 
@@ -335,39 +313,53 @@ export default {
       return;
     }
 
-    if (!parsed.confirmed) {
-      await preview(ctx, row);
-      return;
-    }
+    const removeNow = async () => {
+      const result = removeAdminTransaction(ctx.guildId, parsed.id);
 
-    const result = removeAdminTransaction(ctx.guildId, parsed.id);
+      if (!result.ok) {
+        await ctx.reply(
+          ephemeral(
+            errorReply(
+              'ما انحذفت الحركة',
+              result.reason === 'missing'
+                ? 'اختفى السجل أثناء الحذف. جرّب مرة ثانية.'
+                : 'هذي الحركة ما تنحذف.',
+            ),
+          ),
+        );
+        return;
+      }
 
-    if (!result.ok) {
-      await ctx.fail(
+      logger.info(
+        `${ctx.user.tag ?? ctx.user.username} (${ctx.user.id}) removed coin transaction #${parsed.id} in ${ctx.guildId}`,
+      );
+
+      await ctx.reply(
         ephemeral(
-          errorReply(
-            'ما انحذفت الحركة',
-            result.reason === 'missing'
-              ? 'اختفى السجل أثناء الحذف. جرّب مرة ثانية.'
-              : 'هذي الحركة ما تنحذف.',
+          okReply(
+            'انحذفت الحركة',
+            `**#${parsed.id}** (${typeLabel(row)} **${signed(row.amount)}** لـ <@${row.user_id}>) ما عادت في السجل.\n` +
+              'الأرقام اللي بعدها انضبطت، والرصيد الحالي ما تغيّر.',
           ),
         ),
       );
+    };
+
+    if (!parsed.confirmed) {
+      await askConfirmation({
+        ctx,
+        prompt: [
+          `الحركة **#${row.id}** · ${typeLabel(row)} · **${signed(row.amount)}**`,
+          `العضو: <@${row.user_id}>`,
+          `الرصيد بعدها: **${formatNumber(row.balance_after)}**`,
+          `الوقت: <t:${Math.floor(row.created_at / 1000)}:f>`,
+          'بتنحذف من السجل فقط: الأرقام اللي بعدها بتنضبط، والرصيد الحالي ما بيتغيّر.',
+        ].join('\n'),
+        run: removeNow,
+      });
       return;
     }
 
-    logger.info(
-      `${ctx.user.tag ?? ctx.user.username} (${ctx.user.id}) removed coin transaction #${parsed.id} in ${ctx.guildId}`,
-    );
-
-    await ctx.reply(
-      ephemeral(
-        okReply(
-          'انحذفت الحركة',
-          `**#${parsed.id}** (${typeLabel(row)} **${signed(row.amount)}** لـ <@${row.user_id}>) ما عادت في السجل.\n` +
-            'الأرقام اللي بعدها انضبطت، والرصيد الحالي ما تغيّر.',
-        ),
-      ),
-    );
+    await removeNow();
   },
 };

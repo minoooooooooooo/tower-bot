@@ -1,4 +1,5 @@
 import { config } from '../config.js';
+import { handleConfirmation } from '../lib/confirm.js';
 import { CommandContext } from '../lib/context.js';
 import { createLogger } from '../lib/logger.js';
 import { parseArgs } from '../lib/parse-args.js';
@@ -50,6 +51,15 @@ export default {
       } catch (error) {
         logger.error('Emoji tracking failed', error);
       }
+    }
+
+    // A command may have asked this member to confirm in a separate message.
+    // Only the prompted member in the same channel can answer, and only with
+    // a confirm/cancel word; everything else continues as normal chat.
+    try {
+      if (await handleConfirmation(message, client)) return;
+    } catch (error) {
+      logger.error('Confirmation handling failed', error);
     }
 
     const usedPrefix = resolvePrefix(message.content, client);
