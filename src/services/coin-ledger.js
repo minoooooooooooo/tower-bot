@@ -182,19 +182,47 @@ function queryHistory(guildId, userId, { filter = 'all', limit = COIN_PAGE_SIZE,
   return rows.map(mapRow);
 }
 
-/** The most recent hand-written adjustments, newest first. */
-export function recentAdminTransactions(guildId, limit = 10) {
+/** Hand-written adjustments, newest first, optionally for one member. */
+export function adminTransactions(guildId, { userId = null, limit = 15, offset = 0 } = {}) {
+  const clauses = [`guild_id = ?`, `type IN (${ADMIN_TYPES.map(() => '?').join(', ')})`];
+  const args = [guildId, ...ADMIN_TYPES];
+
+  if (userId) {
+    clauses.push('user_id = ?');
+    args.push(userId);
+  }
+
   const rows = getDb()
     .prepare(
       `SELECT id, user_id, amount, balance_after, type, actor_id, detail, created_at
          FROM coin_transactions
-        WHERE guild_id = ? AND type IN (${ADMIN_TYPES.map(() => '?').join(', ')})
+        WHERE ${clauses.join(' AND ')}
         ORDER BY id DESC
-        LIMIT ?`,
+        LIMIT ? OFFSET ?`,
     )
-    .all(guildId, ...ADMIN_TYPES, Math.max(1, Math.trunc(limit)));
+    .all(...args, Math.max(1, Math.trunc(limit)), Math.max(0, Math.trunc(offset)));
 
   return rows.map(mapRow);
+}
+
+export function countAdminTransactions(guildId, { userId = null } = {}) {
+  const clauses = [`guild_id = ?`, `type IN (${ADMIN_TYPES.map(() => '?').join(', ')})`];
+  const args = [guildId, ...ADMIN_TYPES];
+
+  if (userId) {
+    clauses.push('user_id = ?');
+    args.push(userId);
+  }
+
+  const row = getDb()
+    .prepare(
+      `SELECT COUNT(*) AS count
+         FROM coin_transactions
+        WHERE ${clauses.join(' AND ')}`,
+    )
+    .get(...args);
+
+  return Number(row?.count) || 0;
 }
 
 export function coinTransaction(guildId, id) {

@@ -121,15 +121,18 @@ only runs when the member has no ledger rows at all.
 
 **Removing a bad adjustment (2026-11-27).** `/coin-remove` (prefix
 `:-coin-remove`, aliases `coin-delete`/`coin-purge`, **bot owner only**) lists
-the fifteen latest `admin_add`/`admin_remove`/`adjust` rows with their `#id`
-when called without one, previews a single row with `id:<n>`, and deletes it
-with `confirm:true` (prefix: `:-coin-remove <n> confirm`). Deletion is
-history-only: current balances stay as they are, and later rows for the same
-member get `balance_after` re-based by the removed amount inside one SQLite
-transaction. Only admin adjustments can be removed; level rewards, transfers,
-purchases and refunds are real history. Guild totals, the distinct-member count
-and the page count drop immediately, so test adjustments stop skewing
-`/coin-log`.
+`admin_add`/`admin_remove`/`adjust` rows with their `#id` when called without
+one, fifteen per page with the shared five-button pager, so adjustments older
+than the first page stay reachable; `user:<member>` (prefix
+`:-coin-remove @member` or the raw id) filters the list to one member, and
+`page:<n>` (prefix: a number after the member) jumps to a page. It previews a
+single row with `id:<n>` and deletes it with `confirm:true` (prefix:
+`:-coin-remove <n> confirm`). Deletion is history-only: current balances stay as
+they are, and later rows for the same member get `balance_after` re-based by
+the removed amount inside one SQLite transaction. Only admin adjustments can be
+removed; level rewards, transfers, purchases and refunds are real history.
+Guild totals, the distinct-member count and the page count drop immediately, so
+test adjustments stop skewing `/coin-log`.
 
 **Store (added 2026-11-17).** `/store` (prefix `:-store`, alias `shop`) browses
 the catalogue, `buy` spends coins and delivers, `owned` lists a member's
@@ -371,7 +374,7 @@ pagers.
 | `/profile [user]` | `card`, `profilecard` | Generated PNG card: title, coins, rank, level, points, XP |
 | `/coins [user] [amount]` | `coin`, `balance`, `wallet` | Own balance, another member's balance, or a transfer |
 | `/coin-log [user] [type] [page]` | `coins-log`, `coin-history`, `coinlog`, `ledger` | Recent signed coin movement; `global:true` / `all` shows the whole server |
-| `/coin-remove [id] [confirm]` | `coin-delete`, `coin-purge` | Owner-only: delete a test admin adjustment from the ledger |
+| `/coin-remove [@member \| id] [page] [confirm]` | `coin-delete`, `coin-purge` | Owner-only: paged list of admin adjustments, member filter, preview and delete |
 | `/coins-config [on\|off\|status]` | `coin-config`, `coinsconfig` | Turn coin transfers on/off (Manage Server, grantable) |
 | `/store [browse\|buy\|owned]` | `shop` | Catalogue, purchases: XP, behaviour, title, emoji, role, designs |
 | `/store-config <sub>` | `store-admin`, `shop-config` | Prices, visibility and `reset-user` (Manage Server, grantable) |
@@ -1164,7 +1167,7 @@ Behavior that must be preserved:
 - Arabic batch 8 sweep: a scan of `src/**/*.js` for English sentences in string literals now returns only slash/prefix command examples (kept English by request), console logs, code comments, SQL, AI prompts, and font names — every English string that reaches Discord or the report export is gone. The mute-role rename is adoption-safe: `isMuteRoleName` accepts both `مكتوم` and the old `Muted`, so a server that already has the English role keeps using it instead of getting a second one.
 - Role hierarchy test with fake guild/role/member objects (21 checks, `roleProblem`/`memberProblem` exported for it): a role below the invoker's top role is allowed while one at or above it is refused with the role named, a role above the bot is still refused first, the guild owner bypasses both checks but not the bot's ceiling, a member below the invoker is allowed while a peer or higher member is refused with their name, self is allowed, the bot itself follows the same rule (owner excepted), managed and `@everyone` roles stay refused, and the no-actor calls behave exactly as before.
 - Pager harness (17 checks) over `src/lib/pager.js`: empty/short/exact/remainder chunking, the five button ids and Arabic labels, disabled first/last edges, the page-counter label, and `withPager` keeping extra rows (the store's launch button) below the pager. A second 12-check flow harness clicks `last`/`prev`/`first` through a fake collector and confirms the counter and disabled states follow the page (the bug that froze them on page 1), that the disabled counter click is ignored, and that the collector strips the buttons when it ends. `node --check` and the fake-token boot (54 commands / 8 events) pass with the seven commands wired in.
-- Ledger removal test on a temp DB (19 checks): `recentAdminTransactions` returns only `admin_add`/`admin_remove`/`adjust` rows newest-first, missing/non-admin/bad ids are refused, a guild's rows never touch another guild, deleting the two ±50,000 test adjustments drops the movement count by two and the in/out totals by 50,000 each while leaving the member's other history intact, and deleting a lone adjustment re-bases the later `balance_after` values by its amount.
+- Ledger removal test on a temp DB (29 checks): `adminTransactions` returns only `admin_add`/`admin_remove`/`adjust` rows newest-first, missing/non-admin/bad ids are refused, a guild's rows never touch another guild, deleting the two ±50,000 test adjustments drops the movement count by two and the in/out totals by 50,000 each while leaving the member's other history intact, deleting a lone adjustment re-bases the later `balance_after` values by its amount, and an 18-row member history pages 15 + 3 with no overlap, newest-first across pages, the oldest row reachable on the last page, and the member filter/count excluding everyone else.
 
 ## Useful context
 
