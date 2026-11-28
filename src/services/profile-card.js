@@ -9,13 +9,13 @@ import { formatArabicCount } from '../lib/durations.js';
 import { createLogger } from '../lib/logger.js';
 import { backgroundArtFile } from './profile-backgrounds.js';
 import {
-  ANIMATED_HEIGHT,
   ANIMATED_MAX_BYTES,
-  ANIMATED_MAX_FRAMES,
+  ANIMATED_MAX_DURATION_MS,
   ANIMATED_QUALITY,
-  ANIMATED_WIDTH,
+  ANIMATED_STEP_WIDTHS,
   drawCover,
   eachGifFrame,
+  readGifInfo,
 } from './wallpaper-gif.js';
 
 const logger = createLogger('profile-card');
@@ -1142,10 +1142,15 @@ function drawCardContent(ctx, { member, avatar, stats, status, background, coin 
  * Rebuilds the card on top of every frame of an animated wallpaper.
  *
  * The chrome and text never change between frames, so they are drawn once at
- * full size and downscaled to the GIF resolution. Each decoded wallpaper frame
- * is then composited underneath that static layer and encoded natively.
- * Returns null when the animation cannot be read or the result stays too large,
- * so the caller falls back to the still card.
+ * full size and downscaled to the animation's own resolution. Each decoded
+ * wallpaper frame is then composited underneath that static layer and encoded
+ * natively, keeping the source timing and frame count.
+ *
+ * The animation is stored at the upload's resolution (already trimmed and
+ * capped at 1280 px), so the first attempt is normally enough. If the finished
+ * card would pass Discord's limit, the width steps down while the duration and
+ * fps stay untouched. Returns null when the animation cannot be read or even
+ * the smallest step is too large, so the caller falls back to the still card.
  */
 async function renderAnimatedCard({ gifPath, avatar, member, stats, status, background, coin }) {
   let bytes;
@@ -1155,6 +1160,10 @@ async function renderAnimatedCard({ gifPath, avatar, member, stats, status, back
   } catch {
     return null;
   }
+
+  const info = readGifInfo(bytes);
+
+  if (!info || info.frames < 2) return null;
 
   const full = createCanvas(CARD_WIDTH, CARD_HEIGHT);
   const fullCtx = full.getContext('2d');
@@ -1169,52 +1178,49 @@ async function renderAnimatedCard({ gifPath, avatar, member, stats, status, back
     coinFilter: ANIMATED_COIN_FILTER,
   });
 
-  const overlay = createCanvas(ANIMATED_WIDTH, ANIMATED_HEIGHT);
-  overlay.getContext('2d').drawImage(full, 0, 0, ANIMATED_WIDTH, ANIMATED_HEIGHT);
-
-  const frame = createCanvas(ANIMATED_WIDTH, ANIMATED_HEIGHT);
-  const frameCtx = frame.getContext('2d');
-
-  const attempt = async (maxFrames) => {
-    const encoder = new GifEncoder(ANIMATED_WIDTH, ANIMATED_HEIGHT, {
-      repeat: 0,
-      quality: ANIMATED_QUALITY,
-    });
-
-    const info = await eachGifFrame(
-      bytes,
-      (source, delay) => {
-        frameCtx.fillStyle = '#101218';
-        frameCtx.fillRect(0, 0, ANIMATED_WIDTH, ANIMATED_HEIGHT);
-        drawCover(frameCtx, source, ANIMATED_WIDTH, ANIMATED_HEIGHT);
-        frameCtx.drawImage(overlay, 0, 0);
-
-        const raw = frameCtx.getImageData(0, 0, ANIMATED_WIDTH, ANIMATED_HEIGHT).data;
-        encoder.addFrame(
-          new Uint8Array(raw.buffer, raw.byteOffset, raw.byteLength),
-          ANIMATED_WIDTH,
-          ANIMATED_HEIGHT,
-          { delay },
-        );
-      },
-      { maxFrames },
-    );
-
-    if (!info || info.frames < 2) return null;
-
-    return encoder.finish();
-  };
+  const widths = [info.width, ...ANIMATED_STEP_WIDTHS.filter((width) => width < info.width)];
 
   try {
-    let buffer = await attempt(ANIMATED_MAX_FRAMES);
+    for (const width of widths) {
+      const height = Math.max(2, Math.round((width * info.height) / info.width));
+      const overlay = createCanvas(width, height);
+      overlay.getContext('2d').drawImage(full, 0, 0, width, height);
 
-    if (buffer && buffer.length > ANIMATED_MAX_BYTES) {
-      buffer = await attempt(Math.max(6, Math.floor(ANIMATED_MAX_FRAMES / 2)));
+      const frame = createCanvas(width, height);
+      const frameCtx = frame.getContext('2d');
+      const encoder = new GifEncoder(width, height, {
+        repeat: 0,
+        quality: ANIMATED_QUALITY,
+      });
+
+      const result = await eachGifFrame(
+        bytes,
+        (source, delay) => {
+          frameCtx.fillStyle = '#101218';
+          frameCtx.fillRect(0, 0, width, height);
+          drawCover(frameCtx, source, width, height);
+          frameCtx.drawImage(overlay, 0, 0);
+
+          const raw = frameCtx.getImageData(0, 0, width, height).data;
+          encoder.addFrame(new Uint8Array(raw.buffer, raw.byteOffset, raw.byteLength), width, height, {
+            delay,
+          });
+        },
+        { maxFrames: info.frames, maxDurationMs: ANIMATED_MAX_DURATION_MS },
+      );
+
+      if (!result || result.frames < 2) return null;
+
+      const buffer = encoder.finish();
+
+      if (buffer.length <= ANIMATED_MAX_BYTES) return buffer;
+
+      logger.info(
+        `Animated card at ${width}x${height} is ${(buffer.length / (1024 * 1024)).toFixed(1)} MB; stepping down`,
+      );
     }
 
-    if (!buffer || buffer.length > ANIMATED_MAX_BYTES) return null;
-
-    return buffer;
+    return null;
   } catch (error) {
     logger.warn(`Could not animate the wallpaper at ${gifPath}: ${error.message}`);
     return null;

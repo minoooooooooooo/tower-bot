@@ -882,9 +882,10 @@ function looksLikeImage(attachment, type) {
  * JPEG. Re-encoding is deliberate: it strips metadata, bounds the file size and
  * guarantees the renderer always receives the exact dimensions it expects.
  *
- * A GIF is also decoded and re-encoded as a normalised animated wallpaper, so
- * the card can loop it. That file is a sibling `.gif`; the JPEG stays as the
- * first frame and as the fallback when animation is off or unreadable.
+ * A GIF is also decoded and re-encoded as an animated wallpaper at its own
+ * resolution (never upscaled, capped at 1280 px), so the card can loop it. That
+ * file is a sibling `.gif`; the JPEG stays as the first frame and as the
+ * fallback when animation is off or unreadable.
  */
 export async function saveCustomWallpaper(
   guildId,
@@ -1006,5 +1007,10 @@ export async function saveCustomWallpaper(
     wasGif,
     frames: animation?.frames ?? 1,
     animationBytes: animation?.buffer.length ?? 0,
+    animationWidth: animation?.width ?? 0,
+    animationHeight: animation?.height ?? 0,
+    animationDuration: animation?.duration ?? 0,
+    sourceDuration: animation?.sourceDuration ?? 0,
+    trimmed: Boolean(animation?.trimmed),
   };
 }

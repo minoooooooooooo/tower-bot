@@ -61,7 +61,7 @@ const CUSTOM_WORDS = new Set(['custom', 'wallpaper', 'own', 'upload']);
 /** Arabic wording for the upload failures; the service keeps its English text. */
 const WALLPAPER_PROBLEMS = {
   missing: 'ارفق صورة مع الأمر، أو ارفعها في نفس الرسالة.',
-  'too-large': 'الصورة كبيرة. الحد 8 ميجابايت.',
+  'too-large': 'الصورة كبيرة. الحد 10 ميجابايت.',
   type: 'الملف لازم يكون PNG أو JPEG أو WebP أو GIF.',
   download: 'ما قدرت أنزّل الصورة من ديسكورد. جرّب ترفعها مرة ثانية.',
   decode: 'الملف ما انقرأ كصورة. جرّب صورة ثانية.',
@@ -71,6 +71,15 @@ const WALLPAPER_PROBLEMS = {
   image: 'ارفق صورة للخلفية.',
   unknown: 'هذي الخلفية ما عادت موجودة.',
 };
+
+/** A short length for the upload reply: "4.0 ث", "12 ث". */
+function clipLength(ms) {
+  const seconds = Number(ms) / 1000;
+
+  if (!Number.isFinite(seconds) || seconds <= 0) return '0 ث';
+
+  return `${seconds >= 10 ? Math.round(seconds) : seconds.toFixed(1)} ث`;
+}
 
 function wallpaperProblem(error) {
   return WALLPAPER_PROBLEMS[error.code] ?? error.message;
@@ -412,8 +421,8 @@ async function handleCustom(ctx, client, attachment) {
 
   if (!attachment) {
     const hint = hasCustom
-      ? `ارفق صورة جديدة عشان تبدّل ${self ? 'خلفيتك' : 'خلفيته'}. تنقص تلقائيًا على مقاس البطاقة، والـ GIF يظل متحرك.`
-      : `ارفق صورة PNG أو JPEG أو WebP أو GIF${self ? '' : ` لـ <@${target.id}>`}. تنقص تلقائيًا على مقاس البطاقة، والـ GIF يظل متحرك.`;
+      ? `ارفق صورة جديدة عشان تبدّل ${self ? 'خلفيتك' : 'خلفيته'}. تنقص تلقائيًا على مقاس البطاقة، والـ GIF يظل متحرك (حتى 10 ميجابايت، والمدة الطويلة تنقص).`
+      : `ارفق صورة PNG أو JPEG أو WebP أو GIF${self ? '' : ` لـ <@${target.id}>`}. تنقص تلقائيًا على مقاس البطاقة، والـ GIF يظل متحرك (حتى 10 ميجابايت، والمدة الطويلة تنقص).`;
 
     await respond(
       ctx,
@@ -442,7 +451,11 @@ async function handleCustom(ctx, client, attachment) {
       'ضبطت الخلفية الخاصة',
       `محفوظة بمقاس ${saved.sourceWidth}x${saved.sourceHeight} ومقصوصة على البطاقة. ` +
         (saved.animated
-          ? `متحركة (${saved.frames} إطار). `
+          ? `متحركة (${saved.frames} إطار · ${clipLength(saved.animationDuration)} · ` +
+            `${saved.animationWidth}x${saved.animationHeight}). ` +
+            (saved.trimmed
+              ? `المدة الأصلية ${clipLength(saved.sourceDuration)} وانقصت عشان تناسب حدود البوت. `
+              : '')
           : saved.wasGif
             ? 'الـ GIF ما انحرك (كبير أو طويل)، فانحفظ أول إطار. '
             : '') +
@@ -524,7 +537,7 @@ export default {
         .addAttachmentOption((option) =>
           option
             .setName('image')
-            .setDescription('PNG أو JPEG أو WebP أو GIF. تنقص على البطاقة، والـ GIF يتحرك.')
+            .setDescription('PNG أو JPEG أو WebP أو GIF (حتى 10 ميجابايت). الـ GIF يبقى متحرك.')
             .setRequired(false),
         )
         .addUserOption((option) =>

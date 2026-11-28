@@ -620,6 +620,10 @@ export async function saveCustomFromActivity({ client, guildId, user, image, ima
       wasGif: saved.wasGif,
       width: saved.sourceWidth,
       height: saved.sourceHeight,
+      animationWidth: saved.animationWidth,
+      animationHeight: saved.animationHeight,
+      duration: saved.animationDuration,
+      trimmed: saved.trimmed,
     };
   } catch (error) {
     if (error instanceof WallpaperError) {

@@ -1030,7 +1030,8 @@ async function uploadCustomBackground() {
     closeSheet();
     toast(
       result.animated
-        ? `انحفظت الخلفية المخصصة (${format(result.frames)} إطار).`
+        ? `انحفظت الخلفية المخصصة (${format(result.frames)} إطار · ` +
+          `${(result.duration / 1000).toFixed(1)} ث).`
         : 'انحفظت الخلفية المخصصة.',
       'good',
     );
